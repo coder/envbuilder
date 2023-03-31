@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
@@ -99,6 +100,11 @@ func NewRepo(t *testing.T, fs billy.Filesystem) *git.Repository {
 	storage := filesystem.NewStorage(fs, cache.NewObjectLRU(cache.DefaultMaxSize))
 	repo, err := git.Init(storage, fs)
 	require.NoError(t, err)
+
+	h := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.ReferenceName("refs/heads/main"))
+	err = storage.SetReference(h)
+	require.NoError(t, err)
+
 	return repo
 }
 
@@ -110,8 +116,4 @@ func WriteFile(t *testing.T, fs billy.Filesystem, path, content string) {
 	require.NoError(t, err)
 	err = file.Close()
 	require.NoError(t, err)
-}
-
-func CommitFile() {
-
 }

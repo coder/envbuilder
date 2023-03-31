@@ -6,11 +6,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/gittest"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +30,13 @@ func TestCloneRepo(t *testing.T) {
 		gittest.WriteFile(t, serverFS, "README.md", "Hello, world!")
 		_, err = tree.Add("README.md")
 		require.NoError(t, err)
-		commit, err := tree.Commit("Wow!", &git.CommitOptions{})
+		commit, err := tree.Commit("Wow!", &git.CommitOptions{
+			Author: &object.Signature{
+				Name:  "Example",
+				Email: "in@tests.com",
+				When:  time.Now(),
+			},
+		})
 		require.NoError(t, err)
 		_, err = repo.CommitObject(commit)
 		require.NoError(t, err)
