@@ -34,6 +34,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Echo Go Cache Paths
+        id: go-cache-paths
+        run: |
+          echo "GOCACHE=$(go env GOCACHE)" >> ${{ runner.os == 'Windows' && '$env:' || '$' }}GITHUB_OUTPUT
+          echo "GOMODCACHE=$(go env GOMODCACHE)" >> ${{ runner.os == 'Windows' && '$env:' || '$' }}GITHUB_OUTPUT
+
+      - name: Go Build Cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.go-cache-paths.outputs.GOCACHE }}
+          key: ${{ runner.os }}-go-build-${{ hashFiles('**/go.**', '**.go') }}
+
       # Install Go!
       - uses: actions/setup-go@v3
         with:
