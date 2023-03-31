@@ -101,6 +101,7 @@ func NewRepo(t *testing.T, fs billy.Filesystem) *git.Repository {
 	repo, err := git.Init(storage, fs)
 	require.NoError(t, err)
 
+	// This changes the default ref to main instead of master.
 	h := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.ReferenceName("refs/heads/main"))
 	err = storage.SetReference(h)
 	require.NoError(t, err)
