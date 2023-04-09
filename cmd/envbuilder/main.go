@@ -22,8 +22,11 @@ import (
 func main() {
 	root := &cobra.Command{
 		Use: "envbuilder",
+		// Hide usage because we don't want to show the
+		// "envbuilder [command] --help" output on error.
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			options := envbuilder.SystemOptions(os.Getenv)
+			options := envbuilder.OptionsFromEnv(os.Getenv)
 
 			var sendLogs func(log agentsdk.StartupLog)
 			agentURL := os.Getenv("CODER_AGENT_URL")

@@ -26,20 +26,19 @@ func TestSystemOptions(t *testing.T) {
 		"DOCKERFILE_PATH":  "Dockerfile",
 		"FALLBACK_IMAGE":   "ubuntu:latest",
 		"FORCE_SAFE":       "true",
-		"INSECURE":         "true",
-		"REPO_URL":         "https://github.com/coder/coder",
+		"INSECURE":         "false",
+		"GIT_URL":          "https://github.com/coder/coder",
 		"WORKSPACE_FOLDER": "/workspaces/coder",
 	}
-	env := envbuilder.SystemOptions(func(s string) string {
+	env := envbuilder.OptionsFromEnv(func(s string) string {
 		return opts[s]
 	})
-	require.Equal(t, "/bin/sh", env.InitCommand)
-	require.Equal(t, []string{"-c", "echo hello"}, env.InitArguments)
+	require.Equal(t, "echo hello", env.InitScript)
 	require.Equal(t, "kylecarbs/testing", env.CacheRepo)
 	require.Equal(t, "Dockerfile", env.DockerfilePath)
 	require.Equal(t, "ubuntu:latest", env.FallbackImage)
 	require.True(t, env.ForceSafe)
-	require.True(t, env.Insecure)
-	require.Equal(t, "https://github.com/coder/coder", env.RepoURL)
+	require.False(t, env.Insecure)
+	require.Equal(t, "https://github.com/coder/coder", env.GitURL)
 	require.Equal(t, "/workspaces/coder", env.WorkspaceFolder)
 }

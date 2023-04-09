@@ -6,6 +6,6 @@ set -euxo pipefail
 ./build.sh
 
 docker run --rm -it \
-    -e REPO_URL=https://github.com/microsoft/vscode-remote-try-go \
+    -e GIT_URL=https://github.com/microsoft/vscode-remote-try-go \
     -e INIT_SCRIPT="sleep infinity" \
     envbuilder:latest

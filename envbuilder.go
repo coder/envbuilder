@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -19,9 +21,15 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
 	"github.com/containerd/containerd/platforms"
+	"github.com/fatih/color"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/sirupsen/logrus"
+)
+
+var (
+	ErrNoFallbackImage = errors.New("no fallback image has been specified")
 )
 
 const (
@@ -40,28 +48,50 @@ const (
 )
 
 type Options struct {
-	// InitCommand is the command to run to initialize the workspace.
-	// This is ran immediately after the container has been built.
-	InitCommand string
-
-	// InitArguments are the arguments to pass to the init command.
-	InitArguments []string
+	// InitScript is the script to run to initialize the workspace.
+	InitScript string `env:"INIT_SCRIPT"`
 
 	// CacheRepo is the name of the container registry
 	// to push the cache image to. If this is empty, the cache
 	// will not be pushed.
-	CacheRepo string
+	CacheRepo string `env:"CACHE_REPO"`
 
 	// DockerfilePath is a relative path to the workspace
 	// folder that will be used to build the workspace.
 	// This is an alternative to using a devcontainer
 	// that some might find simpler.
-	DockerfilePath string
+	DockerfilePath string `env:"DOCKERFILE_PATH"`
 
 	// FallbackImage is the image to use if no image is
 	// specified in the devcontainer.json file and
 	// a Dockerfile is not found.
-	FallbackImage string
+	FallbackImage string `env:"FALLBACK_IMAGE"`
+
+	// ForceSafe ignores any filesystem safety checks.
+	// This could cause serious harm to your system!
+	// This is used in cases where bypass is needed
+	// to unblock customers!
+	ForceSafe bool `env:"FORCE_SAFE"`
+
+	// Insecure bypasses TLS verification when cloning
+	// and pulling from container registries.
+	Insecure bool `env:"INSECURE"`
+
+	// GitURL is the URL of the Git repository to clone.
+	// This is optional!
+	GitURL string `env:"GIT_URL"`
+
+	// GitUsername is the username to use for Git authentication.
+	// This is optional!
+	GitUsername string `env:"GIT_USERNAME"`
+
+	// GitPassword is the password to use for Git authentication.
+	// This is optional!
+	GitPassword string `env:"GIT_PASSWORD"`
+
+	// WorkspaceFolder is the path to the workspace folder
+	// that will be built. This is optional!
+	WorkspaceFolder string `env:"WORKSPACE_FOLDER"`
 
 	// Logger is the logger to use for all operations.
 	Logger func(format string, args ...interface{})
@@ -69,46 +99,40 @@ type Options struct {
 	// Filesystem is the filesystem to use for all operations.
 	// Defaults to the host filesystem.
 	Filesystem billy.Filesystem
-
-	// ForceSafe ignores any filesystem safety checks.
-	// This could cause serious harm to your system!
-	// This is used in cases where bypass is needed
-	// to unblock customers!
-	ForceSafe bool
-
-	// Insecure bypasses TLS verification when cloning
-	// and pulling from container registries.
-	Insecure bool
-
-	// RepoURL is the URL of the Git repository to clone.
-	// This is optional!
-	RepoURL string
-
-	// WorkspaceFolder is the path to the workspace folder
-	// that will be built. This is optional!
-	WorkspaceFolder string
 }
 
 // Run runs the envbuilder.
 func Run(ctx context.Context, options Options) error {
+	if options.InitScript == "" {
+		options.InitScript = "sleep infinity"
+	}
 	if options.Filesystem == nil {
 		options.Filesystem = osfs.New("/")
 	}
 	if options.WorkspaceFolder == "" {
 		var err error
-		options.WorkspaceFolder, err = DefaultWorkspaceFolder(options.RepoURL)
+		options.WorkspaceFolder, err = DefaultWorkspaceFolder(options.GitURL)
 		if err != nil {
 			return err
 		}
 	}
-	if options.FallbackImage == "" {
-		options.FallbackImage = "ubuntu:latest"
-	}
 	logf := options.Logger
+	stageNumber := 1
+	startStage := func(format string, args ...interface{}) func(format string, args ...interface{}) {
+		now := time.Now()
+		stageNum := stageNumber
+		stageNumber++
+		logf("#%d: %s", stageNum, fmt.Sprintf(format, args...))
 
-	if options.RepoURL != "" {
-		start := time.Now()
-		logf("=== Cloning Repository %s to %s...", options.RepoURL, options.WorkspaceFolder)
+		return func(format string, args ...interface{}) {
+			logf("#%d: %s [%dms]", stageNum, fmt.Sprintf(format, args...), time.Since(now).Milliseconds())
+		}
+	}
+
+	logf("%s - Build development environments from repositories in a container", color.New(color.Bold).Sprintf("envbuilder"))
+
+	if options.GitURL != "" {
+		endStage := startStage("Cloning Repository %s to %s...", options.GitURL, options.WorkspaceFolder)
 
 		reader, writer := io.Pipe()
 		defer reader.Close()
@@ -120,10 +144,19 @@ func Run(ctx context.Context, options Options) error {
 			}
 		}()
 
+		if options.GitUsername != "" || options.GitPassword != "" {
+			gitURL, err := url.Parse(options.GitURL)
+			if err != nil {
+				return fmt.Errorf("parse git url: %w", err)
+			}
+			gitURL.User = url.UserPassword(options.GitUsername, options.GitPassword)
+			options.GitURL = gitURL.String()
+		}
+
 		err := CloneRepo(ctx, CloneRepoOptions{
 			Path:     options.WorkspaceFolder,
 			Storage:  options.Filesystem,
-			RepoURL:  options.RepoURL,
+			RepoURL:  options.GitURL,
 			Insecure: options.Insecure,
 			Progress: writer,
 		})
@@ -131,7 +164,7 @@ func Run(ctx context.Context, options Options) error {
 			return err
 		}
 
-		logf("==> Cloned Repository in %s", time.Since(start))
+		endStage("Cloned Repository")
 	}
 
 	var buildParams *BuildParameters
@@ -143,6 +176,9 @@ func Run(ctx context.Context, options Options) error {
 			return err
 		}
 		defer file.Close()
+		if options.FallbackImage == "" {
+			return ErrNoFallbackImage
+		}
 		_, err = file.Write([]byte("FROM " + options.FallbackImage))
 		if err != nil {
 			return err
@@ -199,39 +235,62 @@ func Run(ctx context.Context, options Options) error {
 		// we fallback to whatever the `DefaultImage` is.
 		err := defaultBuildParams()
 		if err != nil {
-			return err
+			return fmt.Errorf("no Dockerfile or devcontainer.json found: %w", err)
 		}
 	}
 
 	HijackLogrus(func(entry *logrus.Entry) {
-		logf("builder: %s", entry.Message)
+		logf("#2: %s", entry.Message)
 	})
-	// At this point we have all the context, we can now build!
-	image, err := executor.DoBuild(&config.KanikoOptions{
-		// Boilerplate!
-		CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
-		SnapshotMode:      "redo",
-		RunV2:             true,
-		Destinations:      []string{"local"},
-		CacheRunLayers:    true,
-		CacheCopyLayers:   true,
-		CompressedCaching: true,
-		CacheOptions: config.CacheOptions{
-			// Cache for a week by default!
-			CacheTTL: time.Hour * 24 * 7,
-		},
 
-		BuildArgs:      buildParams.BuildArgs,
-		CacheRepo:      options.CacheRepo,
-		Cache:          buildParams.Cache && options.CacheRepo != "",
-		DockerfilePath: buildParams.DockerfilePath,
-		RegistryOptions: config.RegistryOptions{
-			Insecure:      options.Insecure,
-			InsecurePull:  options.Insecure,
-			SkipTLSVerify: options.Insecure,
-		},
-		SrcContext: buildParams.BuildContext,
-	})
+	build := func() (v1.Image, error) {
+		// At this point we have all the context, we can now build!
+		return executor.DoBuild(&config.KanikoOptions{
+			// Boilerplate!
+			CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
+			SnapshotMode:      "redo",
+			RunV2:             true,
+			Destinations:      []string{"local"},
+			CacheRunLayers:    true,
+			CacheCopyLayers:   true,
+			CompressedCaching: true,
+			CacheOptions: config.CacheOptions{
+				// Cache for a week by default!
+				CacheTTL: time.Hour * 24 * 7,
+			},
+			ForceUnpack:    true,
+			BuildArgs:      buildParams.BuildArgs,
+			CacheRepo:      options.CacheRepo,
+			Cache:          buildParams.Cache && options.CacheRepo != "",
+			DockerfilePath: buildParams.DockerfilePath,
+			RegistryOptions: config.RegistryOptions{
+				Insecure:      options.Insecure,
+				InsecurePull:  options.Insecure,
+				SkipTLSVerify: options.Insecure,
+			},
+			SrcContext: buildParams.BuildContext,
+		})
+	}
+
+	// At this point we have all the context, we can now build!
+	image, err := build()
+	if err != nil {
+		fallback := false
+		switch {
+		case strings.Contains(err.Error(), "parsing dockerfile"):
+			fallback = true
+		}
+		if !fallback {
+			return err
+		}
+		logf("Failed to build with the provided context: %s", err)
+		logf("Falling back to the default image...")
+		err = defaultBuildParams()
+		if err != nil {
+			return err
+		}
+		image, err = build()
+	}
 	if err != nil {
 		return fmt.Errorf("build with kaniko: %w", err)
 	}
@@ -246,7 +305,7 @@ func Run(ctx context.Context, options Options) error {
 		username = buildParams.User
 	}
 	if username == "" {
-		logf("no user specified, using root")
+		logf("#3: no user specified, using root")
 	}
 	user, err := findUser(username)
 	if err != nil {
@@ -259,6 +318,12 @@ func Run(ctx context.Context, options Options) error {
 	gid, err := strconv.Atoi(user.Gid)
 	if err != nil {
 		return fmt.Errorf("parse gid: %w", err)
+	}
+	if user.Username == "" && uid == 0 {
+		// This is nice for the visual display in log messages,
+		// but has no actual functionality since the credential
+		// in the syscall is what matters.
+		user.Username = "root"
 	}
 
 	// It must be set in this parent process otherwise nothing will be found!
@@ -278,8 +343,10 @@ func Run(ctx context.Context, options Options) error {
 		},
 	}
 
-	logf("=== Starting init command as the %q user...", user.Username)
-	cmd := exec.CommandContext(ctx, options.InitCommand, options.InitArguments...)
+	unsetOptionsEnv()
+
+	logf("=== Running the init command %q as the %q user...", options.InitScript, user.Username)
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", options.InitScript)
 	cmd.Env = os.Environ()
 	cmd.Dir = options.WorkspaceFolder
 	cmd.SysProcAttr = sysProcAttr
@@ -288,7 +355,7 @@ func Run(ctx context.Context, options Options) error {
 	go func() {
 		scanner := bufio.NewScanner(&buf)
 		for scanner.Scan() {
-			logf("[%s, %+v]: %s", options.InitCommand, options.InitArguments, scanner.Text())
+			logf("%s", scanner.Text())
 		}
 	}()
 	cmd.Stdout = &buf
@@ -335,50 +402,68 @@ func findUser(nameOrID string) (*user.User, error) {
 	return user.Lookup(nameOrID)
 }
 
-// SystemOptions returns a set of options from environment variables.
-func SystemOptions(getEnv func(string) string) Options {
+// OptionsFromEnv returns a set of options from environment variables.
+func OptionsFromEnv(getEnv func(string) string) Options {
 	options := Options{}
 
-	initScript := getEnv("INIT_SCRIPT")
-	if initScript != "" {
-		options.InitCommand = "/bin/sh"
-		options.InitArguments = []string{"-c", initScript}
-	}
+	val := reflect.ValueOf(&options).Elem()
+	typ := val.Type()
 
-	cacheRepo := getEnv("CACHE_REPO")
-	if cacheRepo != "" {
-		options.CacheRepo = cacheRepo
-	}
-
-	dockerfilePath := getEnv("DOCKERFILE_PATH")
-	if dockerfilePath != "" {
-		options.DockerfilePath = dockerfilePath
-	}
-
-	fallbackImage := getEnv("FALLBACK_IMAGE")
-	if fallbackImage != "" {
-		options.FallbackImage = fallbackImage
-	}
-
-	forceSafe := getEnv("FORCE_SAFE")
-	if forceSafe != "" {
-		options.ForceSafe = true
-	}
-
-	insecure := getEnv("INSECURE")
-	if insecure != "" {
-		options.Insecure = true
-	}
-
-	repoURL := getEnv("REPO_URL")
-	if repoURL != "" {
-		options.RepoURL = repoURL
-	}
-
-	workspaceFolder := getEnv("WORKSPACE_FOLDER")
-	if workspaceFolder != "" {
-		options.WorkspaceFolder = workspaceFolder
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+		fieldTyp := typ.Field(i)
+		env := fieldTyp.Tag.Get("env")
+		if env == "" {
+			continue
+		}
+		switch fieldTyp.Type.Kind() {
+		case reflect.String:
+			field.SetString(getEnv(env))
+		case reflect.Bool:
+			v, _ := strconv.ParseBool(getEnv(env))
+			field.SetBool(v)
+		}
 	}
 
 	return options
+}
+
+// unsetOptionsEnv unsets all environment variables that are used
+// to configure the options.
+func unsetOptionsEnv() {
+	val := reflect.ValueOf(&Options{}).Elem()
+	typ := val.Type()
+
+	for i := 0; i < val.NumField(); i++ {
+		fieldTyp := typ.Field(i)
+		env := fieldTyp.Tag.Get("env")
+		if env == "" {
+			continue
+		}
+		os.Unsetenv(env)
+	}
+}
+
+func printOptions(logf func(format string, args ...interface{}), options Options) {
+	val := reflect.ValueOf(&options).Elem()
+	typ := val.Type()
+
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+		fieldTyp := typ.Field(i)
+		env := fieldTyp.Tag.Get("env")
+		if env == "" {
+			continue
+		}
+		switch fieldTyp.Type.Kind() {
+		case reflect.String:
+			logf("option %s: %q", fieldTyp.Name, field.String())
+		case reflect.Bool:
+			field.Bool()
+		}
+	}
+}
+
+func stage() {
+
 }

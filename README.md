@@ -1,10 +1,10 @@
 # envbuilder
 
-Build a development environment from `devcontainer.json` or `Dockerfile` inside of a container. Enable developers to customize their environment on pre-defined infrastructure.
+Build development environments from repositories in a container on Kubernetes, Docker, or gVisor. Allow developers to customize their environment on pre-defined infrastructure.
 
 - Supports `devcontainer.json` and `Dockerfile`
-- Cache image layers with registries
-- Runs in Docker, Kubernetes, or gVisor
+- Cache image layers with registries for speedy builds
+- Runs on Kubernetes, Docker, and OpenShift 
 
 ## Quickstart
 
@@ -12,6 +12,6 @@ The easiest way to play with `envbuilder` is to launch a Docker container that b
 
 ```bash
 docker run -it --rm \
-    -e REPO_URL=https://github.com/vercel/next.js \
+    -e GIT_URL=https://github.com/vercel/next.js \
     ghcr.io/coder/envbuilder
 ```
