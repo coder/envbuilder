@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/coder/coder/codersdk"
 	"github.com/coder/coder/codersdk/agentsdk"
 	"github.com/coder/envbuilder"
 	"github.com/spf13/cobra"
@@ -56,13 +57,14 @@ func main() {
 				}
 			}
 
-			options.Logger = func(format string, args ...interface{}) {
+			options.Logger = func(level codersdk.LogLevel, format string, args ...interface{}) {
 				output := fmt.Sprintf(format, args...)
 				fmt.Fprintln(cmd.ErrOrStderr(), output)
 				if sendLogs != nil {
 					sendLogs(agentsdk.StartupLog{
 						CreatedAt: time.Now(),
 						Output:    output,
+						Level:     level,
 					})
 				}
 			}

@@ -20,6 +20,7 @@ import (
 
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
+	"github.com/coder/coder/codersdk"
 	"github.com/containerd/containerd/platforms"
 	"github.com/fatih/color"
 	"github.com/go-git/go-billy/v5"
@@ -94,7 +95,7 @@ type Options struct {
 	WorkspaceFolder string `env:"WORKSPACE_FOLDER"`
 
 	// Logger is the logger to use for all operations.
-	Logger func(format string, args ...interface{})
+	Logger func(level codersdk.LogLevel, format string, args ...interface{})
 
 	// Filesystem is the filesystem to use for all operations.
 	// Defaults to the host filesystem.
@@ -122,10 +123,10 @@ func Run(ctx context.Context, options Options) error {
 		now := time.Now()
 		stageNum := stageNumber
 		stageNumber++
-		logf("#%d: %s", stageNum, fmt.Sprintf(format, args...))
+		logf(codersdk.LogLevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
 
 		return func(format string, args ...interface{}) {
-			logf("#%d: %s [%dms]", stageNum, fmt.Sprintf(format, args...), time.Since(now).Milliseconds())
+			logf(codersdk.LogLevelInfo, "#%d: %s [%dms]", stageNum, fmt.Sprintf(format, args...), time.Since(now).Milliseconds())
 		}
 	}
 
@@ -240,7 +241,7 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	HijackLogrus(func(entry *logrus.Entry) {
-		logf("#2: %s", entry.Message)
+		logf(codersdk.LogLevelInfo, "#2: %s", entry.Message)
 	})
 
 	build := func() (v1.Image, error) {
@@ -283,8 +284,8 @@ func Run(ctx context.Context, options Options) error {
 		if !fallback {
 			return err
 		}
-		logf("Failed to build with the provided context: %s", err)
-		logf("Falling back to the default image...")
+		logf(codersdk.LogLevelError, "Failed to build with the provided context: %s", err)
+		logf(codersdk.LogLevelError, "Falling back to the default image...")
 		err = defaultBuildParams()
 		if err != nil {
 			return err
@@ -305,7 +306,7 @@ func Run(ctx context.Context, options Options) error {
 		username = buildParams.User
 	}
 	if username == "" {
-		logf("#3: no user specified, using root")
+		logf(codersdk.LogLevelWarn, "#3: no user specified, using root")
 	}
 	user, err := findUser(username)
 	if err != nil {
@@ -345,7 +346,7 @@ func Run(ctx context.Context, options Options) error {
 
 	unsetOptionsEnv()
 
-	logf("=== Running the init command %q as the %q user...", options.InitScript, user.Username)
+	logf(codersdk.LogLevelInfo, "=== Running the init command %q as the %q user...", options.InitScript, user.Username)
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", options.InitScript)
 	cmd.Env = os.Environ()
 	cmd.Dir = options.WorkspaceFolder
@@ -355,7 +356,7 @@ func Run(ctx context.Context, options Options) error {
 	go func() {
 		scanner := bufio.NewScanner(&buf)
 		for scanner.Scan() {
-			logf("%s", scanner.Text())
+			logf(codersdk.LogLevelInfo, "%s", scanner.Text())
 		}
 	}()
 	cmd.Stdout = &buf
