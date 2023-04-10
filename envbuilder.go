@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -130,10 +131,13 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
-	logf("%s - Build development environments from repositories in a container", color.New(color.Bold).Sprintf("envbuilder"))
+	logf(codersdk.LogLevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
 
 	if options.GitURL != "" {
-		endStage := startStage("Cloning Repository %s to %s...", options.GitURL, options.WorkspaceFolder)
+		endStage := startStage("📦 Cloning %s to %s...",
+			newColor(color.FgCyan).Sprintf(options.GitURL),
+			newColor(color.FgCyan).Sprintf(options.WorkspaceFolder),
+		)
 
 		reader, writer := io.Pipe()
 		defer reader.Close()
@@ -141,7 +145,7 @@ func Run(ctx context.Context, options Options) error {
 		go func() {
 			scanner := bufio.NewScanner(reader)
 			for scanner.Scan() {
-				logf("git: %s", scanner.Text())
+				logf(codersdk.LogLevelInfo, "#1: %s", scanner.Text())
 			}
 		}()
 
@@ -165,7 +169,7 @@ func Run(ctx context.Context, options Options) error {
 			return err
 		}
 
-		endStage("Cloned Repository")
+		endStage("📦 Cloned repository!")
 	}
 
 	var buildParams *BuildParameters
@@ -210,12 +214,14 @@ func Run(ctx context.Context, options Options) error {
 				return fmt.Errorf("read devcontainer.json: %w", err)
 			}
 			devContainer, err := ParseDevcontainer(content)
-			if err != nil {
-				return fmt.Errorf("parse devcontainer.json: %w", err)
-			}
-			buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir)
-			if err != nil {
-				return fmt.Errorf("compile devcontainer.json: %w", err)
+			if err == nil {
+				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir)
+				if err != nil {
+					return fmt.Errorf("compile devcontainer.json: %w", err)
+				}
+			} else {
+				logf(codersdk.LogLevelError, "Failed to parse devcontainer.json: %s", err.Error())
+				logf(codersdk.LogLevelError, "Falling back to the default image...")
 			}
 		}
 	} else {
@@ -241,10 +247,12 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	HijackLogrus(func(entry *logrus.Entry) {
-		logf(codersdk.LogLevelInfo, "#2: %s", entry.Message)
+		logf(codersdk.LogLevelInfo, "#2: %s", color.HiBlackString(entry.Message))
 	})
 
 	build := func() (v1.Image, error) {
+		endStage := startStage("🏗️ Building image...")
+		defer endStage("🏗️ Built image!")
 		// At this point we have all the context, we can now build!
 		return executor.DoBuild(&config.KanikoOptions{
 			// Boilerplate!
@@ -301,6 +309,29 @@ func Run(ctx context.Context, options Options) error {
 		return fmt.Errorf("get image config: %w", err)
 	}
 
+	// devcontainer metadata can be persisted through a standard label
+	devContainerMetadata, exists := configFile.Config.Labels["devcontainer.metadata"]
+	if exists {
+		var devContainer []*DevContainer
+		err := json.Unmarshal([]byte(devContainerMetadata), &devContainer)
+		if err != nil {
+			return fmt.Errorf("unmarshal metadata: %w", err)
+		}
+		logf(codersdk.LogLevelInfo, "#3: 👀 Found devcontainer.json label metadata in image...")
+		for _, container := range devContainer {
+			if container.RemoteUser != "" {
+				logf(codersdk.LogLevelInfo, "#3: 🧑 Updating the user to %q!", container.RemoteUser)
+
+				configFile.Config.User = container.RemoteUser
+			}
+			if container.RemoteEnv != nil {
+				for key, value := range container.RemoteEnv {
+					os.Setenv(key, value)
+				}
+			}
+		}
+	}
+
 	username := configFile.Config.User
 	if buildParams.User != "" {
 		username = buildParams.User
@@ -326,6 +357,7 @@ func Run(ctx context.Context, options Options) error {
 		// in the syscall is what matters.
 		user.Username = "root"
 	}
+	os.Setenv("HOME", user.HomeDir)
 
 	// It must be set in this parent process otherwise nothing will be found!
 	for _, env := range configFile.Config.Env {
@@ -445,7 +477,7 @@ func unsetOptionsEnv() {
 	}
 }
 
-func printOptions(logf func(format string, args ...interface{}), options Options) {
+func printOptions(logf func(level codersdk.LogLevel, format string, args ...interface{}), options Options) {
 	val := reflect.ValueOf(&options).Elem()
 	typ := val.Type()
 
@@ -458,13 +490,15 @@ func printOptions(logf func(format string, args ...interface{}), options Options
 		}
 		switch fieldTyp.Type.Kind() {
 		case reflect.String:
-			logf("option %s: %q", fieldTyp.Name, field.String())
+			logf(codersdk.LogLevelDebug, "option %s: %q", fieldTyp.Name, field.String())
 		case reflect.Bool:
 			field.Bool()
 		}
 	}
 }
 
-func stage() {
-
+func newColor(value ...color.Attribute) *color.Color {
+	c := color.New(value...)
+	c.EnableColor()
+	return c
 }

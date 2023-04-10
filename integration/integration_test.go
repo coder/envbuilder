@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os/exec"
 	"strings"
 	"testing"
@@ -111,7 +113,44 @@ func TestBuildFailsFallback(t *testing.T) {
 		})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 	})
+}
 
+func TestPrivateRegistry(t *testing.T) {
+	t.Parallel()
+	t.Run("NoAuth", func(t *testing.T) {
+		t.Parallel()
+		image := setupPassthroughRegistry(t, "library/alpine")
+
+		fmt.Printf("IMAGE %s\n", image)
+		time.Sleep(time.Hour)
+
+		// Ensures that a Git repository with a Dockerfile is cloned and built.
+		url := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": "FROM " + image,
+			},
+		})
+		_, err := runEnvbuilder(t, []string{
+			"GIT_URL=" + url,
+			"DOCKERFILE_PATH=Dockerfile",
+		})
+		require.NoError(t, err)
+	})
+}
+
+func setupPassthroughRegistry(t *testing.T, image string) string {
+	t.Helper()
+	dockerURL, err := url.Parse("https://registry-1.docker.io")
+	require.NoError(t, err)
+	proxy := httputil.NewSingleHostReverseProxy(dockerURL)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Host = "registry-1.docker.io"
+		r.URL.Host = "registry-1.docker.io"
+		r.URL.Scheme = "https"
+
+		proxy.ServeHTTP(w, r)
+	}))
+	return fmt.Sprintf("%s/%s", strings.TrimPrefix(srv.URL, "http://"), image)
 }
 
 func TestNoMethodFails(t *testing.T) {
