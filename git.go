@@ -70,9 +70,6 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) error {
 		Progress:        opts.Progress,
 		ReferenceName:   plumbing.ReferenceName(reference),
 		InsecureSkipTLS: opts.Insecure,
-		Tags:            git.NoTags,
-		SingleBranch:    true,
-		Depth:           1,
 	})
 	if errors.Is(err, git.ErrRepositoryAlreadyExists) {
 		return nil
