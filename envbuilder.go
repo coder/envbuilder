@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,10 +24,13 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
 	"github.com/coder/coder/codersdk"
 	"github.com/containerd/containerd/platforms"
+	"github.com/docker/cli/cli/config/configfile"
 	"github.com/fatih/color"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
 )
 
@@ -46,7 +50,7 @@ const (
 	// MagicDir is where all envbuilder related files are stored.
 	// This is a special directory that must not be modified
 	// by the user or images.
-	MagicDir = "envbuilder"
+	MagicDir = ".envbuilder"
 )
 
 type Options struct {
@@ -63,6 +67,11 @@ type Options struct {
 	// This is an alternative to using a devcontainer
 	// that some might find simpler.
 	DockerfilePath string `env:"DOCKERFILE_PATH"`
+
+	// DockerConfigBase64 is a base64 encoded Docker config
+	// file that will be used to pull images from private
+	// container registries.
+	DockerConfigBase64 string `env:"DOCKER_CONFIG_BASE64"`
 
 	// FallbackImage is the image to use if no image is
 	// specified in the devcontainer.json file and
@@ -83,6 +92,14 @@ type Options struct {
 	// This is optional!
 	GitURL string `env:"GIT_URL"`
 
+	// GitCloneDepth is the depth to use when cloning
+	// the Git repository.
+	GitCloneDepth int `env:"GIT_CLONE_DEPTH"`
+
+	// GitCloneSingleBranch clones only a single branch
+	// of the Git repository.
+	GitCloneSingleBranch bool `env:"GIT_CLONE_SINGLE_BRANCH"`
+
 	// GitUsername is the username to use for Git authentication.
 	// This is optional!
 	GitUsername string `env:"GIT_USERNAME"`
@@ -102,6 +119,9 @@ type Options struct {
 	// Defaults to the host filesystem.
 	Filesystem billy.Filesystem
 }
+
+// DockerConfig represents the Docker configuration file.
+type DockerConfig configfile.ConfigFile
 
 // Run runs the envbuilder.
 func Run(ctx context.Context, options Options) error {
@@ -143,9 +163,19 @@ func Run(ctx context.Context, options Options) error {
 		defer reader.Close()
 		defer writer.Close()
 		go func() {
-			scanner := bufio.NewScanner(reader)
-			for scanner.Scan() {
-				logf(codersdk.LogLevelInfo, "#1: %s", scanner.Text())
+			data := make([]byte, 4096)
+			for {
+				read, err := reader.Read(data)
+				if err != nil {
+					return
+				}
+				content := data[:read]
+				for _, line := range strings.Split(string(content), "\r") {
+					if line == "" {
+						continue
+					}
+					logf(codersdk.LogLevelInfo, "#1: %s", strings.TrimSpace(line))
+				}
 			}
 		}()
 
@@ -164,6 +194,12 @@ func Run(ctx context.Context, options Options) error {
 			RepoURL:  options.GitURL,
 			Insecure: options.Insecure,
 			Progress: writer,
+			RepoAuth: &http.BasicAuth{
+				Username: options.GitUsername,
+				Password: options.GitPassword,
+			},
+			SingleBranch: options.GitCloneSingleBranch,
+			Depth:        options.GitCloneDepth,
 		})
 		if err != nil {
 			return err
@@ -281,6 +317,22 @@ func Run(ctx context.Context, options Options) error {
 		})
 	}
 
+	if options.DockerConfigBase64 != "" {
+		decoded, err := base64.RawStdEncoding.DecodeString(options.DockerConfigBase64)
+		if err != nil {
+			return fmt.Errorf("decode docker config: %w", err)
+		}
+		var configFile DockerConfig
+		err = json.Unmarshal(decoded, &configFile)
+		if err != nil {
+			return fmt.Errorf("parse docker config: %w", err)
+		}
+		err = os.WriteFile(filepath.Join("/", MagicDir, "config.json"), decoded, 0644)
+		if err != nil {
+			return fmt.Errorf("write docker config: %w", err)
+		}
+	}
+
 	// At this point we have all the context, we can now build!
 	image, err := build()
 	if err != nil {
@@ -288,6 +340,8 @@ func Run(ctx context.Context, options Options) error {
 		switch {
 		case strings.Contains(err.Error(), "parsing dockerfile"):
 			fallback = true
+		case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
+			logf(codersdk.LogLevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
 		}
 		if !fallback {
 			return err
@@ -384,15 +438,25 @@ func Run(ctx context.Context, options Options) error {
 	cmd.Dir = options.WorkspaceFolder
 	cmd.SysProcAttr = sysProcAttr
 
-	var buf bytes.Buffer
-	go func() {
-		scanner := bufio.NewScanner(&buf)
-		for scanner.Scan() {
-			logf(codersdk.LogLevelInfo, "%s", scanner.Text())
-		}
-	}()
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
+	// This allows for a really nice and clean experience to experiement with!
+	// e.g. docker run --it --rm -e INIT_SCRIPT bash ...
+	if isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd()) {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+	} else {
+		var buf bytes.Buffer
+		go func() {
+			scanner := bufio.NewScanner(&buf)
+			for scanner.Scan() {
+				logf(codersdk.LogLevelInfo, "%s", scanner.Text())
+			}
+		}()
+
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
+	}
+
 	return cmd.Run()
 }
 

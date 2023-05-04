@@ -19,10 +19,12 @@ type CloneRepoOptions struct {
 	Path    string
 	Storage billy.Filesystem
 
-	RepoURL  string
-	RepoAuth transport.AuthMethod
-	Progress sideband.Progress
-	Insecure bool
+	RepoURL      string
+	RepoAuth     transport.AuthMethod
+	Progress     sideband.Progress
+	Insecure     bool
+	SingleBranch bool
+	Depth        int
 }
 
 // CloneRepo will clone the repository at the given URL into the given path.
@@ -70,6 +72,8 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) error {
 		Progress:        opts.Progress,
 		ReferenceName:   plumbing.ReferenceName(reference),
 		InsecureSkipTLS: opts.Insecure,
+		Depth:           opts.Depth,
+		SingleBranch:    opts.SingleBranch,
 	})
 	if errors.Is(err, git.ErrRepositoryAlreadyExists) {
 		return nil

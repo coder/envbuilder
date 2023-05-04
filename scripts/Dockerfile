@@ -1,8 +1,9 @@
 FROM scratch
 
-COPY envbuilder /envbuilder/bin/envbuilder
+COPY envbuilder /.envbuilder/bin/envbuilder
 
-ENV KANIKO_DIR /envbuilder
-ENV DOCKER_CONFIG /envbuilder
+ENV KANIKO_DIR /.envbuilder
+# Kaniko looks for the Docker config at $DOCKER_CONFIG/config.json
+ENV DOCKER_CONFIG /.envbuilder
 
-ENTRYPOINT ["/envbuilder/bin/envbuilder"]
+ENTRYPOINT ["/.envbuilder/bin/envbuilder"]

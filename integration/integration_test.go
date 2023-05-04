@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +20,7 @@ import (
 
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/gittest"
+	clitypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -26,6 +29,9 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -119,10 +125,10 @@ func TestPrivateRegistry(t *testing.T) {
 	t.Parallel()
 	t.Run("NoAuth", func(t *testing.T) {
 		t.Parallel()
-		image := setupPassthroughRegistry(t, "library/alpine")
-
-		fmt.Printf("IMAGE %s\n", image)
-		time.Sleep(time.Hour)
+		image := setupPassthroughRegistry(t, "library/alpine", &registryAuth{
+			Username: "user",
+			Password: "test",
+		})
 
 		// Ensures that a Git repository with a Dockerfile is cloned and built.
 		url := createGitServer(t, gitServerOptions{
@@ -134,21 +140,109 @@ func TestPrivateRegistry(t *testing.T) {
 			"GIT_URL=" + url,
 			"DOCKERFILE_PATH=Dockerfile",
 		})
+		require.ErrorContains(t, err, "Unauthorized")
+	})
+	t.Run("Auth", func(t *testing.T) {
+		t.Parallel()
+		image := setupPassthroughRegistry(t, "library/alpine", &registryAuth{
+			Username: "user",
+			Password: "test",
+		})
+
+		// Ensures that a Git repository with a Dockerfile is cloned and built.
+		url := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": "FROM " + image,
+			},
+		})
+		config, err := json.Marshal(envbuilder.DockerConfig{
+			AuthConfigs: map[string]clitypes.AuthConfig{
+				image: {
+					Username: "user",
+					Password: "test",
+				},
+			},
+		})
 		require.NoError(t, err)
+
+		_, err = runEnvbuilder(t, []string{
+			"GIT_URL=" + url,
+			"DOCKERFILE_PATH=Dockerfile",
+			"DOCKER_CONFIG_BASE64=" + base64.RawStdEncoding.EncodeToString(config),
+		})
+		require.NoError(t, err)
+	})
+	t.Run("InvalidAuth", func(t *testing.T) {
+		t.Parallel()
+		image := setupPassthroughRegistry(t, "library/alpine", &registryAuth{
+			Username: "user",
+			Password: "banana",
+		})
+
+		// Ensures that a Git repository with a Dockerfile is cloned and built.
+		url := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": "FROM " + image,
+			},
+		})
+		config, err := json.Marshal(envbuilder.DockerConfig{
+			AuthConfigs: map[string]clitypes.AuthConfig{
+				image: {
+					Username: "user",
+					Password: "wrong",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		_, err = runEnvbuilder(t, []string{
+			"GIT_URL=" + url,
+			"DOCKERFILE_PATH=Dockerfile",
+			"DOCKER_CONFIG_BASE64=" + base64.RawStdEncoding.EncodeToString(config),
+		})
+		require.ErrorContains(t, err, "Unauthorized")
 	})
 }
 
-func setupPassthroughRegistry(t *testing.T, image string) string {
+type registryAuth struct {
+	Username string
+	Password string
+}
+
+func setupPassthroughRegistry(t *testing.T, image string, auth *registryAuth) string {
 	t.Helper()
 	dockerURL, err := url.Parse("https://registry-1.docker.io")
 	require.NoError(t, err)
 	proxy := httputil.NewSingleHostReverseProxy(dockerURL)
+
+	// The Docker registry uses short-lived JWTs to authenticate
+	// anonymously to pull images. To test our MITM auth, we need to
+	// generate a JWT for the proxy to use.
+	registry, err := name.NewRegistry("registry-1.docker.io")
+	require.NoError(t, err)
+	proxy.Transport, err = transport.NewWithContext(context.Background(), registry, authn.Anonymous, http.DefaultTransport, []string{})
+	require.NoError(t, err)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Host = "registry-1.docker.io"
 		r.URL.Host = "registry-1.docker.io"
 		r.URL.Scheme = "https"
 
+		if auth != nil {
+			user, pass, ok := r.BasicAuth()
+			if !ok {
+				w.Header().Set("WWW-Authenticate", "Basic realm=\"Access to the staging site\", charset=\"UTF-8\"")
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			if user != auth.Username || pass != auth.Password {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+		}
+
 		proxy.ServeHTTP(w, r)
+
 	}))
 	return fmt.Sprintf("%s/%s", strings.TrimPrefix(srv.URL, "http://"), image)
 }
