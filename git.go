@@ -30,14 +30,16 @@ type CloneRepoOptions struct {
 // CloneRepo will clone the repository at the given URL into the given path.
 // If a repository is already initialized at the given path, it will not
 // be cloned again.
-func CloneRepo(ctx context.Context, opts CloneRepoOptions) error {
+//
+// The bool returned states whether the repository was cloned or not.
+func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
 	parsed, err := url.Parse(opts.RepoURL)
 	if err != nil {
-		return fmt.Errorf("parse url %q: %w", opts.RepoURL, err)
+		return false, fmt.Errorf("parse url %q: %w", opts.RepoURL, err)
 	}
 	err = opts.Storage.MkdirAll(opts.Path, 0755)
 	if err != nil {
-		return fmt.Errorf("mkdir %q: %w", opts.Path, err)
+		return false, fmt.Errorf("mkdir %q: %w", opts.Path, err)
 	}
 	reference := parsed.Fragment
 	if reference == "" {
@@ -47,11 +49,11 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) error {
 	parsed.Fragment = ""
 	fs, err := opts.Storage.Chroot(opts.Path)
 	if err != nil {
-		return fmt.Errorf("chroot %q: %w", opts.Path, err)
+		return false, fmt.Errorf("chroot %q: %w", opts.Path, err)
 	}
 	gitDir, err := fs.Chroot(".git")
 	if err != nil {
-		return fmt.Errorf("chroot .git: %w", err)
+		return false, fmt.Errorf("chroot .git: %w", err)
 	}
 	gitStorage := filesystem.NewStorage(gitDir, cache.NewObjectLRU(cache.DefaultMaxSize*10))
 	fsStorage := filesystem.NewStorage(fs, cache.NewObjectLRU(cache.DefaultMaxSize*10))
@@ -60,10 +62,10 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) error {
 		err = nil
 	}
 	if err != nil {
-		return fmt.Errorf("open %q: %w", opts.RepoURL, err)
+		return false, fmt.Errorf("open %q: %w", opts.RepoURL, err)
 	}
 	if repo != nil {
-		return nil
+		return false, nil
 	}
 
 	_, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
@@ -76,10 +78,10 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) error {
 		SingleBranch:    opts.SingleBranch,
 	})
 	if errors.Is(err, git.ErrRepositoryAlreadyExists) {
-		return nil
+		return false, nil
 	}
 	if err != nil {
-		return fmt.Errorf("clone %q: %w", opts.RepoURL, err)
+		return false, fmt.Errorf("clone %q: %w", opts.RepoURL, err)
 	}
-	return nil
+	return true, nil
 }

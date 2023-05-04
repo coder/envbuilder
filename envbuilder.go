@@ -188,7 +188,7 @@ func Run(ctx context.Context, options Options) error {
 			options.GitURL = gitURL.String()
 		}
 
-		err := CloneRepo(ctx, CloneRepoOptions{
+		cloned, err := CloneRepo(ctx, CloneRepoOptions{
 			Path:     options.WorkspaceFolder,
 			Storage:  options.Filesystem,
 			RepoURL:  options.GitURL,
@@ -205,7 +205,11 @@ func Run(ctx context.Context, options Options) error {
 			return err
 		}
 
-		endStage("📦 Cloned repository!")
+		if cloned {
+			endStage("📦 Cloned repository!")
+		} else {
+			endStage("📦 The repository already exists!")
+		}
 	}
 
 	var buildParams *BuildParameters
