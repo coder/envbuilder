@@ -50,6 +50,10 @@ jobs:
       - name: Push
         run: |
           VERSION=$(./scripts/version.sh)
-          IMAGE=ghcr.io/coder/envbuilder:$VERSION
+          BASE=ghcr.io/coder/envbuilder
+          IMAGE=$BASE:$VERSION
           docker tag envbuilder:latest $IMAGE
+          docker tag envbuilder:latest $BASE:latest
           docker push $IMAGE
+          docker push $BASE:latest
+
