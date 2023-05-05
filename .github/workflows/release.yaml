@@ -52,4 +52,4 @@ jobs:
           VERSION=$(./scripts/version.sh)
           IMAGE=ghcr.io/coder/envbuilder:$VERSION
           docker tag envbuilder:latest $IMAGE
-          docker push $IMAGE
+          docker push envbuilder --all-tags
