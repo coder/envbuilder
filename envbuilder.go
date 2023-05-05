@@ -153,6 +153,7 @@ func Run(ctx context.Context, options Options) error {
 
 	logf(codersdk.LogLevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
 
+	var cloned bool
 	if options.GitURL != "" {
 		endStage := startStage("📦 Cloning %s to %s...",
 			newColor(color.FgCyan).Sprintf(options.GitURL),
@@ -188,7 +189,8 @@ func Run(ctx context.Context, options Options) error {
 			options.GitURL = gitURL.String()
 		}
 
-		cloned, err := CloneRepo(ctx, CloneRepoOptions{
+		var err error
+		cloned, err = CloneRepo(ctx, CloneRepoOptions{
 			Path:     options.WorkspaceFolder,
 			Storage:  options.Filesystem,
 			RepoURL:  options.GitURL,
@@ -292,9 +294,8 @@ func Run(ctx context.Context, options Options) error {
 
 	build := func() (v1.Image, error) {
 		endStage := startStage("🏗️ Building image...")
-		defer endStage("🏗️ Built image!")
 		// At this point we have all the context, we can now build!
-		return executor.DoBuild(&config.KanikoOptions{
+		image, err := executor.DoBuild(&config.KanikoOptions{
 			// Boilerplate!
 			CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
 			SnapshotMode:      "redo",
@@ -319,6 +320,11 @@ func Run(ctx context.Context, options Options) error {
 			},
 			SrcContext: buildParams.BuildContext,
 		})
+		if err != nil {
+			return nil, err
+		}
+		endStage("🏗️ Built image!")
+		return image, err
 	}
 
 	if options.DockerConfigBase64 != "" {
@@ -435,6 +441,30 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	unsetOptionsEnv()
+
+	// We only need to do this if we cloned!
+	// Git doesn't store file permissions as part of the repository.
+	if cloned {
+		endStage := startStage("🔄 Updating the ownership of the workspace...")
+		// By default, we clone the Git repository into the workspace folder.
+		// It will have root permissions, because that's the user that built it.
+		//
+		// We need to change the ownership of the files to the user that will
+		// be running the init script.
+		filepath.Walk(options.WorkspaceFolder, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			return os.Chown(path, uid, gid)
+		})
+		endStage("👤 Updated the ownership of the workspace!")
+	}
+
+	// Remove the Docker config secret file!
+	err = os.Remove(filepath.Join(os.Getenv("DOCKER_CONFIG"), "config.json"))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove docker config: %w", err)
+	}
 
 	logf(codersdk.LogLevelInfo, "=== Running the init command %q as the %q user...", options.InitScript, user.Username)
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", options.InitScript)

@@ -322,7 +322,7 @@ func createGitServer(t *testing.T, opts gitServerOptions) string {
 // cleanOldEnvbuilders removes any old envbuilder containers.
 func cleanOldEnvbuilders() {
 	ctx := context.Background()
-	cli, err := client.NewClientWithOpts(client.FromEnv)
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		panic(err)
 	}
@@ -348,7 +348,7 @@ func cleanOldEnvbuilders() {
 func runEnvbuilder(t *testing.T, env []string) (string, error) {
 	t.Helper()
 	ctx := context.Background()
-	cli, err := client.NewClientWithOpts(client.FromEnv)
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		cli.Close()
@@ -392,7 +392,7 @@ func runEnvbuilder(t *testing.T, env []string) (string, error) {
 		scanner := bufio.NewScanner(logsReader)
 		for scanner.Scan() {
 			t.Logf("%q", strings.TrimSpace(scanner.Text()))
-			if strings.HasPrefix(scanner.Text(), "error: ") {
+			if strings.HasPrefix(scanner.Text(), "Error: ") {
 				errChan <- errors.New(scanner.Text())
 				return
 			}

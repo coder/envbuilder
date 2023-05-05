@@ -44,12 +44,13 @@ func TestCloneRepo(t *testing.T) {
 		srv := httptest.NewServer(gittest.NewServer(serverFS))
 
 		clientFS := memfs.New()
-		err = envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
+		cloned, err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
 			Path:    "/workspace",
 			RepoURL: srv.URL,
 			Storage: clientFS,
 		})
 		require.NoError(t, err)
+		require.True(t, cloned)
 
 		file, err := clientFS.OpenFile("/workspace/README.md", os.O_RDONLY, 0644)
 		require.NoError(t, err)
@@ -63,11 +64,12 @@ func TestCloneRepo(t *testing.T) {
 		t.Parallel()
 		clientFS := memfs.New()
 		gittest.NewRepo(t, clientFS)
-		err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
+		cloned, err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
 			Path:    "/",
 			RepoURL: "https://example.com",
 			Storage: clientFS,
 		})
 		require.NoError(t, err)
+		require.False(t, cloned)
 	})
 }
