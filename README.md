@@ -20,6 +20,10 @@ Build development environments from a Dockerfile on Docker, Kubernetes, and Open
   </a>
 </div>
 
+- Add Kubernetes example
+- Add technical deep dive
+- 
+
 ## Quickstart
 
 The easiest way to get started is to run the `envbuilder` Docker container that clones a repository, builds the image from a Dockerfile, and runs the `$INIT_SCRIPT` in the freshly built container.
@@ -65,6 +69,21 @@ After you have a configuration that resembles the following:
 
 `base64` encode the JSON and provide it to envbuilder as the `DOCKER_CONFIG_BASE64` environment variable.
 
+### Docker Hub
+
+Authenticate with `docker login` to generate `~/.docker/config.json`. Encode this file using the `base64` command:
+
+```bash
+$ base64 -w0 ~/.docker/config.json
+ewoJImF1dGhzIjogewoJCSJodHRwczovL2luZGV4LmRvY2tlci5pby92MS8iOiB7CgkJCSJhdXRoIjogImJhc2U2NCBlbmNvZGVkIHRva2VuIgoJCX0KCX0KfQo=
+```
+
+Provide the encoded JSON config to envbuilder:
+
+```env
+DOCKER_CONFIG_BASE64=ewoJImF1dGhzIjogewoJCSJodHRwczovL2luZGV4LmRvY2tlci5pby92MS8iOiB7CgkJCSJhdXRoIjogImJhc2U2NCBlbmNvZGVkIHRva2VuIgoJCX0KCX0KfQo=
+```
+
 ## Git Authentication
 
 `GIT_USERNAME` and `GIT_PASSWORD` are environment variables to provide Git authentication for private repositories.
@@ -101,3 +120,10 @@ CACHE_REPO=ghcr.io/coder/repo-cache
 ```
 
 Each layer is stored in the registry as a separate image. The image tag is the hash of the layer's contents. The image digest is the hash of the image tag. The image digest is used to pull the layer from the registry.
+
+## Kubernetes
+
+Just like the Docker workflow, you can persist the workspaces folder to create a closed loop of building
+images and creating workflows like such.
+
+
