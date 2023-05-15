@@ -424,6 +424,7 @@ func Run(ctx context.Context, options Options) error {
 		// but has no actual functionality since the credential
 		// in the syscall is what matters.
 		user.Username = "root"
+		user.HomeDir = "/root"
 	}
 	os.Setenv("HOME", user.HomeDir)
 
