@@ -121,9 +121,4 @@ CACHE_REPO=ghcr.io/coder/repo-cache
 
 Each layer is stored in the registry as a separate image. The image tag is the hash of the layer's contents. The image digest is the hash of the image tag. The image digest is used to pull the layer from the registry.
 
-## Kubernetes
-
-Just like the Docker workflow, you can persist the workspaces folder to create a closed loop of building
-images and creating workflows like such.
-
-
+The performance improvement of builds depends on the complexity of your Dockerfile. For [`coder/coder`](https://github.com/coder/coder/blob/main/.devcontainer/Dockerfile), uncached builds take 36m while cached builds take 40s (~98% improvement).
