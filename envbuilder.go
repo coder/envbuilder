@@ -147,7 +147,7 @@ func Run(ctx context.Context, options Options) error {
 		logf(codersdk.LogLevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
 
 		return func(format string, args ...interface{}) {
-			logf(codersdk.LogLevelInfo, "#%d: %s [%dms]", stageNum, fmt.Sprintf(format, args...), time.Since(now).Milliseconds())
+			logf(codersdk.LogLevelInfo, "#%d: %s [%s]", stageNum, fmt.Sprintf(format, args...), time.Since(now))
 		}
 	}
 
@@ -289,7 +289,9 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	HijackLogrus(func(entry *logrus.Entry) {
-		logf(codersdk.LogLevelInfo, "#2: %s", color.HiBlackString(entry.Message))
+		for _, line := range strings.Split(entry.Message, "\r") {
+			logf(codersdk.LogLevelInfo, "#2: %s", color.HiBlackString(line))
+		}
 	})
 
 	build := func() (v1.Image, error) {

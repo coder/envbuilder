@@ -25,7 +25,8 @@ func main() {
 		Use: "envbuilder",
 		// Hide usage because we don't want to show the
 		// "envbuilder [command] --help" output on error.
-		SilenceUsage: true,
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options := envbuilder.OptionsFromEnv(os.Getenv)
 

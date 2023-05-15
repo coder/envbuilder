@@ -407,7 +407,7 @@ func runEnvbuilder(t *testing.T, env []string) (string, error) {
 		scanner := bufio.NewScanner(logsReader)
 		for scanner.Scan() {
 			t.Logf("%q", strings.TrimSpace(scanner.Text()))
-			if strings.HasPrefix(scanner.Text(), "Error: ") {
+			if strings.HasPrefix(scanner.Text(), "error: ") {
 				errChan <- errors.New(scanner.Text())
 				return
 			}
