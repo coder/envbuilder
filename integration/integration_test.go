@@ -106,6 +106,21 @@ func TestBuildFailsFallback(t *testing.T) {
 		})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 	})
+	t.Run("FailsBuild", func(t *testing.T) {
+		t.Parallel()
+		// Ensures that a Git repository with a Dockerfile is cloned and built.
+		url := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": `FROM alpine
+RUN exit 1`,
+			},
+		})
+		_, err := runEnvbuilder(t, []string{
+			"GIT_URL=" + url,
+			"DOCKERFILE_PATH=Dockerfile",
+		})
+		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
+	})
 	t.Run("BadDevcontainer", func(t *testing.T) {
 		t.Parallel()
 		// Ensures that a Git repository with a Dockerfile is cloned and built.

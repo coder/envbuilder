@@ -350,6 +350,8 @@ func Run(ctx context.Context, options Options) error {
 		switch {
 		case strings.Contains(err.Error(), "parsing dockerfile"):
 			fallback = true
+		case strings.Contains(err.Error(), "error building stage"):
+			fallback = true
 		case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
 			logf(codersdk.LogLevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
 		}
