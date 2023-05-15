@@ -43,7 +43,7 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
 		return false, fmt.Errorf("mkdir %q: %w", opts.Path, err)
 	}
 	reference := parsed.Fragment
-	if reference == "" {
+	if reference == "" && opts.SingleBranch {
 		reference = "refs/heads/main"
 	}
 	parsed.RawFragment = ""
