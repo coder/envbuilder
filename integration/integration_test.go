@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -83,6 +84,26 @@ func TestBuildFromDockerfile(t *testing.T) {
 	ctr, err := runEnvbuilder(t, []string{
 		"GIT_URL=" + url,
 		"DOCKERFILE_PATH=Dockerfile",
+	})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "echo hello")
+	require.Equal(t, "hello", strings.TrimSpace(output))
+}
+
+func TestBuildCustomCertificates(t *testing.T) {
+	srv := httptest.NewTLSServer(createGitHandler(t, gitServerOptions{
+		files: map[string]string{
+			"Dockerfile": "FROM alpine:latest",
+		},
+	}))
+	ctr, err := runEnvbuilder(t, []string{
+		"GIT_URL=" + srv.URL,
+		"DOCKERFILE_PATH=Dockerfile",
+		"SSL_CERT_BASE64=" + base64.StdEncoding.EncodeToString(pem.EncodeToMemory(&pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: srv.TLS.Certificates[0].Certificate[0],
+		})),
 	})
 	require.NoError(t, err)
 
@@ -302,6 +323,12 @@ type gitServerOptions struct {
 // and serves it over HTTP using a httptest.Server.
 func createGitServer(t *testing.T, opts gitServerOptions) string {
 	t.Helper()
+	srv := httptest.NewServer(createGitHandler(t, opts))
+	return srv.URL
+}
+
+func createGitHandler(t *testing.T, opts gitServerOptions) http.Handler {
+	t.Helper()
 	fs := memfs.New()
 	repo := gittest.NewRepo(t, fs)
 	w, err := repo.Worktree()
@@ -321,7 +348,7 @@ func createGitServer(t *testing.T, opts gitServerOptions) string {
 	require.NoError(t, err)
 	_, err = repo.CommitObject(commit)
 	require.NoError(t, err)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if opts.username != "" || opts.password != "" {
 			username, password, ok := r.BasicAuth()
 			if !ok || username != opts.username || password != opts.password {
@@ -330,8 +357,7 @@ func createGitServer(t *testing.T, opts gitServerOptions) string {
 			}
 		}
 		gittest.NewServer(fs).ServeHTTP(w, r)
-	}))
-	return srv.URL
+	})
 }
 
 // cleanOldEnvbuilders removes any old envbuilder containers.

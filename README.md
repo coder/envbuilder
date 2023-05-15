@@ -118,3 +118,9 @@ CACHE_REPO=ghcr.io/coder/repo-cache
 Each layer is stored in the registry as a separate image. The image tag is the hash of the layer's contents. The image digest is the hash of the image tag. The image digest is used to pull the layer from the registry.
 
 The performance improvement of builds depends on the complexity of your Dockerfile. For [`coder/coder`](https://github.com/coder/coder/blob/main/.devcontainer/Dockerfile), uncached builds take 36m while cached builds take 40s (~98% improvement).
+
+## Custom Certificates
+
+- [`SSL_CERT_FILE`](https://go.dev/src/crypto/x509/root_unix.go#L19): Specifies the path to an SSL certificate.
+- [`SSL_CERT_DIR`](https://go.dev/src/crypto/x509/root_unix.go#L25): Identifies which directory to check for SSL certificate files.
+- `SSL_CERT_BASE64`: Specifies a base64-encoded SSL certificate that will be added to the global certificate pool on start.

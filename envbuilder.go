@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -32,6 +33,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/xerrors"
 )
 
 var (
@@ -112,6 +114,10 @@ type Options struct {
 	// that will be built. This is optional!
 	WorkspaceFolder string `env:"WORKSPACE_FOLDER"`
 
+	// SSLCertBase64 is the content of an SSL cert file.
+	// This is useful for self-signed certificates.
+	SSLCertBase64 string `env:"SSL_CERT_BASE64"`
+
 	// Logger is the logger to use for all operations.
 	Logger func(level codersdk.LogLevel, format string, args ...interface{})
 
@@ -152,6 +158,23 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	logf(codersdk.LogLevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
+
+	var caBundle []byte
+	if options.SSLCertBase64 != "" {
+		certPool, err := x509.SystemCertPool()
+		if err != nil {
+			return xerrors.Errorf("get global system cert pool: %w", err)
+		}
+		data, err := base64.StdEncoding.DecodeString(options.SSLCertBase64)
+		if err != nil {
+			return xerrors.Errorf("base64 decode ssl cert: %w", err)
+		}
+		ok := certPool.AppendCertsFromPEM(data)
+		if !ok {
+			return xerrors.Errorf("failed to append the ssl cert to the global pool: %s", data)
+		}
+		caBundle = data
+	}
 
 	if options.DockerConfigBase64 != "" {
 		decoded, err := base64.StdEncoding.DecodeString(options.DockerConfigBase64)
@@ -218,6 +241,7 @@ func Run(ctx context.Context, options Options) error {
 			},
 			SingleBranch: options.GitCloneSingleBranch,
 			Depth:        options.GitCloneDepth,
+			CABundle:     caBundle,
 		})
 		if err != nil {
 			return err
