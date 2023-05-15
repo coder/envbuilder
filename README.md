@@ -1,7 +1,7 @@
 # envbuilder
 
 [![discord](https://img.shields.io/discord/747933592273027093?label=discord)](https://discord.gg/coder)
-[![release](https://img.shields.io/github/v/release/coder/envbuilder)](https://github.com/coder/envbuilder/releases/latest)
+[![release](https://img.shields.io/github/v/tag/coder/envbuilder)](https://github.com/coder/envbuilder/pkgs/container/envbuilder)
 [![godoc](https://pkg.go.dev/badge/github.com/coder/envbuilder.svg)](https://pkg.go.dev/github.com/coder/envbuilder)
 [![license](https://img.shields.io/github/license/coder/envbuilder)](./LICENSE)
 
