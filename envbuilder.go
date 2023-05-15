@@ -153,6 +153,22 @@ func Run(ctx context.Context, options Options) error {
 
 	logf(codersdk.LogLevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
 
+	if options.DockerConfigBase64 != "" {
+		decoded, err := base64.StdEncoding.DecodeString(options.DockerConfigBase64)
+		if err != nil {
+			return fmt.Errorf("decode docker config: %w", err)
+		}
+		var configFile DockerConfig
+		err = json.Unmarshal(decoded, &configFile)
+		if err != nil {
+			return fmt.Errorf("parse docker config: %w", err)
+		}
+		err = os.WriteFile(filepath.Join("/", MagicDir, "config.json"), decoded, 0644)
+		if err != nil {
+			return fmt.Errorf("write docker config: %w", err)
+		}
+	}
+
 	var cloned bool
 	if options.GitURL != "" {
 		endStage := startStage("📦 Cloning %s to %s...",
@@ -327,22 +343,6 @@ func Run(ctx context.Context, options Options) error {
 		}
 		endStage("🏗️ Built image!")
 		return image, err
-	}
-
-	if options.DockerConfigBase64 != "" {
-		decoded, err := base64.RawStdEncoding.DecodeString(options.DockerConfigBase64)
-		if err != nil {
-			return fmt.Errorf("decode docker config: %w", err)
-		}
-		var configFile DockerConfig
-		err = json.Unmarshal(decoded, &configFile)
-		if err != nil {
-			return fmt.Errorf("parse docker config: %w", err)
-		}
-		err = os.WriteFile(filepath.Join("/", MagicDir, "config.json"), decoded, 0644)
-		if err != nil {
-			return fmt.Errorf("write docker config: %w", err)
-		}
 	}
 
 	// At this point we have all the context, we can now build!
