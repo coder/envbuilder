@@ -20,10 +20,6 @@ Build development environments from a Dockerfile on Docker, Kubernetes, and Open
   </a>
 </div>
 
-- Add Kubernetes example
-- Add technical deep dive
-- 
-
 ## Quickstart
 
 The easiest way to get started is to run the `envbuilder` Docker container that clones a repository, builds the image from a Dockerfile, and runs the `$INIT_SCRIPT` in the freshly built container.
