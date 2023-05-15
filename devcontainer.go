@@ -20,6 +20,10 @@ type DevContainer struct {
 	Build      DevContainerBuild `json:"build"`
 	RemoteUser string            `json:"remoteUser"`
 	RemoteEnv  map[string]string `json:"remoteEnv"`
+
+	// Deprecated but still frequently used...
+	Dockerfile string `json:"dockerFile"`
+	Context    string `json:"context"`
 }
 
 type DevContainerBuild struct {
@@ -66,6 +70,15 @@ func (d *DevContainer) Compile(fs billy.Filesystem, devcontainerDir, scratchDir 
 	}
 	params.BuildArgs = buildArgs
 	params.Cache = true
+
+	// Deprecated values!
+	if d.Dockerfile != "" {
+		d.Build.Dockerfile = d.Dockerfile
+	}
+	if d.Context != "" {
+		d.Build.Context = d.Context
+	}
+
 	params.DockerfilePath = filepath.Join(devcontainerDir, d.Build.Dockerfile)
 	params.BuildContext = filepath.Join(devcontainerDir, d.Build.Context)
 	return params, nil
