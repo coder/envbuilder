@@ -37,7 +37,7 @@ func (f *logrusFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 
 // SendLogsToCoder returns a function that will automatically queue and
 // debounce logs to send to Coder.
-func SendLogsToCoder(ctx context.Context, client *agentsdk.Client, logf func(format string, args ...any)) (func(log agentsdk.StartupLog), error) {
+func SendLogsToCoder(ctx context.Context, client *agentsdk.Client, logf func(format string, args ...any)) (func(log agentsdk.StartupLog), func(), error) {
 	// Initialize variables for log management
 	queuedLogs := make([]agentsdk.StartupLog, 0)
 	var flushLogsTimer *time.Timer
@@ -125,6 +125,12 @@ func SendLogsToCoder(ctx context.Context, client *agentsdk.Client, logf func(for
 	}
 
 	return func(log agentsdk.StartupLog) {
-		queueLog(log)
-	}, nil
+			queueLog(log)
+		}, func() {
+			logMutex.Lock()
+			defer logMutex.Unlock()
+			for len(queuedLogs) > 0 || logsSending {
+				logsFlushed.Wait()
+			}
+		}, nil
 }

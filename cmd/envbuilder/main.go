@@ -50,12 +50,14 @@ func main() {
 						},
 					},
 				}
-				sendLogs, err = envbuilder.SendLogsToCoder(cmd.Context(), client, func(format string, args ...any) {
+				var flushAndClose func()
+				sendLogs, flushAndClose, err = envbuilder.SendLogsToCoder(cmd.Context(), client, func(format string, args ...any) {
 					fmt.Fprintf(cmd.ErrOrStderr(), format, args...)
 				})
 				if err != nil {
 					return err
 				}
+				defer flushAndClose()
 			}
 
 			options.Logger = func(level codersdk.LogLevel, format string, args ...interface{}) {
@@ -69,7 +71,11 @@ func main() {
 					})
 				}
 			}
-			return envbuilder.Run(cmd.Context(), options)
+			err := envbuilder.Run(cmd.Context(), options)
+			if err != nil {
+				options.Logger(codersdk.LogLevelError, "error: %s", err)
+			}
+			return err
 		},
 	}
 	err := root.Execute()
