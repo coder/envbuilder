@@ -215,7 +215,7 @@ func TestPrivateRegistry(t *testing.T) {
 		_, err = runEnvbuilder(t, []string{
 			"GIT_URL=" + url,
 			"DOCKERFILE_PATH=Dockerfile",
-			"DOCKER_CONFIG_BASE64=" + base64.RawStdEncoding.EncodeToString(config),
+			"DOCKER_CONFIG_BASE64=" + base64.StdEncoding.EncodeToString(config),
 		})
 		require.NoError(t, err)
 	})
@@ -245,7 +245,7 @@ func TestPrivateRegistry(t *testing.T) {
 		_, err = runEnvbuilder(t, []string{
 			"GIT_URL=" + url,
 			"DOCKERFILE_PATH=Dockerfile",
-			"DOCKER_CONFIG_BASE64=" + base64.RawStdEncoding.EncodeToString(config),
+			"DOCKER_CONFIG_BASE64=" + base64.StdEncoding.EncodeToString(config),
 		})
 		require.ErrorContains(t, err, "Unauthorized")
 	})
