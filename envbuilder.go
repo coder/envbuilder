@@ -243,14 +243,15 @@ func Run(ctx context.Context, options Options) error {
 			Depth:        options.GitCloneDepth,
 			CABundle:     caBundle,
 		})
-		if err != nil {
-			return err
-		}
-
-		if cloned {
-			endStage("📦 Cloned repository!")
+		if err == nil {
+			if cloned {
+				endStage("📦 Cloned repository!")
+			} else {
+				endStage("📦 The repository already exists!")
+			}
 		} else {
-			endStage("📦 The repository already exists!")
+			logf(codersdk.LogLevelError, "Failed to clone repository: %s", err.Error())
+			logf(codersdk.LogLevelError, "Falling back to the default image...")
 		}
 	}
 
@@ -452,6 +453,17 @@ func Run(ctx context.Context, options Options) error {
 	}
 	os.Setenv("HOME", user.HomeDir)
 
+	environ, err := os.ReadFile("/etc/environment")
+	if err == nil {
+		for _, env := range strings.Split(string(environ), "\n") {
+			pair := strings.SplitN(env, "=", 2)
+			if len(pair) != 2 {
+				continue
+			}
+			os.Setenv(pair[0], pair[1])
+		}
+	}
+
 	// It must be set in this parent process otherwise nothing will be found!
 	for _, env := range configFile.Config.Env {
 		pair := strings.SplitN(env, "=", 2)
@@ -495,6 +507,11 @@ func Run(ctx context.Context, options Options) error {
 		return fmt.Errorf("remove docker config: %w", err)
 	}
 
+	err = os.MkdirAll(options.WorkspaceFolder, 0755)
+	if err != nil {
+		return fmt.Errorf("create workspace folder: %w", err)
+	}
+
 	logf(codersdk.LogLevelInfo, "=== Running the init command %q as the %q user...", options.InitScript, user.Username)
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", options.InitScript)
 	cmd.Env = os.Environ()
@@ -520,7 +537,13 @@ func Run(ctx context.Context, options Options) error {
 		cmd.Stderr = &buf
 	}
 
-	return cmd.Run()
+	err = cmd.Run()
+	if err != nil {
+		fmt.Printf("FAILED! %s\n", err)
+		time.Sleep(time.Hour)
+		return fmt.Errorf("run init script: %w", err)
+	}
+	return nil
 }
 
 // DefaultWorkspaceFolder returns the default workspace folder

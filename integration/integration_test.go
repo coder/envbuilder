@@ -111,6 +111,17 @@ func TestBuildCustomCertificates(t *testing.T) {
 	require.Equal(t, "hello", strings.TrimSpace(output))
 }
 
+func TestCloneFailsFallback(t *testing.T) {
+	t.Parallel()
+	t.Run("BadRepo", func(t *testing.T) {
+		t.Parallel()
+		_, err := runEnvbuilder(t, []string{
+			"GIT_URL=bad-value",
+		})
+		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
+	})
+}
+
 func TestBuildFailsFallback(t *testing.T) {
 	t.Parallel()
 	t.Run("BadDockerfile", func(t *testing.T) {
