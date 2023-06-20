@@ -192,6 +192,7 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
+	var fallbackErr error
 	var cloned bool
 	if options.GitURL != "" {
 		endStage := startStage("📦 Cloning %s to %s...",
@@ -228,8 +229,7 @@ func Run(ctx context.Context, options Options) error {
 			options.GitURL = gitURL.String()
 		}
 
-		var err error
-		cloned, err = CloneRepo(ctx, CloneRepoOptions{
+		cloned, fallbackErr = CloneRepo(ctx, CloneRepoOptions{
 			Path:     options.WorkspaceFolder,
 			Storage:  options.Filesystem,
 			RepoURL:  options.GitURL,
@@ -243,14 +243,14 @@ func Run(ctx context.Context, options Options) error {
 			Depth:        options.GitCloneDepth,
 			CABundle:     caBundle,
 		})
-		if err == nil {
+		if fallbackErr == nil {
 			if cloned {
 				endStage("📦 Cloned repository!")
 			} else {
 				endStage("📦 The repository already exists!")
 			}
 		} else {
-			logf(codersdk.LogLevelError, "Failed to clone repository: %s", err.Error())
+			logf(codersdk.LogLevelError, "Failed to clone repository: %s", fallbackErr.Error())
 			logf(codersdk.LogLevelError, "Falling back to the default image...")
 		}
 	}
@@ -265,6 +265,11 @@ func Run(ctx context.Context, options Options) error {
 		}
 		defer file.Close()
 		if options.FallbackImage == "" {
+			if fallbackErr != nil {
+				return xerrors.Errorf("%s: %w", fallbackErr.Error(), ErrNoFallbackImage)
+			}
+			// We can't use errors.Join here because our tests
+			// don't support parsing a multiline error.
 			return ErrNoFallbackImage
 		}
 		_, err = file.Write([]byte("FROM " + options.FallbackImage))
@@ -377,8 +382,10 @@ func Run(ctx context.Context, options Options) error {
 		switch {
 		case strings.Contains(err.Error(), "parsing dockerfile"):
 			fallback = true
+			fallbackErr = err
 		case strings.Contains(err.Error(), "error building stage"):
 			fallback = true
+			fallbackErr = err
 		case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
 			logf(codersdk.LogLevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
 		}
@@ -539,8 +546,6 @@ func Run(ctx context.Context, options Options) error {
 
 	err = cmd.Run()
 	if err != nil {
-		fmt.Printf("FAILED! %s\n", err)
-		time.Sleep(time.Hour)
 		return fmt.Errorf("run init script: %w", err)
 	}
 	return nil

@@ -137,6 +137,7 @@ func TestBuildFailsFallback(t *testing.T) {
 			"DOCKERFILE_PATH=Dockerfile",
 		})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
+		require.ErrorContains(t, err, "dockerfile parse error")
 	})
 	t.Run("FailsBuild", func(t *testing.T) {
 		t.Parallel()

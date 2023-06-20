@@ -37,10 +37,11 @@ func TestSendLogsToCoder(t *testing.T) {
 	srvURL, err := url.Parse(srv.URL)
 	require.NoError(t, err)
 	client := agentsdk.New(srvURL)
-	sendLog, err := envbuilder.SendLogsToCoder(context.Background(), client, func(format string, args ...any) {
+	sendLog, closeFunc, err := envbuilder.SendLogsToCoder(context.Background(), client, func(format string, args ...any) {
 		t.Logf(format, args...)
 	})
 	require.NoError(t, err)
+	defer closeFunc()
 	sendLog(agentsdk.StartupLog{
 		Output: "Hello, world!",
 	})
