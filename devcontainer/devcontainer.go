@@ -1,7 +1,6 @@
 package devcontainer
 
 import (
-	"bufio"
 	"crypto/md5"
 	"fmt"
 	"io"
@@ -9,8 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/GoogleContainerTools/kaniko/pkg/creds"
 	"github.com/coder/envbuilder/devcontainer/features"
 	"github.com/go-git/go-billy/v5"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"muzzammil.xyz/jsonc"
 )
 
@@ -112,37 +114,36 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string) 
 	}
 	params.DockerfileContent = string(dockerfileContent)
 
-	// If we don't have a user provided, we look for the latest USER directive
-	// in the Dockerfile. This is what devcontainers/cli does.
 	if params.User == "" {
-		reader := bufio.NewScanner(strings.NewReader(params.DockerfileContent))
-		for reader.Scan() {
-			line := reader.Text()
-			if !strings.HasPrefix(line, "USER ") {
-				continue
-			}
-			params.User = strings.TrimPrefix(line, "USER ")
-			break
+		// We should make a best-effort attempt to find the user.
+		// Features must be executed as root, so we need to swap back
+		// to the running user afterwards.
+		params.User = UserFromDockerfile(params.DockerfileContent)
+	}
+	if params.User == "" {
+		image := ImageFromDockerfile(params.DockerfileContent)
+		imageRef, err := name.ParseReference(image)
+		if err != nil {
+			return nil, fmt.Errorf("parse image from dockerfile %q: %w", image, err)
+		}
+		params.User, err = UserFromImage(imageRef)
+		if err != nil {
+			return nil, fmt.Errorf("get user from image %q: %w", image, err)
 		}
 	}
-
-	if len(s.Features) > 0 {
-		featuresDir := filepath.Join(scratchDir, "features")
-		err := fs.MkdirAll(featuresDir, 0644)
-		if err != nil {
-			return nil, fmt.Errorf("create features directory: %w", err)
-		}
-		params.DockerfileContent, err = s.appendFeaturesToDockerfile(fs, scratchDir, params)
-		if err != nil {
-			return nil, err
-		}
-
-		fmt.Printf("Content: %s\n", params.DockerfileContent)
+	params.DockerfileContent, err = s.compileFeatures(fs, scratchDir, params.User, params.DockerfileContent)
+	if err != nil {
+		return nil, err
 	}
 	return params, nil
 }
 
-func (s *Spec) appendFeaturesToDockerfile(fs billy.Filesystem, scratchDir string, params *Compiled) (string, error) {
+func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, remoteUser, dockerfileContent string) (string, error) {
+	// If there are no features, we don't need to do anything!
+	if len(s.Features) == 0 {
+		return dockerfileContent, nil
+	}
+
 	featuresDir := filepath.Join(scratchDir, "features")
 	err := fs.MkdirAll(featuresDir, 0644)
 	if err != nil {
@@ -175,13 +176,54 @@ func (s *Spec) appendFeaturesToDockerfile(fs billy.Filesystem, scratchDir string
 
 	lines := []string{"\nUSER root"}
 	lines = append(lines, featureDirectives...)
-	if params.User != "" {
-		// TODO: We should warn!
-		lines = append(lines, fmt.Sprintf("USER %s", params.User))
+	if remoteUser != "" {
+		// TODO: We should warn that because we were unable to find the remote user,
+		// we're going to run as root.
+		lines = append(lines, fmt.Sprintf("USER %s", remoteUser))
 	}
-	return strings.Join(append([]string{params.DockerfileContent}, lines...), "\n"), err
+	return strings.Join(append([]string{dockerfileContent}, lines...), "\n"), err
 }
 
-func (s *Spec) User() {
+// UserFromDockerfile inspects the contents of a provided Dockerfile
+// and returns the user that will be used to run the container.
+func UserFromDockerfile(dockerfileContent string) string {
+	lines := strings.Split(dockerfileContent, "\n")
+	// Iterate over lines in reverse
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		if !strings.HasPrefix(line, "USER ") {
+			continue
+		}
+		return strings.TrimSpace(strings.TrimPrefix(line, "USER "))
+	}
+	return ""
+}
 
+// ImageFromDockerfile inspects the contents of a provided Dockerfile
+// and returns the image that will be used to run the container.
+func ImageFromDockerfile(dockerfileContent string) string {
+	lines := strings.Split(dockerfileContent, "\n")
+	// Iterate over lines in reverse
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		if !strings.HasPrefix(line, "FROM ") {
+			continue
+		}
+		return strings.TrimSpace(strings.TrimPrefix(line, "FROM "))
+	}
+	return ""
+}
+
+// UserFromImage inspects the remote reference and returns the user
+// that will be used to run the container.
+func UserFromImage(ref name.Reference) (string, error) {
+	image, err := remote.Image(ref, remote.WithAuthFromKeychain(creds.GetKeychain()))
+	if err != nil {
+		return "", fmt.Errorf("fetch image %s: %w", ref.Name(), err)
+	}
+	config, err := image.ConfigFile()
+	if err != nil {
+		return "", fmt.Errorf("fetch config %s: %w", ref.Name(), err)
+	}
+	return config.Config.User, nil
 }

@@ -1,12 +1,21 @@
 package devcontainer_test
 
 import (
+	"fmt"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer"
+	"github.com/coder/envbuilder/registrytest"
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/partial"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,4 +68,53 @@ func TestCompileDevContainer(t *testing.T) {
 		require.Equal(t, filepath.Join(dcDir, "Dockerfile"), params.DockerfilePath)
 		require.Equal(t, dcDir, params.BuildContext)
 	})
+}
+
+func TestUserFromDockerfile(t *testing.T) {
+	t.Parallel()
+	user := devcontainer.UserFromDockerfile("FROM ubuntu\nUSER kyle")
+	require.Equal(t, "kyle", user)
+}
+
+func TestUserFromImage(t *testing.T) {
+	t.Parallel()
+	registry := registrytest.New(t)
+	image, err := partial.UncompressedToImage(emptyImage{configFile: &v1.ConfigFile{
+		Config: v1.Config{
+			User: "example",
+		},
+	}})
+	require.NoError(t, err)
+
+	parsed, err := url.Parse(registry)
+	require.NoError(t, err)
+	parsed.Path = "coder/test:latest"
+	ref, err := name.ParseReference(strings.TrimPrefix(parsed.String(), "http://"))
+	require.NoError(t, err)
+	err = remote.Write(ref, image)
+	require.NoError(t, err)
+
+	user, err := devcontainer.UserFromImage(ref)
+	require.NoError(t, err)
+	require.Equal(t, "example", user)
+}
+
+type emptyImage struct {
+	configFile *v1.ConfigFile
+}
+
+func (i emptyImage) MediaType() (types.MediaType, error) {
+	return types.DockerManifestSchema2, nil
+}
+
+func (i emptyImage) RawConfigFile() ([]byte, error) {
+	return partial.RawConfigFile(i)
+}
+
+func (i emptyImage) ConfigFile() (*v1.ConfigFile, error) {
+	return i.configFile, nil
+}
+
+func (i emptyImage) LayerByDiffID(h v1.Hash) (partial.UncompressedLayer, error) {
+	return nil, fmt.Errorf("LayerByDiffID(%s): empty image", h)
 }
