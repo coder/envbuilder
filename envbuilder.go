@@ -30,7 +30,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
@@ -64,6 +64,11 @@ type Options struct {
 	// to push the cache image to. If this is empty, the cache
 	// will not be pushed.
 	CacheRepo string `env:"CACHE_REPO"`
+
+	// CacheDir is the path to the directory where the cache
+	// will be stored. If this is empty, the cache will not
+	// be used.
+	CacheDir string `env:"CACHE_DIR"`
 
 	// DockerfilePath is a relative path to the workspace
 	// folder that will be used to build the workspace.
@@ -236,7 +241,7 @@ func Run(ctx context.Context, options Options) error {
 			RepoURL:  options.GitURL,
 			Insecure: options.Insecure,
 			Progress: writer,
-			RepoAuth: &http.BasicAuth{
+			RepoAuth: &githttp.BasicAuth{
 				Username: options.GitUsername,
 				Password: options.GitPassword,
 			},
@@ -321,7 +326,6 @@ func Run(ctx context.Context, options Options) error {
 			buildParams = &devcontainer.Compiled{
 				DockerfilePath: dockerfilePath,
 				BuildContext:   options.WorkspaceFolder,
-				Cache:          true,
 			}
 		}
 	}
@@ -356,11 +360,12 @@ func Run(ctx context.Context, options Options) error {
 			CacheOptions: config.CacheOptions{
 				// Cache for a week by default!
 				CacheTTL: time.Hour * 24 * 7,
+				CacheDir: options.CacheDir,
 			},
 			ForceUnpack:       true,
 			BuildArgs:         buildParams.BuildArgs,
 			CacheRepo:         options.CacheRepo,
-			Cache:             buildParams.Cache && options.CacheRepo != "",
+			Cache:             true,
 			DockerfilePath:    buildParams.DockerfilePath,
 			DockerfileContent: buildParams.DockerfileContent,
 			RegistryOptions: config.RegistryOptions{

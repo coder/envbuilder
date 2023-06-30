@@ -50,7 +50,6 @@ type Compiled struct {
 	DockerfileContent string
 	BuildContext      string
 	BuildArgs         []string
-	Cache             bool
 
 	User string
 	Env  []string
@@ -90,7 +89,6 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string) 
 		buildArgs = append(buildArgs, key+"="+value)
 	}
 	params.BuildArgs = buildArgs
-	params.Cache = true
 
 	// Deprecated values!
 	if s.Dockerfile != "" {
