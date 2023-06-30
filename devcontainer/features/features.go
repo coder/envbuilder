@@ -93,11 +93,13 @@ func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
 		}
 		return nil, fmt.Errorf("stat install.sh: %w", err)
 	}
-	err = os.Chmod(installScriptPath, 0755)
-	if err != nil {
-		return nil, fmt.Errorf("chmod install.sh: %w", err)
+	changer, ok := fs.(billy.Change)
+	if ok {
+		err = changer.Chmod(installScriptPath, 0755)
+		if err != nil {
+			return nil, fmt.Errorf("chmod install.sh: %w", err)
+		}
 	}
-
 	featureFile, err := fs.Open(filepath.Join(directory, "devcontainer-feature.json"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
