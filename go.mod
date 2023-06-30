@@ -4,7 +4,7 @@ go 1.20
 
 // There are a few options we need added to Kaniko!
 // See: https://github.com/GoogleContainerTools/kaniko/compare/main...coder:kaniko:main
-replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20230406190105-1c7cb9148d0e
+replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20230630144655-c825422ea1d2
 
 // Required to import the codersdk!
 replace tailscale.com => github.com/coder/tailscale v1.1.1-0.20230323204624-bf5761af4a29
@@ -26,6 +26,7 @@ require (
 	github.com/spf13/cobra v1.6.1
 	github.com/stretchr/testify v1.8.2
 	github.com/zeebo/assert v1.3.0
+	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2
 	muzzammil.xyz/jsonc v1.0.0
 )
 
@@ -238,7 +239,6 @@ require (
 	golang.org/x/text v0.8.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.7.0 // indirect
-	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	golang.zx2c4.com/wireguard/windows v0.5.3 // indirect
 	google.golang.org/appengine v1.6.7 // indirect

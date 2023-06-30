@@ -1,15 +1,16 @@
-package envbuilder_test
+package devcontainer_test
 
 import (
 	"path/filepath"
 	"testing"
 
 	"github.com/coder/envbuilder"
+	"github.com/coder/envbuilder/devcontainer"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseDevContainer(t *testing.T) {
+func TestParse(t *testing.T) {
 	t.Parallel()
 	raw := `{
   "build": {
@@ -19,7 +20,7 @@ func TestParseDevContainer(t *testing.T) {
   // Comments here!
   "image": "codercom/code-server:latest"
 }`
-	parsed, err := envbuilder.ParseDevcontainer([]byte(raw))
+	parsed, err := devcontainer.Parse([]byte(raw))
 	require.NoError(t, err)
 	require.Equal(t, "Dockerfile", parsed.Build.Dockerfile)
 }
@@ -29,7 +30,7 @@ func TestCompileDevContainer(t *testing.T) {
 	t.Run("WithImage", func(t *testing.T) {
 		t.Parallel()
 		fs := memfs.New()
-		dc := &envbuilder.DevContainer{
+		dc := &devcontainer.Spec{
 			Image: "codercom/code-server:latest",
 		}
 		params, err := dc.Compile(fs, "", envbuilder.MagicDir)
@@ -40,8 +41,8 @@ func TestCompileDevContainer(t *testing.T) {
 	t.Run("WithBuild", func(t *testing.T) {
 		t.Parallel()
 		fs := memfs.New()
-		dc := &envbuilder.DevContainer{
-			Build: envbuilder.DevContainerBuild{
+		dc := &devcontainer.Spec{
+			Build: devcontainer.BuildSpec{
 				Dockerfile: "Dockerfile",
 				Context:    ".",
 				Args: map[string]string{

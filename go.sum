@@ -241,6 +241,8 @@ github.com/coder/coder v0.22.1-0.20230410192959-81e2b2500afa h1:9o19S9sl4SlBqrwH
 github.com/coder/coder v0.22.1-0.20230410192959-81e2b2500afa/go.mod h1:63FrVmS8jPGx892zW2LJ3j6hqipGE6Rc4oBLPfgsTlM=
 github.com/coder/kaniko v0.0.0-20230406190105-1c7cb9148d0e h1:J1cV6TxuIYJuRSf3aRQsbhekQTcF1t8jUjGHojz62sE=
 github.com/coder/kaniko v0.0.0-20230406190105-1c7cb9148d0e/go.mod h1:9spnlHjZQmvPavDUKdrSntKEKT1Z5aROo3Vbcx1TKCk=
+github.com/coder/kaniko v0.0.0-20230630144655-c825422ea1d2 h1:18QPpYBj9zVR0kzZ4dMldhFv1PiYNjp/7yljkpNeLfk=
+github.com/coder/kaniko v0.0.0-20230630144655-c825422ea1d2/go.mod h1:9spnlHjZQmvPavDUKdrSntKEKT1Z5aROo3Vbcx1TKCk=
 github.com/coder/retry v1.3.1-0.20230210155434-e90a2e1e091d h1:09JG37IgTB6n3ouX9BXdUiibGzkGGbslFuDZO9Ru9aw=
 github.com/coder/retry v1.3.1-0.20230210155434-e90a2e1e091d/go.mod h1:r+1J5i/989wt6CUeNSuvFKKA9hHuKKPMxdzDbTuvwwk=
 github.com/coder/tailscale v1.1.1-0.20230323204624-bf5761af4a29 h1:bZAOib5uT7ohTYcKKj8w5jH+HwBStBrZ/KcU26X0g+A=
