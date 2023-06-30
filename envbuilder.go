@@ -141,7 +141,7 @@ func Run(ctx context.Context, options Options) error {
 		options.InitScript = "sleep infinity"
 	}
 	if options.Filesystem == nil {
-		options.Filesystem = osfs.New("/")
+		options.Filesystem = &osfsWithChmod{osfs.New("/")}
 	}
 	if options.WorkspaceFolder == "" {
 		var err error
@@ -653,4 +653,12 @@ func newColor(value ...color.Attribute) *color.Color {
 	c := color.New(value...)
 	c.EnableColor()
 	return c
+}
+
+type osfsWithChmod struct {
+	billy.Filesystem
+}
+
+func (fs *osfsWithChmod) Chmod(name string, mode os.FileMode) error {
+	return os.Chmod(name, mode)
 }

@@ -2,7 +2,9 @@ package devcontainer_test
 
 import (
 	"fmt"
+	"io"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -62,6 +64,11 @@ func TestCompileDevContainer(t *testing.T) {
 		dcDir := "/workspaces/coder/.devcontainer"
 		err := fs.MkdirAll(dcDir, 0755)
 		require.NoError(t, err)
+		file, err := fs.OpenFile(filepath.Join(dcDir, "Dockerfile"), os.O_CREATE|os.O_WRONLY, 0644)
+		require.NoError(t, err)
+		_, err = io.WriteString(file, "FROM ubuntu")
+		require.NoError(t, err)
+		_ = file.Close()
 		params, err := dc.Compile(fs, dcDir, envbuilder.MagicDir)
 		require.NoError(t, err)
 		require.Equal(t, "ARG1=value1", params.BuildArgs[0])

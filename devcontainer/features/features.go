@@ -93,13 +93,13 @@ func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
 		}
 		return nil, fmt.Errorf("stat install.sh: %w", err)
 	}
-	changer, ok := fs.(billy.Change)
+	chmodder, ok := fs.(interface {
+		Chmod(name string, mode os.FileMode) error
+	})
 	if ok {
-		err = changer.Chmod(installScriptPath, 0755)
-	} else {
 		// For some reason the filesystem abstraction doesn't support chmod.
 		// https://github.com/src-d/go-billy/issues/56
-		err = os.Chmod(installScriptPath, 0755)
+		err = chmodder.Chmod(installScriptPath, 0755)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("chmod install.sh: %w", err)

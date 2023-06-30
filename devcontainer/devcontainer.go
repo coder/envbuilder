@@ -74,7 +74,7 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string) 
 		dockerfilePath := filepath.Join(scratchDir, "Dockerfile")
 		file, err := fs.OpenFile(dockerfilePath, os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("open dockerfile: %w", err)
 		}
 		defer file.Close()
 		_, err = file.Write([]byte("FROM " + s.Image))
@@ -83,6 +83,17 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string) 
 		}
 		params.DockerfilePath = dockerfilePath
 		params.BuildContext = scratchDir
+	} else {
+		// Deprecated values!
+		if s.Dockerfile != "" {
+			s.Build.Dockerfile = s.Dockerfile
+		}
+		if s.Context != "" {
+			s.Build.Context = s.Context
+		}
+
+		params.DockerfilePath = filepath.Join(devcontainerDir, s.Build.Dockerfile)
+		params.BuildContext = filepath.Join(devcontainerDir, s.Build.Context)
 	}
 	buildArgs := make([]string, 0)
 	for key, value := range s.Build.Args {
@@ -90,20 +101,9 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string) 
 	}
 	params.BuildArgs = buildArgs
 
-	// Deprecated values!
-	if s.Dockerfile != "" {
-		s.Build.Dockerfile = s.Dockerfile
-	}
-	if s.Context != "" {
-		s.Build.Context = s.Context
-	}
-
-	params.DockerfilePath = filepath.Join(devcontainerDir, s.Build.Dockerfile)
-	params.BuildContext = filepath.Join(devcontainerDir, s.Build.Context)
-
 	dockerfile, err := fs.Open(params.DockerfilePath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open dockerfile %q: %w", params.DockerfilePath, err)
 	}
 	defer dockerfile.Close()
 	dockerfileContent, err := io.ReadAll(dockerfile)
