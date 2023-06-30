@@ -24,12 +24,13 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
 	"github.com/coder/coder/codersdk"
+	"github.com/coder/envbuilder/devcontainer"
 	"github.com/containerd/containerd/platforms"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/fatih/color"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
-	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
@@ -63,6 +64,11 @@ type Options struct {
 	// to push the cache image to. If this is empty, the cache
 	// will not be pushed.
 	CacheRepo string `env:"CACHE_REPO"`
+
+	// CacheDir is the path to the directory where the cache
+	// will be stored. If this is empty, the cache will not
+	// be used.
+	CacheDir string `env:"CACHE_DIR"`
 
 	// DockerfilePath is a relative path to the workspace
 	// folder that will be used to build the workspace.
@@ -135,7 +141,7 @@ func Run(ctx context.Context, options Options) error {
 		options.InitScript = "sleep infinity"
 	}
 	if options.Filesystem == nil {
-		options.Filesystem = osfs.New("/")
+		options.Filesystem = &osfsWithChmod{osfs.New("/")}
 	}
 	if options.WorkspaceFolder == "" {
 		var err error
@@ -235,7 +241,7 @@ func Run(ctx context.Context, options Options) error {
 			RepoURL:  options.GitURL,
 			Insecure: options.Insecure,
 			Progress: writer,
-			RepoAuth: &http.BasicAuth{
+			RepoAuth: &githttp.BasicAuth{
 				Username: options.GitUsername,
 				Password: options.GitPassword,
 			},
@@ -255,7 +261,7 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
-	var buildParams *BuildParameters
+	var buildParams *devcontainer.Compiled
 
 	defaultBuildParams := func() error {
 		dockerfile := filepath.Join(MagicDir, "Dockerfile")
@@ -276,7 +282,7 @@ func Run(ctx context.Context, options Options) error {
 		if err != nil {
 			return err
 		}
-		buildParams = &BuildParameters{
+		buildParams = &devcontainer.Compiled{
 			DockerfilePath: dockerfile,
 			BuildContext:   MagicDir,
 		}
@@ -301,7 +307,7 @@ func Run(ctx context.Context, options Options) error {
 			if err != nil {
 				return fmt.Errorf("read devcontainer.json: %w", err)
 			}
-			devContainer, err := ParseDevcontainer(content)
+			devContainer, err := devcontainer.Parse(content)
 			if err == nil {
 				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir)
 				if err != nil {
@@ -317,10 +323,9 @@ func Run(ctx context.Context, options Options) error {
 		dockerfilePath := filepath.Join(options.WorkspaceFolder, options.DockerfilePath)
 		_, err := options.Filesystem.Stat(dockerfilePath)
 		if err == nil {
-			buildParams = &BuildParameters{
+			buildParams = &devcontainer.Compiled{
 				DockerfilePath: dockerfilePath,
 				BuildContext:   options.WorkspaceFolder,
-				Cache:          true,
 			}
 		}
 	}
@@ -355,12 +360,14 @@ func Run(ctx context.Context, options Options) error {
 			CacheOptions: config.CacheOptions{
 				// Cache for a week by default!
 				CacheTTL: time.Hour * 24 * 7,
+				CacheDir: options.CacheDir,
 			},
-			ForceUnpack:    true,
-			BuildArgs:      buildParams.BuildArgs,
-			CacheRepo:      options.CacheRepo,
-			Cache:          buildParams.Cache && options.CacheRepo != "",
-			DockerfilePath: buildParams.DockerfilePath,
+			ForceUnpack:       true,
+			BuildArgs:         buildParams.BuildArgs,
+			CacheRepo:         options.CacheRepo,
+			Cache:             true,
+			DockerfilePath:    buildParams.DockerfilePath,
+			DockerfileContent: buildParams.DockerfileContent,
 			RegistryOptions: config.RegistryOptions{
 				Insecure:      options.Insecure,
 				InsecurePull:  options.Insecure,
@@ -412,7 +419,7 @@ func Run(ctx context.Context, options Options) error {
 	// devcontainer metadata can be persisted through a standard label
 	devContainerMetadata, exists := configFile.Config.Labels["devcontainer.metadata"]
 	if exists {
-		var devContainer []*DevContainer
+		var devContainer []*devcontainer.Spec
 		err := json.Unmarshal([]byte(devContainerMetadata), &devContainer)
 		if err != nil {
 			return fmt.Errorf("unmarshal metadata: %w", err)
@@ -565,16 +572,6 @@ func DefaultWorkspaceFolder(repoURL string) (string, error) {
 	return fmt.Sprintf("/workspaces/%s", name[len(name)-1]), nil
 }
 
-type BuildParameters struct {
-	DockerfilePath string
-	BuildContext   string
-	BuildArgs      []string
-	Cache          bool
-
-	User string
-	Env  []string
-}
-
 // findUser looks up a user by name or ID.
 func findUser(nameOrID string) (*user.User, error) {
 	if nameOrID == "" {
@@ -656,4 +653,12 @@ func newColor(value ...color.Attribute) *color.Color {
 	c := color.New(value...)
 	c.EnableColor()
 	return c
+}
+
+type osfsWithChmod struct {
+	billy.Filesystem
+}
+
+func (fs *osfsWithChmod) Chmod(name string, mode os.FileMode) error {
+	return os.Chmod(name, mode)
 }

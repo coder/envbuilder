@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"github.com/coder/envbuilder"
+	"github.com/coder/envbuilder/devcontainer/features"
 	"github.com/coder/envbuilder/gittest"
+	"github.com/coder/envbuilder/registrytest"
 	clitypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -72,6 +74,50 @@ func TestSucceedsGitAuth(t *testing.T) {
 		"GIT_PASSWORD=testing",
 	})
 	require.NoError(t, err)
+}
+
+func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
+	t.Parallel()
+
+	registry := registrytest.New(t)
+	ref := registrytest.WriteContainer(t, registry, "coder/test:latest", features.TarLayerMediaType, map[string]any{
+		"devcontainer-feature.json": &features.Spec{
+			ID:      "test",
+			Name:    "test",
+			Version: "1.0.0",
+			Options: map[string]features.Option{
+				"bananas": {
+					Type: "string",
+				},
+			},
+		},
+		"install.sh": "echo $BANANAS > /test",
+	})
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	url := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+				"features": {
+					"` + ref + `": {
+						"bananas": "hello"
+					}
+				}
+			}`,
+			".devcontainer/Dockerfile": "FROM ubuntu",
+		},
+	})
+	ctr, err := runEnvbuilder(t, []string{
+		"GIT_URL=" + url,
+	})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /test")
+	require.Equal(t, "hello", strings.TrimSpace(output))
 }
 
 func TestBuildFromDockerfile(t *testing.T) {
