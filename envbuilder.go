@@ -393,13 +393,17 @@ func Run(ctx context.Context, options Options) error {
 		case strings.Contains(err.Error(), "error building stage"):
 			fallback = true
 			fallbackErr = err
+		// This occurs when the image cannot be found!
+		case strings.Contains(err.Error(), "authentication required"):
+			fallback = true
+			fallbackErr = err
 		case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
 			logf(codersdk.LogLevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
 		}
 		if !fallback {
 			return err
 		}
-		logf(codersdk.LogLevelError, "Failed to build with the provided context: %s", err)
+		logf(codersdk.LogLevelError, "Failed to build: %s", err)
 		logf(codersdk.LogLevelError, "Falling back to the default image...")
 		err = defaultBuildParams()
 		if err != nil {
