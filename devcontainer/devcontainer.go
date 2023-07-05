@@ -119,14 +119,13 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string) 
 		params.User = UserFromDockerfile(params.DockerfileContent)
 	}
 	if params.User == "" {
-		image := ImageFromDockerfile(params.DockerfileContent)
-		imageRef, err := name.ParseReference(image)
+		imageRef, err := ImageFromDockerfile(params.DockerfileContent)
 		if err != nil {
-			return nil, fmt.Errorf("parse image from dockerfile %q: %w", image, err)
+			return nil, fmt.Errorf("parse image from dockerfile: %w", err)
 		}
 		params.User, err = UserFromImage(imageRef)
 		if err != nil {
-			return nil, fmt.Errorf("get user from image %q: %w", image, err)
+			return nil, fmt.Errorf("get user from image: %w", err)
 		}
 	}
 	params.DockerfileContent, err = s.compileFeatures(fs, scratchDir, params.User, params.DockerfileContent)
@@ -199,7 +198,7 @@ func UserFromDockerfile(dockerfileContent string) string {
 
 // ImageFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the image that will be used to run the container.
-func ImageFromDockerfile(dockerfileContent string) string {
+func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
 	lines := strings.Split(dockerfileContent, "\n")
 	// Iterate over lines in reverse
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -207,9 +206,14 @@ func ImageFromDockerfile(dockerfileContent string) string {
 		if !strings.HasPrefix(line, "FROM ") {
 			continue
 		}
-		return strings.TrimSpace(strings.TrimPrefix(line, "FROM "))
+		imageRef := strings.TrimSpace(strings.TrimPrefix(line, "FROM "))
+		image, err := name.ParseReference(imageRef)
+		if err != nil {
+			return nil, fmt.Errorf("parse image ref %q: %w", imageRef, err)
+		}
+		return image, nil
 	}
-	return ""
+	return nil, fmt.Errorf("no FROM directive found")
 }
 
 // UserFromImage inspects the remote reference and returns the user

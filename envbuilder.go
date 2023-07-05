@@ -26,6 +26,7 @@ import (
 	dcontext "github.com/distribution/distribution/v3/context"
 
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
+	"github.com/GoogleContainerTools/kaniko/pkg/creds"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
 	"github.com/coder/coder/codersdk"
 	"github.com/coder/envbuilder/devcontainer"
@@ -39,13 +40,10 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/xerrors"
-)
-
-var (
-	ErrNoFallbackImage = errors.New("no fallback image has been specified")
 )
 
 const (
@@ -61,6 +59,16 @@ const (
 	// This is a special directory that must not be modified
 	// by the user or images.
 	MagicDir = ".envbuilder"
+)
+
+var (
+	ErrNoFallbackImage = errors.New("no fallback image has been specified")
+
+	// MagicFile is a file that is created in the workspace
+	// when envbuilder has already been run. This is used
+	// to skip building when a container is restarting.
+	// e.g. docker stop -> docker start
+	MagicFile = filepath.Join(MagicDir, "built")
 )
 
 type Options struct {
@@ -292,13 +300,15 @@ func Run(ctx context.Context, options Options) error {
 			// don't support parsing a multiline error.
 			return ErrNoFallbackImage
 		}
-		_, err = file.Write([]byte("FROM " + options.FallbackImage))
+		content := "FROM " + options.FallbackImage
+		_, err = file.Write([]byte(content))
 		if err != nil {
 			return err
 		}
 		buildParams = &devcontainer.Compiled{
-			DockerfilePath: dockerfile,
-			BuildContext:   MagicDir,
+			DockerfilePath:    dockerfile,
+			DockerfileContent: content,
+			BuildContext:      MagicDir,
 		}
 		return nil
 	}
@@ -335,11 +345,16 @@ func Run(ctx context.Context, options Options) error {
 	} else {
 		// If a Dockerfile was specified, we use that.
 		dockerfilePath := filepath.Join(options.WorkspaceFolder, options.DockerfilePath)
-		_, err := options.Filesystem.Stat(dockerfilePath)
+		dockerfile, err := options.Filesystem.Open(dockerfilePath)
 		if err == nil {
+			content, err := io.ReadAll(dockerfile)
+			if err != nil {
+				return fmt.Errorf("read Dockerfile: %w", err)
+			}
 			buildParams = &devcontainer.Compiled{
-				DockerfilePath: dockerfilePath,
-				BuildContext:   options.WorkspaceFolder,
+				DockerfilePath:    dockerfilePath,
+				DockerfileContent: string(content),
+				BuildContext:      options.WorkspaceFolder,
 			}
 		}
 	}
@@ -408,6 +423,20 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	build := func() (v1.Image, error) {
+		_, err := options.Filesystem.Stat(MagicFile)
+		if err == nil {
+			endStage := startStage("🏗️ Skipping build because of cache...")
+			imageRef, err := devcontainer.ImageFromDockerfile(buildParams.DockerfileContent)
+			if err != nil {
+				return nil, fmt.Errorf("image from dockerfile: %w", err)
+			}
+			image, err := remote.Image(imageRef, remote.WithAuthFromKeychain(creds.GetKeychain()))
+			if err != nil {
+				return nil, fmt.Errorf("image from remote: %w", err)
+			}
+			endStage("🏗️ Found image from remote!")
+			return image, nil
+		}
 		endStage := startStage("🏗️ Building image...")
 		// At this point we have all the context, we can now build!
 		image, err := executor.DoBuild(&config.KanikoOptions{
@@ -481,6 +510,14 @@ func Run(ctx context.Context, options Options) error {
 	if closeAfterBuild != nil {
 		closeAfterBuild()
 	}
+
+	// Create the magic file to indicate that this build
+	// has already been ran before!
+	file, err := options.Filesystem.Create(MagicFile)
+	if err != nil {
+		return fmt.Errorf("create magic file: %w", err)
+	}
+	_ = file.Close()
 
 	configFile, err := image.ConfigFile()
 	if err != nil {
