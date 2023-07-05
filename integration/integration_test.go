@@ -157,6 +157,39 @@ func TestBuildCustomCertificates(t *testing.T) {
 	require.Equal(t, "hello", strings.TrimSpace(output))
 }
 
+func TestBuildStopStartCached(t *testing.T) {
+	// Ensures that a Git repository with a Dockerfile is cloned and built.
+	url := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			"Dockerfile": "FROM alpine:latest",
+		},
+	})
+	ctr, err := runEnvbuilder(t, []string{
+		"GIT_URL=" + url,
+		"DOCKERFILE_PATH=Dockerfile",
+	})
+	require.NoError(t, err)
+
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	require.NoError(t, err)
+	defer cli.Close()
+
+	ctx := context.Background()
+	err = cli.ContainerStop(ctx, ctr, container.StopOptions{})
+	require.NoError(t, err)
+
+	err = cli.ContainerStart(ctx, ctr, types.ContainerStartOptions{})
+	require.NoError(t, err)
+
+	logChan, _ := streamContainerLogs(t, cli, ctr)
+	for {
+		log := <-logChan
+		if strings.Contains(log, "Skipping build because of cache") {
+			break
+		}
+	}
+}
+
 func TestCloneFailsFallback(t *testing.T) {
 	t.Parallel()
 	t.Run("BadRepo", func(t *testing.T) {
@@ -470,38 +503,17 @@ func runEnvbuilder(t *testing.T, env []string) (string, error) {
 	})
 	err = cli.ContainerStart(ctx, ctr.ID, types.ContainerStartOptions{})
 	require.NoError(t, err)
-	rawLogs, err := cli.ContainerLogs(ctx, ctr.ID, types.ContainerLogsOptions{
-		ShowStdout: true,
-		ShowStderr: true,
-		Follow:     true,
-		Timestamps: false,
-	})
-	require.NoError(t, err)
-	errChan := make(chan error)
 
-	logsReader, logsWriter := io.Pipe()
+	logChan, errChan := streamContainerLogs(t, cli, ctr.ID)
 	go func() {
-		_, err := stdcopy.StdCopy(logsWriter, logsWriter, rawLogs)
-		assert.NoError(t, err)
-		_ = logsReader.Close()
-		_ = logsWriter.Close()
-	}()
-	go func() {
-		defer close(errChan)
-		scanner := bufio.NewScanner(logsReader)
-		for scanner.Scan() {
-			t.Logf("%q", strings.TrimSpace(scanner.Text()))
-			if strings.HasPrefix(scanner.Text(), "error: ") {
-				errChan <- errors.New(scanner.Text())
-				return
-			}
-			if strings.HasPrefix(scanner.Text(), "=== Running the init command") {
+		defer close(logChan)
+		for log := range logChan {
+			if strings.HasPrefix(log, "=== Running the init command") {
 				errChan <- nil
 				return
 			}
 		}
 	}()
-
 	return ctr.ID, <-errChan
 }
 
@@ -527,4 +539,43 @@ func execContainer(t *testing.T, containerID, command string) string {
 	_, err = stdcopy.StdCopy(&buf, &buf, resp.Reader)
 	require.NoError(t, err)
 	return buf.String()
+}
+
+func streamContainerLogs(t *testing.T, cli *client.Client, containerID string) (chan string, chan error) {
+	ctx := context.Background()
+	err := cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
+	require.NoError(t, err)
+	rawLogs, err := cli.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+		Timestamps: false,
+	})
+	require.NoError(t, err)
+
+	logChan := make(chan string, 1)
+	errChan := make(chan error, 1)
+
+	logsReader, logsWriter := io.Pipe()
+	go func() {
+		_, err := stdcopy.StdCopy(logsWriter, logsWriter, rawLogs)
+		assert.NoError(t, err)
+		_ = logsReader.Close()
+		_ = logsWriter.Close()
+	}()
+	go func() {
+		defer close(errChan)
+		scanner := bufio.NewScanner(logsReader)
+		for scanner.Scan() {
+			t.Logf("%q", strings.TrimSpace(scanner.Text()))
+			if strings.HasPrefix(scanner.Text(), "error: ") {
+				errChan <- errors.New(scanner.Text())
+				return
+			}
+
+			logChan <- scanner.Text()
+		}
+	}()
+
+	return logChan, errChan
 }
