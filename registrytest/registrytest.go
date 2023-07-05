@@ -3,33 +3,55 @@ package registrytest
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"crypto"
 	"encoding/hex"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/distribution/distribution/v3/configuration"
+	"github.com/distribution/distribution/v3/registry/handlers"
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+
+	// needed by the registry
+	_ "github.com/distribution/distribution/v3/registry/storage/driver/inmemory"
 )
 
 // New creates a new registry server that discards all logs.
 func New(t *testing.T) string {
-	srv := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
+	cfg := &configuration.Configuration{
+		Storage: configuration.Storage{
+			"inmemory": configuration.Parameters{},
+		},
+	}
+	logrus.SetOutput(io.Discard)
+	app := handlers.NewApp(context.Background(), cfg)
+	srv := httptest.NewServer(app)
 	t.Cleanup(srv.Close)
 	return srv.URL
+}
+
+type logrusFormatter struct {
+	callback func(entry *logrus.Entry)
+	empty    []byte
+}
+
+func (f *logrusFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+	f.callback(entry)
+	return f.empty, nil
 }
 
 // WriteContainer uploads a container to the registry server.

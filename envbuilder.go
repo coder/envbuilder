@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -21,11 +23,16 @@ import (
 	"syscall"
 	"time"
 
+	dcontext "github.com/distribution/distribution/v3/context"
+
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
 	"github.com/coder/coder/codersdk"
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/containerd/containerd/platforms"
+	"github.com/distribution/distribution/v3/configuration"
+	"github.com/distribution/distribution/v3/registry/handlers"
+	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/fatih/color"
 	"github.com/go-git/go-billy/v5"
@@ -65,10 +72,17 @@ type Options struct {
 	// will not be pushed.
 	CacheRepo string `env:"CACHE_REPO"`
 
-	// CacheDir is the path to the directory where the cache
-	// will be stored. If this is empty, the cache will not
-	// be used.
-	CacheDir string `env:"CACHE_DIR"`
+	// BaseImageCacheDir is the path to a directory where the base
+	// image can be found. This should be a read-only directory
+	// solely mounted for the purpose of caching the base image.
+	BaseImageCacheDir string `env:"BASE_IMAGECACHE_DIR"`
+
+	// LayerCacheDir is the path to a directory where built layers
+	// will be stored. This spawns an in-memory registry to serve
+	// the layers from.
+	//
+	// It will override CacheRepo if both are specified.
+	LayerCacheDir string `env:"LAYER_CACHE_DIR"`
 
 	// DockerfilePath is a relative path to the workspace
 	// folder that will be used to build the workspace.
@@ -345,6 +359,54 @@ func Run(ctx context.Context, options Options) error {
 		}
 	})
 
+	var closeAfterBuild func()
+	// Allows quick testing of layer caching using a local directory!
+	if options.LayerCacheDir != "" {
+		cfg := &configuration.Configuration{
+			Storage: configuration.Storage{
+				"filesystem": configuration.Parameters{
+					"rootdirectory": options.LayerCacheDir,
+				},
+			},
+		}
+
+		// Disable all logging from the registry...
+		logger := logrus.New()
+		logger.SetOutput(io.Discard)
+		entry := logrus.NewEntry(logger)
+		dcontext.SetDefaultLogger(entry)
+		ctx = dcontext.WithLogger(ctx, entry)
+
+		// Spawn an in-memory registry to cache built layers...
+		registry := handlers.NewApp(ctx, cfg)
+
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return err
+		}
+		tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+		if !ok {
+			return fmt.Errorf("listener addr was of wrong type: %T", listener.Addr())
+		}
+		srv := &http.Server{
+			Handler: registry,
+		}
+		go func() {
+			err := srv.Serve(listener)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logf(codersdk.LogLevelError, "Failed to serve registry: %s", err.Error())
+			}
+		}()
+		closeAfterBuild = func() {
+			_ = srv.Close()
+			_ = listener.Close()
+		}
+		if options.CacheRepo != "" {
+			logf(codersdk.LogLevelWarn, "Overriding cache repo with local registry...")
+		}
+		options.CacheRepo = fmt.Sprintf("localhost:%d/local/cache", tcpAddr.Port)
+	}
+
 	build := func() (v1.Image, error) {
 		endStage := startStage("🏗️ Building image...")
 		// At this point we have all the context, we can now build!
@@ -355,12 +417,13 @@ func Run(ctx context.Context, options Options) error {
 			RunV2:             true,
 			Destinations:      []string{"local"},
 			CacheRunLayers:    true,
+			IgnorePaths:       []string{options.LayerCacheDir, options.WorkspaceFolder, MagicDir},
 			CacheCopyLayers:   true,
 			CompressedCaching: true,
 			CacheOptions: config.CacheOptions{
 				// Cache for a week by default!
 				CacheTTL: time.Hour * 24 * 7,
-				CacheDir: options.CacheDir,
+				CacheDir: options.BaseImageCacheDir,
 			},
 			ForceUnpack:       true,
 			BuildArgs:         buildParams.BuildArgs,
@@ -413,6 +476,10 @@ func Run(ctx context.Context, options Options) error {
 	}
 	if err != nil {
 		return fmt.Errorf("build with kaniko: %w", err)
+	}
+
+	if closeAfterBuild != nil {
+		closeAfterBuild()
 	}
 
 	configFile, err := image.ConfigFile()
