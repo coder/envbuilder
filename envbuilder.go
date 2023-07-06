@@ -487,7 +487,7 @@ func Run(ctx context.Context, options Options) error {
 			ForceUnpack:       true,
 			BuildArgs:         buildParams.BuildArgs,
 			CacheRepo:         options.CacheRepo,
-			Cache:             true,
+			Cache:             options.CacheRepo != "",
 			DockerfilePath:    buildParams.DockerfilePath,
 			DockerfileContent: buildParams.DockerfileContent,
 			RegistryOptions: config.RegistryOptions{
