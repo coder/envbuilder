@@ -135,7 +135,7 @@ The `SETUP_SCRIPT` environment variable dynamically configures the user and init
 > **Note**
 > `TARGET_USER` is passed to the setup script to specify who will execute `INIT_COMMAND` (e.g., `code`).
 
-Write the following to `$CODER_ENV` to shape the container's init process:
+Write the following to `$ENVBUILDER_ENV` to shape the container's init process:
 
 - `TARGET_USER`: Identifies the `INIT_COMMAND` executor (e.g.`root`).
 - `INIT_COMMAND`: Defines the command executed by `TARGET_USER` (e.g. `/bin/bash`).
@@ -145,9 +145,9 @@ Write the following to `$CODER_ENV` to shape the container's init process:
 # init.sh - change the init if systemd exists
 if command -v systemd >/dev/null; then
   echo "Hey 👋 $TARGET_USER"
-  echo INIT_COMMAND=systemd >> $CODER_ENV
+  echo INIT_COMMAND=systemd >> $ENVBUILDER_ENV
 else
-  echo INIT_COMMAND=bash >> $CODER_ENV
+  echo INIT_COMMAND=bash >> $ENVBUILDER_ENV
 fi
 
 # run envbuilder with the setup script

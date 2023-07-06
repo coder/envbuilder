@@ -683,7 +683,7 @@ func Run(ctx context.Context, options Options) error {
 
 		logf(codersdk.LogLevelInfo, "=== Running the setup command %q as the root user...", options.SetupScript)
 
-		envKey := "CODER_ENV"
+		envKey := "ENVBUILDER_ENV"
 		envFile := filepath.Join("/", MagicDir, "environ")
 		file, err := os.Create(envFile)
 		if err != nil {

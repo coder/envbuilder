@@ -147,7 +147,7 @@ func TestBuildWithSetupScript(t *testing.T) {
 	ctr, err := runEnvbuilder(t, []string{
 		"GIT_URL=" + url,
 		"DOCKERFILE_PATH=Dockerfile",
-		"SETUP_SCRIPT=echo \"INIT_ARGS=-c 'echo hi > /wow && sleep infinity'\" >> $CODER_ENV",
+		"SETUP_SCRIPT=echo \"INIT_ARGS=-c 'echo hi > /wow && sleep infinity'\" >> $ENVBUILDER_ENV",
 	})
 	require.NoError(t, err)
 
