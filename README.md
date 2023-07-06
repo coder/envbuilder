@@ -128,6 +128,35 @@ Each layer is stored in the registry as a separate image. The image tag is the h
 
 The performance improvement of builds depends on the complexity of your Dockerfile. For [`coder/coder`](https://github.com/coder/coder/blob/main/.devcontainer/Dockerfile), uncached builds take 36m while cached builds take 40s (~98% improvement).
 
+## Setup Script
+
+The `SETUP_SCRIPT` environment variable dynamically configures the user and init command (PID 1) after the container build process.
+
+> **Note**
+> `TARGET_USER` is passed to the setup script to specify who will execute `INIT_COMMAND` (e.g., `code`).
+
+Write the following to `$CODER_ENV` to shape the container's init process:
+
+- `TARGET_USER`: Identifies the `INIT_COMMAND` executor (e.g.`root`).
+- `INIT_COMMAND`: Defines the command executed by `TARGET_USER` (e.g. `/bin/bash`).
+- `INIT_ARGS`: Arguments provided to `INIT_COMMAND` (e.g. `-c 'sleep infinity'`).
+
+```bash
+# init.sh - change the init if systemd exists
+if command -v systemd >/dev/null; then
+  echo "Hey 👋 $TARGET_USER"
+  echo INIT_COMMAND=systemd >> $CODER_ENV
+else
+  echo INIT_COMMAND=bash >> $CODER_ENV
+fi
+
+# run envbuilder with the setup script
+docker run -it --rm \
+  -v ./:/some-dir \
+  -e SETUP_SCRIPT=/some-dir/init.sh \
+  ...
+```
+
 ## Custom Certificates
 
 - [`SSL_CERT_FILE`](https://go.dev/src/crypto/x509/root_unix.go#L19): Specifies the path to an SSL certificate.

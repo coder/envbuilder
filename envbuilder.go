@@ -24,6 +24,8 @@ import (
 	"time"
 
 	dcontext "github.com/distribution/distribution/v3/context"
+	"github.com/kballard/go-shellquote"
+	"github.com/mattn/go-isatty"
 
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
@@ -41,7 +43,6 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/xerrors"
 )
@@ -72,8 +73,25 @@ var (
 )
 
 type Options struct {
+	// SetupScript is the script to run before the init script.
+	// It runs as the root user regardless of the user specified
+	// in the devcontainer.json file.
+
+	// SetupScript is ran as the root user prior to the init script.
+	// It is used to configure envbuilder dynamically during the runtime.
+	// e.g. specifying whether to start `systemd` or `tiny init` for PID 1.
+	SetupScript string `env:"SETUP_SCRIPT"`
+
 	// InitScript is the script to run to initialize the workspace.
 	InitScript string `env:"INIT_SCRIPT"`
+
+	// InitCommand is the command to run to initialize the workspace.
+	InitCommand string `env:"INIT_COMMAND"`
+
+	// InitArgs are the arguments to pass to the init command.
+	// They are split according to `/bin/sh` rules with
+	// https://github.com/kballard/go-shellquote
+	InitArgs string `env:"INIT_ARGS"`
 
 	// CacheRepo is the name of the container registry
 	// to push the cache image to. If this is empty, the cache
@@ -161,6 +179,18 @@ type DockerConfig configfile.ConfigFile
 func Run(ctx context.Context, options Options) error {
 	if options.InitScript == "" {
 		options.InitScript = "sleep infinity"
+	}
+	if options.InitCommand == "" {
+		options.InitCommand = "/bin/sh"
+	}
+	// Default to the shell!
+	initArgs := []string{"-c", options.InitScript}
+	if options.InitArgs != "" {
+		var err error
+		initArgs, err = shellquote.Split(options.InitArgs)
+		if err != nil {
+			return fmt.Errorf("parse init args: %w", err)
+		}
 	}
 	if options.Filesystem == nil {
 		options.Filesystem = &osfsWithChmod{osfs.New("/")}
@@ -547,33 +577,14 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
-	username := configFile.Config.User
-	if buildParams.User != "" {
-		username = buildParams.User
+	// Sanitize the environment of any options!
+	unsetOptionsEnv()
+
+	// Remove the Docker config secret file!
+	err = os.Remove(filepath.Join(os.Getenv("DOCKER_CONFIG"), "config.json"))
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove docker config: %w", err)
 	}
-	if username == "" {
-		logf(codersdk.LogLevelWarn, "#3: no user specified, using root")
-	}
-	user, err := findUser(username)
-	if err != nil {
-		return fmt.Errorf("find user: %w", err)
-	}
-	uid, err := strconv.Atoi(user.Uid)
-	if err != nil {
-		return fmt.Errorf("parse uid: %w", err)
-	}
-	gid, err := strconv.Atoi(user.Gid)
-	if err != nil {
-		return fmt.Errorf("parse gid: %w", err)
-	}
-	if user.Username == "" && uid == 0 {
-		// This is nice for the visual display in log messages,
-		// but has no actual functionality since the credential
-		// in the syscall is what matters.
-		user.Username = "root"
-		user.HomeDir = "/root"
-	}
-	os.Setenv("HOME", user.HomeDir)
 
 	environ, err := os.ReadFile("/etc/environment")
 	if err == nil {
@@ -596,14 +607,43 @@ func Run(ctx context.Context, options Options) error {
 		os.Setenv(pair[0], pair[1])
 	}
 
-	sysProcAttr := &syscall.SysProcAttr{
-		Credential: &syscall.Credential{
-			Uid: uint32(uid),
-			Gid: uint32(gid),
-		},
+	username := configFile.Config.User
+	if buildParams.User != "" {
+		username = buildParams.User
 	}
-
-	unsetOptionsEnv()
+	if username == "" {
+		logf(codersdk.LogLevelWarn, "#3: no user specified, using root")
+	}
+	var user *user.User
+	var uid int
+	var gid int
+	updateUser := func(username string) error {
+		var err error
+		user, err = findUser(username)
+		if err != nil {
+			return fmt.Errorf("find user: %w", err)
+		}
+		uid, err = strconv.Atoi(user.Uid)
+		if err != nil {
+			return fmt.Errorf("parse uid: %w", err)
+		}
+		gid, err = strconv.Atoi(user.Gid)
+		if err != nil {
+			return fmt.Errorf("parse gid: %w", err)
+		}
+		if user.Username == "" && uid == 0 {
+			// This is nice for the visual display in log messages,
+			// but has no actual functionality since the credential
+			// in the syscall is what matters.
+			user.Username = "root"
+			user.HomeDir = "/root"
+		}
+		return err
+	}
+	err = updateUser(username)
+	if err != nil {
+		return fmt.Errorf("update user: %w", err)
+	}
 
 	// We only need to do this if we cloned!
 	// Git doesn't store file permissions as part of the repository.
@@ -623,45 +663,122 @@ func Run(ctx context.Context, options Options) error {
 		endStage("👤 Updated the ownership of the workspace!")
 	}
 
-	// Remove the Docker config secret file!
-	err = os.Remove(filepath.Join(os.Getenv("DOCKER_CONFIG"), "config.json"))
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove docker config: %w", err)
-	}
-
 	err = os.MkdirAll(options.WorkspaceFolder, 0755)
 	if err != nil {
 		return fmt.Errorf("create workspace folder: %w", err)
 	}
-
-	logf(codersdk.LogLevelInfo, "=== Running the init command %q as the %q user...", options.InitScript, user.Username)
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", options.InitScript)
-	cmd.Env = os.Environ()
-	cmd.Dir = options.WorkspaceFolder
-	cmd.SysProcAttr = sysProcAttr
-
-	// This allows for a really nice and clean experience to experiement with!
-	// e.g. docker run --it --rm -e INIT_SCRIPT bash ...
-	if isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd()) {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Stdin = os.Stdin
-	} else {
-		var buf bytes.Buffer
-		go func() {
-			scanner := bufio.NewScanner(&buf)
-			for scanner.Scan() {
-				logf(codersdk.LogLevelInfo, "%s", scanner.Text())
-			}
-		}()
-
-		cmd.Stdout = &buf
-		cmd.Stderr = &buf
+	err = os.Chdir(options.WorkspaceFolder)
+	if err != nil {
+		return fmt.Errorf("change directory: %w", err)
 	}
 
-	err = cmd.Run()
+	// The setup script can specify a custom initialization command
+	// and arguments to run instead of the default shell.
+	//
+	// This is useful for hooking into the environment for a specific
+	// init to PID 1.
+	if options.SetupScript != "" {
+		// We execute the initialize script as the root user!
+		os.Setenv("HOME", "/root")
+
+		logf(codersdk.LogLevelInfo, "=== Running the setup command %q as the root user...", options.SetupScript)
+
+		envKey := "CODER_ENV"
+		envFile := filepath.Join("/", MagicDir, "environ")
+		file, err := os.Create(envFile)
+		if err != nil {
+			return fmt.Errorf("create environ file: %w", err)
+		}
+		_ = file.Close()
+
+		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", options.SetupScript)
+		cmd.Env = append(os.Environ(),
+			fmt.Sprintf("%s=%s", envKey, envFile),
+			fmt.Sprintf("TARGET_USER=%s", user.Username),
+		)
+		cmd.Dir = options.WorkspaceFolder
+		// This allows for a really nice and clean experience to experiement with!
+		// e.g. docker run --it --rm -e INIT_SCRIPT bash ...
+		if isatty.IsTerminal(os.Stdout.Fd()) && isatty.IsTerminal(os.Stdin.Fd()) {
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			cmd.Stdin = os.Stdin
+		} else {
+			var buf bytes.Buffer
+			go func() {
+				scanner := bufio.NewScanner(&buf)
+				for scanner.Scan() {
+					logf(codersdk.LogLevelInfo, "%s", scanner.Text())
+				}
+			}()
+
+			cmd.Stdout = &buf
+			cmd.Stderr = &buf
+		}
+		err = cmd.Run()
+		if err != nil {
+			return fmt.Errorf("run setup script: %w", err)
+		}
+
+		environ, err := os.ReadFile(envFile)
+		if errors.Is(err, os.ErrNotExist) {
+			err = nil
+			environ = []byte{}
+		}
+		if err != nil {
+			return fmt.Errorf("read environ: %w", err)
+		}
+		updatedCommand := false
+		updatedArgs := false
+		for _, env := range strings.Split(string(environ), "\n") {
+			pair := strings.SplitN(env, "=", 2)
+			if len(pair) != 2 {
+				continue
+			}
+			key := pair[0]
+			switch key {
+			case "INIT_COMMAND":
+				options.InitCommand = pair[1]
+				updatedCommand = true
+			case "INIT_ARGS":
+				initArgs, err = shellquote.Split(pair[1])
+				if err != nil {
+					return fmt.Errorf("split init args: %w", err)
+				}
+				updatedArgs = true
+			case "TARGET_USER":
+				err = updateUser(pair[1])
+				if err != nil {
+					return fmt.Errorf("update user: %w", err)
+				}
+			default:
+				return fmt.Errorf("unknown environ key %q", key)
+			}
+		}
+		if updatedCommand && !updatedArgs {
+			// Because our default is a shell we need to empty the args
+			// if the command was updated. This a tragic hack, but it works.
+			initArgs = []string{}
+		}
+	}
+
+	// Hop into the user that should execute the initialize script!
+	os.Setenv("HOME", user.HomeDir)
+
+	err = syscall.Setgid(gid)
 	if err != nil {
-		return fmt.Errorf("run init script: %w", err)
+		return fmt.Errorf("set gid: %w", err)
+	}
+	err = syscall.Setuid(uid)
+	if err != nil {
+		return fmt.Errorf("set uid: %w", err)
+	}
+
+	logf(codersdk.LogLevelInfo, "=== Running the init command %s %+v as the %q user...", options.InitCommand, initArgs, user.Username)
+
+	err = syscall.Exec(options.InitCommand, append([]string{options.InitCommand}, initArgs...), os.Environ())
+	if err != nil {
+		return fmt.Errorf("exec init script: %w", err)
 	}
 	return nil
 }
@@ -734,26 +851,6 @@ func unsetOptionsEnv() {
 			continue
 		}
 		os.Unsetenv(env)
-	}
-}
-
-func printOptions(logf func(level codersdk.LogLevel, format string, args ...interface{}), options Options) {
-	val := reflect.ValueOf(&options).Elem()
-	typ := val.Type()
-
-	for i := 0; i < val.NumField(); i++ {
-		field := val.Field(i)
-		fieldTyp := typ.Field(i)
-		env := fieldTyp.Tag.Get("env")
-		if env == "" {
-			continue
-		}
-		switch fieldTyp.Type.Kind() {
-		case reflect.String:
-			logf(codersdk.LogLevelDebug, "option %s: %q", fieldTyp.Name, field.String())
-		case reflect.Bool:
-			field.Bool()
-		}
 	}
 }
 

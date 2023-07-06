@@ -137,6 +137,24 @@ func TestBuildFromDockerfile(t *testing.T) {
 	require.Equal(t, "hello", strings.TrimSpace(output))
 }
 
+func TestBuildWithSetupScript(t *testing.T) {
+	// Ensures that a Git repository with a Dockerfile is cloned and built.
+	url := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			"Dockerfile": "FROM alpine:latest",
+		},
+	})
+	ctr, err := runEnvbuilder(t, []string{
+		"GIT_URL=" + url,
+		"DOCKERFILE_PATH=Dockerfile",
+		"SETUP_SCRIPT=echo \"INIT_ARGS=-c 'echo hi > /wow && sleep infinity'\" >> $CODER_ENV",
+	})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /wow")
+	require.Equal(t, "hi", strings.TrimSpace(output))
+}
+
 func TestBuildCustomCertificates(t *testing.T) {
 	srv := httptest.NewTLSServer(createGitHandler(t, gitServerOptions{
 		files: map[string]string{
@@ -506,7 +524,6 @@ func runEnvbuilder(t *testing.T, env []string) (string, error) {
 
 	logChan, errChan := streamContainerLogs(t, cli, ctr.ID)
 	go func() {
-		defer close(logChan)
 		for log := range logChan {
 			if strings.HasPrefix(log, "=== Running the init command") {
 				errChan <- nil
@@ -553,7 +570,7 @@ func streamContainerLogs(t *testing.T, cli *client.Client, containerID string) (
 	})
 	require.NoError(t, err)
 
-	logChan := make(chan string, 1)
+	logChan := make(chan string, 32)
 	errChan := make(chan error, 1)
 
 	logsReader, logsWriter := io.Pipe()
