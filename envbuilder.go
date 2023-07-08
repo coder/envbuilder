@@ -30,6 +30,7 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
+	"github.com/GoogleContainerTools/kaniko/pkg/util"
 	"github.com/coder/coder/codersdk"
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/containerd/containerd/platforms"
@@ -452,6 +453,17 @@ func Run(ctx context.Context, options Options) error {
 		options.CacheRepo = fmt.Sprintf("localhost:%d/local/cache", tcpAddr.Port)
 	}
 
+	// IgnorePaths in the Kaniko options doesn't properly ignore paths.
+	// So we add them to the default ignore list. See:
+	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
+	ignorePaths := []string{MagicDir, options.LayerCacheDir, options.WorkspaceFolder}
+	for _, ignorePath := range ignorePaths {
+		util.AddToDefaultIgnoreList(util.IgnoreListEntry{
+			Path:            ignorePath,
+			PrefixMatchOnly: true,
+		})
+	}
+
 	build := func() (v1.Image, error) {
 		_, err := options.Filesystem.Stat(MagicFile)
 		if err == nil {
@@ -476,7 +488,6 @@ func Run(ctx context.Context, options Options) error {
 			RunV2:             true,
 			Destinations:      []string{"local"},
 			CacheRunLayers:    true,
-			IgnorePaths:       []string{options.LayerCacheDir, options.WorkspaceFolder, MagicDir},
 			CacheCopyLayers:   true,
 			CompressedCaching: true,
 			CacheOptions: config.CacheOptions{
