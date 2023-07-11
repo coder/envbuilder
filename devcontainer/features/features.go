@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
@@ -161,13 +162,12 @@ type Spec struct {
 // Extract unpacks the feature from the image and returns a set of lines
 // that should be appended to a Dockerfile to install the feature.
 func (s *Spec) Compile(options map[string]any) (string, error) {
-	// See https://containers.dev/implementors/features/#invoking-installsh
-	runDirective := []string{"RUN"}
+	var runDirective []string
 	for key, value := range s.Options {
-		strValue := fmt.Sprintf("%v", value.Default)
+		strValue := fmt.Sprint(value.Default)
 		provided, ok := options[key]
 		if ok {
-			strValue = fmt.Sprintf("%v", provided)
+			strValue = fmt.Sprint(provided)
 			// delete so we can check if there are any unknown options
 			delete(options, key)
 		}
@@ -176,12 +176,24 @@ func (s *Spec) Compile(options map[string]any) (string, error) {
 	if len(options) > 0 {
 		return "", fmt.Errorf("unknown option: %v", options)
 	}
+	// It's critical that the Dockerfile produced is deterministic,
+	// regardless of map iteration order.
+	sort.Strings(runDirective)
+	// See https://containers.dev/implementors/features/#invoking-installsh
+	runDirective = append([]string{"RUN"}, runDirective...)
 	runDirective = append(runDirective, s.InstallScriptPath)
 
 	// Prefix and suffix with a newline to ensure the RUN command is on its own line.
 	lines := []string{"\n"}
-	for key, value := range s.ContainerEnv {
-		lines = append(lines, fmt.Sprintf("ENV %s=%s", key, value))
+	envKeys := make([]string, 0, len(s.ContainerEnv))
+	for key := range s.ContainerEnv {
+		envKeys = append(envKeys, key)
+	}
+	// It's critical that the Dockerfile produced is deterministic,
+	// regardless of map iteration order.
+	sort.Strings(envKeys)
+	for _, key := range envKeys {
+		lines = append(lines, fmt.Sprintf("ENV %s=%s", key, s.ContainerEnv[key]))
 	}
 	lines = append(lines, strings.Join(runDirective, " "), "\n")
 
