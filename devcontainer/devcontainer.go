@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
@@ -95,9 +96,17 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string) 
 		params.DockerfilePath = filepath.Join(devcontainerDir, s.Build.Dockerfile)
 		params.BuildContext = filepath.Join(devcontainerDir, s.Build.Context)
 	}
+
+	// It's critical that the Dockerfile produced is deterministic.
+	buildArgkeys := make([]string, 0, len(s.Build.Args))
+	for key := range s.Build.Args {
+		buildArgkeys = append(buildArgkeys, key)
+	}
+	sort.Strings(buildArgkeys)
+
 	buildArgs := make([]string, 0)
-	for key, value := range s.Build.Args {
-		buildArgs = append(buildArgs, key+"="+value)
+	for _, key := range buildArgkeys {
+		buildArgs = append(buildArgs, key+"="+s.Build.Args[key])
 	}
 	params.BuildArgs = buildArgs
 
@@ -147,7 +156,19 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, remoteUser, dock
 		return "", fmt.Errorf("create features directory: %w", err)
 	}
 	featureDirectives := []string{}
-	for featureRef, featureOpts := range s.Features {
+
+	// TODO: Respect the installation order outlined by the spec:
+	// https://containers.dev/implementors/features/#installation-order
+	featureOrder := []string{}
+	for featureRef := range s.Features {
+		featureOrder = append(featureOrder, featureRef)
+	}
+	// It's critical we sort features prior to compilation so the Dockerfile
+	// is deterministic which allows for caching.
+	sort.Strings(featureOrder)
+
+	for _, featureRef := range featureOrder {
+		featureOpts := s.Features[featureRef]
 		// It's important for caching that this directory is static.
 		// If it changes on each run then the container will not be cached.
 		//
