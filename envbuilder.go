@@ -495,9 +495,6 @@ func Run(ctx context.Context, options Options) error {
 				CacheTTL: time.Hour * 24 * 7,
 				CacheDir: options.BaseImageCacheDir,
 			},
-			// Ensures that the final layer has timestamps stripped.
-			// This can help with sourcing from a cache!
-			Reproducible:      true,
 			ForceUnpack:       true,
 			BuildArgs:         buildParams.BuildArgs,
 			CacheRepo:         options.CacheRepo,
