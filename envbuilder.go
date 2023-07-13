@@ -490,6 +490,11 @@ func Run(ctx context.Context, options Options) error {
 			CacheRunLayers:    true,
 			CacheCopyLayers:   true,
 			CompressedCaching: true,
+			Compression:       config.ZStd,
+			// Maps to "default" level, ~100-300 MB/sec according to
+			// benchmarks in klauspost/compress README
+			// https://github.com/klauspost/compress/blob/67a538e2b4df11f8ec7139388838a13bce84b5d5/zstd/encoder_options.go#L188
+			CompressionLevel: 3,
 			CacheOptions: config.CacheOptions{
 				// Cache for a week by default!
 				CacheTTL: time.Hour * 24 * 7,
