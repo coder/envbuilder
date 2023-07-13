@@ -56,11 +56,22 @@ type Compiled struct {
 	Env  []string
 }
 
+// HasImage returns true if the devcontainer.json specifies an image.
+func (s Spec) HasImage() bool {
+	return s.Image != ""
+}
+
+// HasImage returns true if the devcontainer.json specifies the path to a
+// Dockerfile.
+func (s Spec) HasDockerfile() bool {
+	return s.Dockerfile != "" || s.Build.Dockerfile != ""
+}
+
 // Compile returns the build parameters for the workspace.
 // devcontainerDir is the path to the directory where the devcontainer.json file
 // is located. scratchDir is the path to the directory where the Dockerfile will
 // be written to if one doesn't exist.
-func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string) (*Compiled, error) {
+func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbackDockerfile string) (*Compiled, error) {
 	env := make([]string, 0)
 	for key, value := range s.RemoteEnv {
 		env = append(env, key+"="+value)
@@ -93,7 +104,11 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string) 
 			s.Build.Context = s.Context
 		}
 
-		params.DockerfilePath = filepath.Join(devcontainerDir, s.Build.Dockerfile)
+		if s.Build.Dockerfile != "" {
+			params.DockerfilePath = filepath.Join(devcontainerDir, s.Build.Dockerfile)
+		} else {
+			params.DockerfilePath = fallbackDockerfile
+		}
 		params.BuildContext = filepath.Join(devcontainerDir, s.Build.Context)
 	}
 
