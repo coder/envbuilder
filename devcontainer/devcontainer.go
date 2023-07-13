@@ -61,7 +61,7 @@ func (s Spec) HasImage() bool {
 	return s.Image != ""
 }
 
-// HasImage returns true if the devcontainer.json specifies the path to a
+// HasDockerfile returns true if the devcontainer.json specifies the path to a
 // Dockerfile.
 func (s Spec) HasDockerfile() bool {
 	return s.Dockerfile != "" || s.Build.Dockerfile != ""
