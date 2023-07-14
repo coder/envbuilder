@@ -487,6 +487,20 @@ func Run(ctx context.Context, options Options) error {
 			endStage("🏗️ Found image from remote!")
 			return image, nil
 		}
+
+		// This is required for deleting the filesystem prior to build!
+		err = util.InitIgnoreList(true)
+		if err != nil {
+			return nil, fmt.Errorf("init ignore list: %w", err)
+		}
+
+		// It's possible that the container will already have files in it, and
+		// we don't want to merge a new container with the old one.
+		err = util.DeleteFilesystem()
+		if err != nil {
+			return nil, fmt.Errorf("delete filesystem: %w", err)
+		}
+
 		endStage := startStage("🏗️ Building image...")
 		// At this point we have all the context, we can now build!
 		image, err := executor.DoBuild(&config.KanikoOptions{
