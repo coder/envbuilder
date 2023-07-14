@@ -488,6 +488,12 @@ func Run(ctx context.Context, options Options) error {
 			return image, nil
 		}
 
+		// This is required for deleting the filesystem prior to build!
+		err = util.InitIgnoreList(true)
+		if err != nil {
+			return nil, fmt.Errorf("init ignore list: %w", err)
+		}
+
 		// It's possible that the container will already have files in it, and
 		// we don't want to merge a new container with the old one.
 		err = util.DeleteFilesystem()
