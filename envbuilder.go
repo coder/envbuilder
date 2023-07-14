@@ -314,36 +314,34 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
-	var buildParams *devcontainer.Compiled
-
-	defaultBuildParams := func() error {
+	defaultBuildParams := func() (*devcontainer.Compiled, error) {
 		dockerfile := filepath.Join(MagicDir, "Dockerfile")
 		file, err := options.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		defer file.Close()
 		if options.FallbackImage == "" {
 			if fallbackErr != nil {
-				return xerrors.Errorf("%s: %w", fallbackErr.Error(), ErrNoFallbackImage)
+				return nil, xerrors.Errorf("%s: %w", fallbackErr.Error(), ErrNoFallbackImage)
 			}
 			// We can't use errors.Join here because our tests
 			// don't support parsing a multiline error.
-			return ErrNoFallbackImage
+			return nil, ErrNoFallbackImage
 		}
 		content := "FROM " + options.FallbackImage
 		_, err = file.Write([]byte(content))
 		if err != nil {
-			return err
+			return nil, err
 		}
-		buildParams = &devcontainer.Compiled{
+		return &devcontainer.Compiled{
 			DockerfilePath:    dockerfile,
 			DockerfileContent: content,
 			BuildContext:      MagicDir,
-		}
-		return nil
+		}, nil
 	}
 
+	var buildParams *devcontainer.Compiled
 	if options.DockerfilePath == "" {
 		// Only look for a devcontainer if a Dockerfile wasn't specified.
 		// devcontainer is a standard, so it's reasonable to be the default.
@@ -364,7 +362,16 @@ func Run(ctx context.Context, options Options) error {
 			}
 			devContainer, err := devcontainer.Parse(content)
 			if err == nil {
-				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir)
+				var fallbackDockerfile string
+				if !devContainer.HasImage() && !devContainer.HasDockerfile() {
+					defaultParams, err := defaultBuildParams()
+					if err != nil {
+						return fmt.Errorf("no Dockerfile or image found: %w", err)
+					}
+					logf(codersdk.LogLevelInfo, "No Dockerfile or image specified; falling back to the default image...")
+					fallbackDockerfile = defaultParams.DockerfilePath
+				}
+				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir, fallbackDockerfile)
 				if err != nil {
 					return fmt.Errorf("compile devcontainer.json: %w", err)
 				}
@@ -393,7 +400,8 @@ func Run(ctx context.Context, options Options) error {
 	if buildParams == nil {
 		// If there isn't a devcontainer.json file in the repository,
 		// we fallback to whatever the `DefaultImage` is.
-		err := defaultBuildParams()
+		var err error
+		buildParams, err = defaultBuildParams()
 		if err != nil {
 			return fmt.Errorf("no Dockerfile or devcontainer.json found: %w", err)
 		}
@@ -543,7 +551,7 @@ func Run(ctx context.Context, options Options) error {
 		}
 		logf(codersdk.LogLevelError, "Failed to build: %s", err)
 		logf(codersdk.LogLevelError, "Falling back to the default image...")
-		err = defaultBuildParams()
+		buildParams, err = defaultBuildParams()
 		if err != nil {
 			return err
 		}
