@@ -264,6 +264,22 @@ RUN exit 1`,
 		})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 	})
+	t.Run("NoImageOrDockerfile", func(t *testing.T) {
+		t.Parallel()
+		url := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				".devcontainer/devcontainer.json": "{}",
+			},
+		})
+		ctr, err := runEnvbuilder(t, []string{
+			"GIT_URL=" + url,
+			"FALLBACK_IMAGE=alpine:latest",
+		})
+		require.NoError(t, err)
+
+		output := execContainer(t, ctr, "echo hello")
+		require.Equal(t, "hello", strings.TrimSpace(output))
+	})
 }
 
 func TestPrivateRegistry(t *testing.T) {
