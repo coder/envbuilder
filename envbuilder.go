@@ -137,6 +137,13 @@ type Options struct {
 	// and pulling from container registries.
 	Insecure bool `env:"INSECURE"`
 
+	// SkipRebuild skips building if the MagicFile exists.
+	// This is used to skip building when a container is
+	// restarting. e.g. docker stop -> docker start
+	// This value can always be set to true - even if the
+	// container is being started for the first time.
+	SkipRebuild bool `env:"SKIP_REBUILD"`
+
 	// GitURL is the URL of the Git repository to clone.
 	// This is optional!
 	GitURL string `env:"GIT_URL"`
@@ -464,17 +471,24 @@ func Run(ctx context.Context, options Options) error {
 	// IgnorePaths in the Kaniko options doesn't properly ignore paths.
 	// So we add them to the default ignore list. See:
 	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
-	ignorePaths := []string{MagicDir, options.LayerCacheDir, options.WorkspaceFolder}
+	ignorePaths := []string{
+		MagicDir,
+		options.LayerCacheDir,
+		options.WorkspaceFolder,
+		// Required for devcontainer to ignore directories like /var/run/secrets,
+		// which frequently has mounted read-only runtime secrets.
+		"/var/run",
+	}
 	for _, ignorePath := range ignorePaths {
 		util.AddToDefaultIgnoreList(util.IgnoreListEntry{
 			Path:            ignorePath,
-			PrefixMatchOnly: true,
+			PrefixMatchOnly: false,
 		})
 	}
 
 	build := func() (v1.Image, error) {
 		_, err := options.Filesystem.Stat(MagicFile)
-		if err == nil {
+		if err == nil && options.SkipRebuild {
 			endStage := startStage("🏗️ Skipping build because of cache...")
 			imageRef, err := devcontainer.ImageFromDockerfile(buildParams.DockerfileContent)
 			if err != nil {
@@ -555,6 +569,10 @@ func Run(ctx context.Context, options Options) error {
 			fallbackErr = err
 		// This occurs when the image cannot be found!
 		case strings.Contains(err.Error(), "authentication required"):
+			fallback = true
+			fallbackErr = err
+		// This occurs from Docker Hub when the image cannot be found!
+		case strings.Contains(err.Error(), "manifest unknown"):
 			fallback = true
 			fallbackErr = err
 		case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
