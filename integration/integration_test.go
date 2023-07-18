@@ -139,7 +139,7 @@ func TestBuildFromDockerfile(t *testing.T) {
 	require.Equal(t, "hello", strings.TrimSpace(output))
 }
 
-func TestBuildIgnoreVarRun(t *testing.T) {
+func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	url := createGitServer(t, gitServerOptions{
 		files: map[string]string{

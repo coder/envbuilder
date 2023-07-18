@@ -137,6 +137,10 @@ type Options struct {
 	// and pulling from container registries.
 	Insecure bool `env:"INSECURE"`
 
+	// IgnorePaths is a comma separated list of paths
+	// to ignore when building the workspace.
+	IgnorePaths []string `env:"IGNORE_PATHS"`
+
 	// SkipRebuild skips building if the MagicFile exists.
 	// This is used to skip building when a container is
 	// restarting. e.g. docker stop -> docker start
@@ -190,6 +194,12 @@ func Run(ctx context.Context, options Options) error {
 	}
 	if options.InitCommand == "" {
 		options.InitCommand = "/bin/sh"
+	}
+	if options.IgnorePaths == nil {
+		// Kubernetes frequently stores secrets in /var/run/secrets, and
+		// other applications might as well. This seems to be a sensible
+		// default, but if that changes, it's simple to adjust.
+		options.IgnorePaths = []string{"/var/run"}
 	}
 	// Default to the shell!
 	initArgs := []string{"-c", options.InitScript}
@@ -471,14 +481,12 @@ func Run(ctx context.Context, options Options) error {
 	// IgnorePaths in the Kaniko options doesn't properly ignore paths.
 	// So we add them to the default ignore list. See:
 	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
-	ignorePaths := []string{
+	ignorePaths := append([]string{
 		MagicDir,
 		options.LayerCacheDir,
 		options.WorkspaceFolder,
-		// Required for devcontainer to ignore directories like /var/run/secrets,
-		// which frequently has mounted read-only runtime secrets.
-		"/var/run",
-	}
+	}, options.IgnorePaths...)
+
 	for _, ignorePath := range ignorePaths {
 		util.AddToDefaultIgnoreList(util.IgnoreListEntry{
 			Path:            ignorePath,
@@ -869,7 +877,7 @@ func findUser(nameOrID string) (*user.User, error) {
 }
 
 // OptionsFromEnv returns a set of options from environment variables.
-func OptionsFromEnv(getEnv func(string) string) Options {
+func OptionsFromEnv(getEnv func(string) (string, bool)) Options {
 	options := Options{}
 
 	val := reflect.ValueOf(&options).Elem()
@@ -884,10 +892,18 @@ func OptionsFromEnv(getEnv func(string) string) Options {
 		}
 		switch fieldTyp.Type.Kind() {
 		case reflect.String:
-			field.SetString(getEnv(env))
+			v, _ := getEnv(env)
+			field.SetString(v)
 		case reflect.Bool:
-			v, _ := strconv.ParseBool(getEnv(env))
+			e, _ := getEnv(env)
+			v, _ := strconv.ParseBool(e)
 			field.SetBool(v)
+		case reflect.Slice:
+			v, ok := getEnv(env)
+			if !ok {
+				continue
+			}
+			field.Set(reflect.ValueOf(strings.Split(v, ",")))
 		}
 	}
 
