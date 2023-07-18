@@ -210,6 +210,7 @@ func TestBuildStopStartCached(t *testing.T) {
 	ctr, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + url,
 		"DOCKERFILE_PATH=Dockerfile",
+		"SKIP_REBUILD=true",
 	}})
 	require.NoError(t, err)
 
