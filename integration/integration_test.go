@@ -14,7 +14,9 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -52,9 +54,9 @@ func TestFailsGitAuth(t *testing.T) {
 		username: "kyle",
 		password: "testing",
 	})
-	_, err := runEnvbuilder(t, []string{
+	_, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + url,
-	})
+	}})
 	require.ErrorContains(t, err, "authentication required")
 }
 
@@ -67,12 +69,12 @@ func TestSucceedsGitAuth(t *testing.T) {
 		username: "kyle",
 		password: "testing",
 	})
-	_, err := runEnvbuilder(t, []string{
+	_, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + url,
 		"DOCKERFILE_PATH=Dockerfile",
 		"GIT_USERNAME=kyle",
 		"GIT_PASSWORD=testing",
-	})
+	}})
 	require.NoError(t, err)
 }
 
@@ -111,9 +113,9 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 			".devcontainer/Dockerfile": "FROM ubuntu",
 		},
 	})
-	ctr, err := runEnvbuilder(t, []string{
+	ctr, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + url,
-	})
+	}})
 	require.NoError(t, err)
 
 	output := execContainer(t, ctr, "cat /test")
@@ -127,9 +129,32 @@ func TestBuildFromDockerfile(t *testing.T) {
 			"Dockerfile": "FROM alpine:latest",
 		},
 	})
-	ctr, err := runEnvbuilder(t, []string{
+	ctr, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + url,
 		"DOCKERFILE_PATH=Dockerfile",
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "echo hello")
+	require.Equal(t, "hello", strings.TrimSpace(output))
+}
+
+func TestBuildIgnoreVarRunSecrets(t *testing.T) {
+	// Ensures that a Git repository with a Dockerfile is cloned and built.
+	url := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			"Dockerfile": "FROM alpine:latest",
+		},
+	})
+	dir := t.TempDir()
+	err := os.WriteFile(filepath.Join(dir, "secret"), []byte("test"), 0644)
+	require.NoError(t, err)
+	ctr, err := runEnvbuilder(t, options{
+		env: []string{
+			"GIT_URL=" + url,
+			"DOCKERFILE_PATH=Dockerfile",
+		},
+		binds: []string{fmt.Sprintf("%s:/var/run/secrets", dir)},
 	})
 	require.NoError(t, err)
 
@@ -144,11 +169,11 @@ func TestBuildWithSetupScript(t *testing.T) {
 			"Dockerfile": "FROM alpine:latest",
 		},
 	})
-	ctr, err := runEnvbuilder(t, []string{
+	ctr, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + url,
 		"DOCKERFILE_PATH=Dockerfile",
 		"SETUP_SCRIPT=echo \"INIT_ARGS=-c 'echo hi > /wow && sleep infinity'\" >> $ENVBUILDER_ENV",
-	})
+	}})
 	require.NoError(t, err)
 
 	output := execContainer(t, ctr, "cat /wow")
@@ -161,14 +186,14 @@ func TestBuildCustomCertificates(t *testing.T) {
 			"Dockerfile": "FROM alpine:latest",
 		},
 	}))
-	ctr, err := runEnvbuilder(t, []string{
+	ctr, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + srv.URL,
 		"DOCKERFILE_PATH=Dockerfile",
 		"SSL_CERT_BASE64=" + base64.StdEncoding.EncodeToString(pem.EncodeToMemory(&pem.Block{
 			Type:  "CERTIFICATE",
 			Bytes: srv.TLS.Certificates[0].Certificate[0],
 		})),
-	})
+	}})
 	require.NoError(t, err)
 
 	output := execContainer(t, ctr, "echo hello")
@@ -182,10 +207,11 @@ func TestBuildStopStartCached(t *testing.T) {
 			"Dockerfile": "FROM alpine:latest",
 		},
 	})
-	ctr, err := runEnvbuilder(t, []string{
+	ctr, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + url,
 		"DOCKERFILE_PATH=Dockerfile",
-	})
+		"SKIP_REBUILD=true",
+	}})
 	require.NoError(t, err)
 
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -212,9 +238,9 @@ func TestCloneFailsFallback(t *testing.T) {
 	t.Parallel()
 	t.Run("BadRepo", func(t *testing.T) {
 		t.Parallel()
-		_, err := runEnvbuilder(t, []string{
+		_, err := runEnvbuilder(t, options{env: []string{
 			"GIT_URL=bad-value",
-		})
+		}})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 	})
 }
@@ -229,10 +255,10 @@ func TestBuildFailsFallback(t *testing.T) {
 				"Dockerfile": "bad syntax",
 			},
 		})
-		_, err := runEnvbuilder(t, []string{
+		_, err := runEnvbuilder(t, options{env: []string{
 			"GIT_URL=" + url,
 			"DOCKERFILE_PATH=Dockerfile",
-		})
+		}})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 		require.ErrorContains(t, err, "dockerfile parse error")
 	})
@@ -245,10 +271,10 @@ func TestBuildFailsFallback(t *testing.T) {
 RUN exit 1`,
 			},
 		})
-		_, err := runEnvbuilder(t, []string{
+		_, err := runEnvbuilder(t, options{env: []string{
 			"GIT_URL=" + url,
 			"DOCKERFILE_PATH=Dockerfile",
-		})
+		}})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 	})
 	t.Run("BadDevcontainer", func(t *testing.T) {
@@ -259,9 +285,9 @@ RUN exit 1`,
 				".devcontainer/devcontainer.json": "not json",
 			},
 		})
-		_, err := runEnvbuilder(t, []string{
+		_, err := runEnvbuilder(t, options{env: []string{
 			"GIT_URL=" + url,
-		})
+		}})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 	})
 	t.Run("NoImageOrDockerfile", func(t *testing.T) {
@@ -271,10 +297,10 @@ RUN exit 1`,
 				".devcontainer/devcontainer.json": "{}",
 			},
 		})
-		ctr, err := runEnvbuilder(t, []string{
+		ctr, err := runEnvbuilder(t, options{env: []string{
 			"GIT_URL=" + url,
 			"FALLBACK_IMAGE=alpine:latest",
-		})
+		}})
 		require.NoError(t, err)
 
 		output := execContainer(t, ctr, "echo hello")
@@ -297,10 +323,10 @@ func TestPrivateRegistry(t *testing.T) {
 				"Dockerfile": "FROM " + image,
 			},
 		})
-		_, err := runEnvbuilder(t, []string{
+		_, err := runEnvbuilder(t, options{env: []string{
 			"GIT_URL=" + url,
 			"DOCKERFILE_PATH=Dockerfile",
-		})
+		}})
 		require.ErrorContains(t, err, "Unauthorized")
 	})
 	t.Run("Auth", func(t *testing.T) {
@@ -326,11 +352,11 @@ func TestPrivateRegistry(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = runEnvbuilder(t, []string{
+		_, err = runEnvbuilder(t, options{env: []string{
 			"GIT_URL=" + url,
 			"DOCKERFILE_PATH=Dockerfile",
 			"DOCKER_CONFIG_BASE64=" + base64.StdEncoding.EncodeToString(config),
-		})
+		}})
 		require.NoError(t, err)
 	})
 	t.Run("InvalidAuth", func(t *testing.T) {
@@ -356,11 +382,11 @@ func TestPrivateRegistry(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = runEnvbuilder(t, []string{
+		_, err = runEnvbuilder(t, options{env: []string{
 			"GIT_URL=" + url,
 			"DOCKERFILE_PATH=Dockerfile",
 			"DOCKER_CONFIG_BASE64=" + base64.StdEncoding.EncodeToString(config),
-		})
+		}})
 		require.ErrorContains(t, err, "Unauthorized")
 	})
 }
@@ -409,7 +435,7 @@ func setupPassthroughRegistry(t *testing.T, image string, auth *registryAuth) st
 }
 
 func TestNoMethodFails(t *testing.T) {
-	_, err := runEnvbuilder(t, []string{})
+	_, err := runEnvbuilder(t, options{env: []string{}})
 	require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 }
 
@@ -509,9 +535,14 @@ func cleanOldEnvbuilders() {
 	}
 }
 
+type options struct {
+	binds []string
+	env   []string
+}
+
 // runEnvbuilder starts the envbuilder container with the given environment
 // variables and returns the container ID.
-func runEnvbuilder(t *testing.T, env []string) (string, error) {
+func runEnvbuilder(t *testing.T, options options) (string, error) {
 	t.Helper()
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -521,12 +552,13 @@ func runEnvbuilder(t *testing.T, env []string) (string, error) {
 	})
 	ctr, err := cli.ContainerCreate(ctx, &container.Config{
 		Image: "envbuilder:latest",
-		Env:   env,
+		Env:   options.env,
 		Labels: map[string]string{
 			testContainerLabel: "true",
 		},
 	}, &container.HostConfig{
 		NetworkMode: container.NetworkMode("host"),
+		Binds:       options.binds,
 	}, nil, nil, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {

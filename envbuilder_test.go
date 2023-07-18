@@ -30,8 +30,8 @@ func TestSystemOptions(t *testing.T) {
 		"GIT_URL":          "https://github.com/coder/coder",
 		"WORKSPACE_FOLDER": "/workspaces/coder",
 	}
-	env := envbuilder.OptionsFromEnv(func(s string) string {
-		return opts[s]
+	env := envbuilder.OptionsFromEnv(func(s string) (string, bool) {
+		return opts[s], true
 	})
 	require.Equal(t, "echo hello", env.InitScript)
 	require.Equal(t, "kylecarbs/testing", env.CacheRepo)

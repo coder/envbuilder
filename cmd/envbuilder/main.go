@@ -30,7 +30,7 @@ func main() {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			options := envbuilder.OptionsFromEnv(os.Getenv)
+			options := envbuilder.OptionsFromEnv(os.LookupEnv)
 
 			var sendLogs func(ctx context.Context, log ...agentsdk.StartupLog) error
 			agentURL := os.Getenv("CODER_AGENT_URL")
