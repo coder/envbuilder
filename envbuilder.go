@@ -539,6 +539,25 @@ func Run(ctx context.Context, options Options) error {
 			return nil, fmt.Errorf("delete filesystem: %w", err)
 		}
 
+		stdoutReader, stdoutWriter := io.Pipe()
+		stderrReader, stderrWriter := io.Pipe()
+		defer stdoutReader.Close()
+		defer stdoutWriter.Close()
+		defer stderrReader.Close()
+		defer stderrWriter.Close()
+		go func() {
+			scanner := bufio.NewScanner(stdoutReader)
+			for scanner.Scan() {
+				logf(codersdk.LogLevelInfo, "%s", scanner.Text())
+			}
+		}()
+		go func() {
+			scanner := bufio.NewScanner(stderrReader)
+			for scanner.Scan() {
+				logf(codersdk.LogLevelInfo, "%s", scanner.Text())
+			}
+		}()
+
 		endStage := startStage("🏗️ Building image...")
 		// At this point we have all the context, we can now build!
 		image, err := executor.DoBuild(&config.KanikoOptions{
@@ -546,6 +565,8 @@ func Run(ctx context.Context, options Options) error {
 			CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
 			SnapshotMode:      "redo",
 			RunV2:             true,
+			RunStdout:         stdoutWriter,
+			RunStderr:         stderrWriter,
 			Destinations:      []string{"local"},
 			CacheRunLayers:    true,
 			CacheCopyLayers:   true,

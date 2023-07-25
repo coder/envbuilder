@@ -220,8 +220,8 @@ github.com/cockroachdb/errors v1.2.4/go.mod h1:rQD95gz6FARkaKkQXUksEje/d9a6wBJoC
 github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f/go.mod h1:i/u985jwjWRlyHXQbwatDASoW0RMlZ/3i9yJHE2xLkI=
 github.com/coder/coder v0.24.2-0.20230630184129-6015319e9d30 h1:7IhsN7OAQEKbIsEhsx2/ay8JQHqDWYzt/uWx9VkKfFY=
 github.com/coder/coder v0.24.2-0.20230630184129-6015319e9d30/go.mod h1:BlHKuGJCK7V41oe8J5b9vQhjjXnnd+RcAmasG3Tyq1E=
-github.com/coder/kaniko v0.0.0-20230712162612-efb9a14afa73 h1:qMrXOD6uty6jfzNI1mE/lm/QJfoQM7NUquaDWqWDUAU=
-github.com/coder/kaniko v0.0.0-20230712162612-efb9a14afa73/go.mod h1:byIUWxhLPDuO0o38iG+ffFWmIhUCSc8/N1INJZhjcUY=
+github.com/coder/kaniko v0.0.0-20230720174451-f9ad3d51d417 h1:Pt4A7jOIou3jZ4p5lP33BncRuDPVAcXHFrFl0htwmRs=
+github.com/coder/kaniko v0.0.0-20230720174451-f9ad3d51d417/go.mod h1:byIUWxhLPDuO0o38iG+ffFWmIhUCSc8/N1INJZhjcUY=
 github.com/coder/retry v1.4.0 h1:g0fojHFxcdgM3sBULqgjFDxw1UIvaCqk4ngUDu0EWag=
 github.com/coder/retry v1.4.0/go.mod h1:blHMk9vs6LkoRT9ZHyuZo360cufXEhrxqvEzeMtRGoY=
 github.com/coder/tailscale v0.0.0-20230522123520-74712221d00f h1:F0Xr1d8h8dAHn7tab1HXuzYFkcjmCydnEfdMbkOhlVk=
