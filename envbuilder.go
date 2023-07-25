@@ -45,6 +45,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/sirupsen/logrus"
+	"github.com/tailscale/hujson"
 	"golang.org/x/xerrors"
 )
 
@@ -258,6 +259,10 @@ func Run(ctx context.Context, options Options) error {
 			return fmt.Errorf("decode docker config: %w", err)
 		}
 		var configFile DockerConfig
+		decoded, err = hujson.Standardize(decoded)
+		if err != nil {
+			return fmt.Errorf("humanize json for docker config: %w", err)
+		}
 		err = json.Unmarshal(decoded, &configFile)
 		if err != nil {
 			return fmt.Errorf("parse docker config: %w", err)
@@ -622,7 +627,11 @@ func Run(ctx context.Context, options Options) error {
 	devContainerMetadata, exists := configFile.Config.Labels["devcontainer.metadata"]
 	if exists {
 		var devContainer []*devcontainer.Spec
-		err := json.Unmarshal([]byte(devContainerMetadata), &devContainer)
+		devContainerMetadataBytes, err := hujson.Standardize([]byte(devContainerMetadata))
+		if err != nil {
+			return fmt.Errorf("humanize json for dev container metadata: %w", err)
+		}
+		err = json.Unmarshal(devContainerMetadataBytes, &devContainer)
 		if err != nil {
 			return fmt.Errorf("unmarshal metadata: %w", err)
 		}

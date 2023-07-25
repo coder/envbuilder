@@ -26,7 +26,7 @@ func TestParse(t *testing.T) {
 	raw := `{
   "build": {
     "dockerfile": "Dockerfile",
-    "context": "."
+    "context": ".",
   },
   // Comments here!
   "image": "codercom/code-server:latest"
