@@ -123,6 +123,10 @@ type Options struct {
 	// to using a devcontainer that some might find simpler.
 	DockerfilePath string `env:"DOCKERFILE_PATH"`
 
+	// CacheTTLDays is the number of days to use cached layers before
+	// expiring them. Defaults to 7 days.
+	CacheTTLDays int `env:"CACHE_TTL_DAYS"`
+
 	// DockerConfigBase64 is a base64 encoded Docker config
 	// file that will be used to pull images from private
 	// container registries.
@@ -557,6 +561,10 @@ func Run(ctx context.Context, options Options) error {
 				logf(codersdk.LogLevelInfo, "%s", scanner.Text())
 			}
 		}()
+		cacheTTL := time.Hour * 24 * 7
+		if options.CacheTTLDays != 0 {
+			cacheTTL = time.Hour * 24 * time.Duration(options.CacheTTLDays)
+		}
 
 		endStage := startStage("🏗️ Building image...")
 		// At this point we have all the context, we can now build!
@@ -578,7 +586,7 @@ func Run(ctx context.Context, options Options) error {
 			CompressionLevel: 3,
 			CacheOptions: config.CacheOptions{
 				// Cache for a week by default!
-				CacheTTL: time.Hour * 24 * 7,
+				CacheTTL: cacheTTL,
 				CacheDir: options.BaseImageCacheDir,
 			},
 			ForceUnpack:       true,
@@ -931,20 +939,23 @@ func OptionsFromEnv(getEnv func(string) (string, bool)) Options {
 		if env == "" {
 			continue
 		}
+		e, ok := getEnv(env)
+		if !ok {
+			continue
+		}
 		switch fieldTyp.Type.Kind() {
 		case reflect.String:
-			v, _ := getEnv(env)
-			field.SetString(v)
+			field.SetString(e)
 		case reflect.Bool:
-			e, _ := getEnv(env)
 			v, _ := strconv.ParseBool(e)
 			field.SetBool(v)
+		case reflect.Int:
+			v, _ := strconv.ParseInt(e, 10, 64)
+			field.SetInt(v)
 		case reflect.Slice:
-			v, ok := getEnv(env)
-			if !ok {
-				continue
-			}
-			field.Set(reflect.ValueOf(strings.Split(v, ",")))
+			field.Set(reflect.ValueOf(strings.Split(e, ",")))
+		default:
+			panic(fmt.Sprintf("unsupported type %s in OptionsFromEnv", fieldTyp.Type.String()))
 		}
 	}
 
