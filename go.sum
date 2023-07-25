@@ -220,8 +220,8 @@ github.com/cockroachdb/errors v1.2.4/go.mod h1:rQD95gz6FARkaKkQXUksEje/d9a6wBJoC
 github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f/go.mod h1:i/u985jwjWRlyHXQbwatDASoW0RMlZ/3i9yJHE2xLkI=
 github.com/coder/coder v0.24.2-0.20230630184129-6015319e9d30 h1:7IhsN7OAQEKbIsEhsx2/ay8JQHqDWYzt/uWx9VkKfFY=
 github.com/coder/coder v0.24.2-0.20230630184129-6015319e9d30/go.mod h1:BlHKuGJCK7V41oe8J5b9vQhjjXnnd+RcAmasG3Tyq1E=
-github.com/coder/kaniko v0.0.0-20230712162612-efb9a14afa73 h1:qMrXOD6uty6jfzNI1mE/lm/QJfoQM7NUquaDWqWDUAU=
-github.com/coder/kaniko v0.0.0-20230712162612-efb9a14afa73/go.mod h1:byIUWxhLPDuO0o38iG+ffFWmIhUCSc8/N1INJZhjcUY=
+github.com/coder/kaniko v0.0.0-20230720174451-f9ad3d51d417 h1:Pt4A7jOIou3jZ4p5lP33BncRuDPVAcXHFrFl0htwmRs=
+github.com/coder/kaniko v0.0.0-20230720174451-f9ad3d51d417/go.mod h1:byIUWxhLPDuO0o38iG+ffFWmIhUCSc8/N1INJZhjcUY=
 github.com/coder/retry v1.4.0 h1:g0fojHFxcdgM3sBULqgjFDxw1UIvaCqk4ngUDu0EWag=
 github.com/coder/retry v1.4.0/go.mod h1:blHMk9vs6LkoRT9ZHyuZo360cufXEhrxqvEzeMtRGoY=
 github.com/coder/tailscale v0.0.0-20230522123520-74712221d00f h1:F0Xr1d8h8dAHn7tab1HXuzYFkcjmCydnEfdMbkOhlVk=
@@ -824,6 +824,8 @@ github.com/tailscale/golang-x-crypto v0.0.0-20221102133106-bc99ab8c2d17 h1:cSm67
 github.com/tailscale/golang-x-crypto v0.0.0-20221102133106-bc99ab8c2d17/go.mod h1:95n9fbUCixVSI4QXLEvdKJjnYK2eUlkTx9+QwLPXFKU=
 github.com/tailscale/goupnp v1.0.1-0.20210804011211-c64d0f06ea05 h1:4chzWmimtJPxRs2O36yuGRW3f9SYV+bMTTvMBI0EKio=
 github.com/tailscale/goupnp v1.0.1-0.20210804011211-c64d0f06ea05/go.mod h1:PdCqy9JzfWMJf1H5UJW2ip33/d4YkoKN0r67yKH1mG8=
+github.com/tailscale/hujson v0.0.0-20220630195928-54599719472f h1:n4r/sJ92cBSBHK8n9lR1XLFr0OiTVeGfN5TR+9LaN7E=
+github.com/tailscale/hujson v0.0.0-20220630195928-54599719472f/go.mod h1:DFSS3NAGHthKo1gTlmEcSBiZrRJXi28rLNd/1udP1c8=
 github.com/tailscale/netlink v1.1.1-0.20211101221916-cabfb018fe85 h1:zrsUcqrG2uQSPhaUPjUQwozcRdDdSxxqhNgNZ3drZFk=
 github.com/tailscale/netlink v1.1.1-0.20211101221916-cabfb018fe85/go.mod h1:NzVQi3Mleb+qzq8VmcWpSkcSYxXIg0DkI6XDzpVkhJ0=
 github.com/tailscale/wireguard-go v0.0.0-20221219190806-4fa124729667 h1:etWp6uUwKu8NEj37K2OuMBnZ7EnVMKA7gJg5AqPFy/o=
@@ -1384,8 +1386,6 @@ honnef.co/go/tools v0.4.0-0.dev.0.20230130122044-c30b15588105 h1:2OzOQ+1scFmv2dt
 howett.net/plist v1.0.0 h1:7CrbWYbPPO/PyNy38b2EB/+gYbjCe2DXBxgtOOZbSQM=
 inet.af/peercred v0.0.0-20210906144145-0893ea02156a h1:qdkS8Q5/i10xU2ArJMKYhVa1DORzBfYS/qA2UK2jheg=
 inet.af/peercred v0.0.0-20210906144145-0893ea02156a/go.mod h1:FjawnflS/udxX+SvpsMgZfdqx2aykOlkISeAsADi5IU=
-muzzammil.xyz/jsonc v1.0.0 h1:B6kaT3wHueZ87mPz3q1nFuM1BlL32IG0wcq0/uOsQ18=
-muzzammil.xyz/jsonc v1.0.0/go.mod h1:rFv8tUUKe+QLh7v02BhfxXEf4ZHhYD7unR93HL/1Uvo=
 nhooyr.io/websocket v1.8.7 h1:usjR2uOr/zjjkVMy0lW+PPohFok7PCow5sDjLgX4P4g=
 nhooyr.io/websocket v1.8.7/go.mod h1:B70DZP8IakI65RVQ51MsWP/8jndNma26DVA/nFSCgW0=
 rsc.io/binaryregexp v0.2.0/go.mod h1:qTv7/COck+e2FymRvadv62gMdZztPaShugOCi3I+8D8=

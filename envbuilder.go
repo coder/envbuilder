@@ -45,6 +45,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/sirupsen/logrus"
+	"github.com/tailscale/hujson"
 	"golang.org/x/xerrors"
 )
 
@@ -258,6 +259,10 @@ func Run(ctx context.Context, options Options) error {
 			return fmt.Errorf("decode docker config: %w", err)
 		}
 		var configFile DockerConfig
+		decoded, err = hujson.Standardize(decoded)
+		if err != nil {
+			return fmt.Errorf("humanize json for docker config: %w", err)
+		}
 		err = json.Unmarshal(decoded, &configFile)
 		if err != nil {
 			return fmt.Errorf("parse docker config: %w", err)
@@ -523,6 +528,25 @@ func Run(ctx context.Context, options Options) error {
 			return nil, fmt.Errorf("delete filesystem: %w", err)
 		}
 
+		stdoutReader, stdoutWriter := io.Pipe()
+		stderrReader, stderrWriter := io.Pipe()
+		defer stdoutReader.Close()
+		defer stdoutWriter.Close()
+		defer stderrReader.Close()
+		defer stderrWriter.Close()
+		go func() {
+			scanner := bufio.NewScanner(stdoutReader)
+			for scanner.Scan() {
+				logf(codersdk.LogLevelInfo, "%s", scanner.Text())
+			}
+		}()
+		go func() {
+			scanner := bufio.NewScanner(stderrReader)
+			for scanner.Scan() {
+				logf(codersdk.LogLevelInfo, "%s", scanner.Text())
+			}
+		}()
+
 		endStage := startStage("🏗️ Building image...")
 		// At this point we have all the context, we can now build!
 		image, err := executor.DoBuild(&config.KanikoOptions{
@@ -530,6 +554,8 @@ func Run(ctx context.Context, options Options) error {
 			CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
 			SnapshotMode:      "redo",
 			RunV2:             true,
+			RunStdout:         stdoutWriter,
+			RunStderr:         stderrWriter,
 			Destinations:      []string{"local"},
 			CacheRunLayers:    true,
 			CacheCopyLayers:   true,
@@ -622,7 +648,11 @@ func Run(ctx context.Context, options Options) error {
 	devContainerMetadata, exists := configFile.Config.Labels["devcontainer.metadata"]
 	if exists {
 		var devContainer []*devcontainer.Spec
-		err := json.Unmarshal([]byte(devContainerMetadata), &devContainer)
+		devContainerMetadataBytes, err := hujson.Standardize([]byte(devContainerMetadata))
+		if err != nil {
+			return fmt.Errorf("humanize json for dev container metadata: %w", err)
+		}
+		err = json.Unmarshal(devContainerMetadataBytes, &devContainer)
 		if err != nil {
 			return fmt.Errorf("unmarshal metadata: %w", err)
 		}

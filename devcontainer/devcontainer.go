@@ -2,6 +2,7 @@ package devcontainer
 
 import (
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -14,14 +15,17 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"muzzammil.xyz/jsonc"
+	"github.com/tailscale/hujson"
 )
 
 // Parse parses a devcontainer.json file.
 func Parse(content []byte) (*Spec, error) {
-	content = jsonc.ToJSON(content)
+	content, err := hujson.Standardize(content)
+	if err != nil {
+		return nil, fmt.Errorf("standardize json: %w", err)
+	}
 	var schema Spec
-	return &schema, jsonc.Unmarshal(content, &schema)
+	return &schema, json.Unmarshal(content, &schema)
 }
 
 type Spec struct {

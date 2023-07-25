@@ -4,7 +4,7 @@ go 1.20
 
 // There are a few options we need added to Kaniko!
 // See: https://github.com/GoogleContainerTools/kaniko/compare/main...coder:kaniko:main
-replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20230712162612-efb9a14afa73
+replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20230720174451-f9ad3d51d417
 
 // Required to import the codersdk!
 replace tailscale.com => github.com/coder/tailscale v0.0.0-20230522123520-74712221d00f
@@ -27,8 +27,8 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.7.0
 	github.com/stretchr/testify v1.8.4
+	github.com/tailscale/hujson v0.0.0-20220630195928-54599719472f
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2
-	muzzammil.xyz/jsonc v1.0.0
 )
 
 require (
