@@ -21,20 +21,22 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 func TestSystemOptions(t *testing.T) {
 	t.Parallel()
 	opts := map[string]string{
-		"INIT_SCRIPT":      "echo hello",
-		"CACHE_REPO":       "kylecarbs/testing",
-		"DOCKERFILE_PATH":  "Dockerfile",
-		"FALLBACK_IMAGE":   "ubuntu:latest",
-		"FORCE_SAFE":       "true",
-		"INSECURE":         "false",
-		"GIT_URL":          "https://github.com/coder/coder",
-		"WORKSPACE_FOLDER": "/workspaces/coder",
+		"INIT_SCRIPT":            "echo hello",
+		"CACHE_REPO":             "kylecarbs/testing",
+		"DEVCONTAINER_JSON_PATH": "/tmp/devcontainer.json",
+		"DOCKERFILE_PATH":        "Dockerfile",
+		"FALLBACK_IMAGE":         "ubuntu:latest",
+		"FORCE_SAFE":             "true",
+		"INSECURE":               "false",
+		"GIT_URL":                "https://github.com/coder/coder",
+		"WORKSPACE_FOLDER":       "/workspaces/coder",
 	}
 	env := envbuilder.OptionsFromEnv(func(s string) (string, bool) {
 		return opts[s], true
 	})
 	require.Equal(t, "echo hello", env.InitScript)
 	require.Equal(t, "kylecarbs/testing", env.CacheRepo)
+	require.Equal(t, "/tmp/devcontainer.json", env.DevcontainerJSONPath)
 	require.Equal(t, "Dockerfile", env.DockerfilePath)
 	require.Equal(t, "ubuntu:latest", env.FallbackImage)
 	require.True(t, env.ForceSafe)
