@@ -139,6 +139,34 @@ func TestBuildFromDockerfile(t *testing.T) {
 	require.Equal(t, "hello", strings.TrimSpace(output))
 }
 
+func TestBuildPrintBuildOutput(t *testing.T) {
+	// Ensures that a Git repository with a Dockerfile is cloned and built.
+	url := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			"Dockerfile": "FROM alpine:latest\nRUN echo hello",
+		},
+	})
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		"GIT_URL=" + url,
+		"DOCKERFILE_PATH=Dockerfile",
+	}})
+	require.NoError(t, err)
+
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	require.NoError(t, err)
+	defer cli.Close()
+
+	// Make sure that "hello" is printed in the logs!
+	logs, _ := streamContainerLogs(t, cli, ctr)
+	for {
+		log := <-logs
+		if log != "hello" {
+			continue
+		}
+		break
+	}
+}
+
 func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	url := createGitServer(t, gitServerOptions{
