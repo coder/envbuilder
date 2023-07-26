@@ -103,7 +103,7 @@ type Options struct {
 	// BaseImageCacheDir is the path to a directory where the base
 	// image can be found. This should be a read-only directory
 	// solely mounted for the purpose of caching the base image.
-	BaseImageCacheDir string `env:"BASE_IMAGECACHE_DIR"`
+	BaseImageCacheDir string `env:"BASE_IMAGE_CACHE_DIR"`
 
 	// LayerCacheDir is the path to a directory where built layers
 	// will be stored. This spawns an in-memory registry to serve

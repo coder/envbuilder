@@ -128,6 +128,26 @@ Each layer is stored in the registry as a separate image. The image tag is the h
 
 The performance improvement of builds depends on the complexity of your Dockerfile. For [`coder/coder`](https://github.com/coder/coder/blob/main/.devcontainer/Dockerfile), uncached builds take 36m while cached builds take 40s (~98% improvement).
 
+## Image Caching
+
+When the base container is large, it can take a long time to pull the image from the registry. You can pre-pull the image into a read-only volume and mount it into the container to speed up builds.
+
+```bash
+# Pull your base image from the registry to a local directory.
+docker run --rm \
+  -v /tmp/kaniko-cache:/cache \
+  gcr.io/kaniko-project/warmer:latest \
+    --cache-dir=/cache \
+    --image=<your-image>
+
+# Run envbuilder with the local image cache.
+docker run -it --rm \
+  -v /tmp/kaniko-cache:/image-cache:ro \
+  -e BASE_IMAGE_CACHE_DIR=/image-cache
+```
+
+In Kubernetes, you can pre-populate a persistent volume with the same warmer image, then mount it into many workspaces with the [`ReadOnlyMany` access mode](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes).
+
 ## Setup Script
 
 The `SETUP_SCRIPT` environment variable dynamically configures the user and init command (PID 1) after the container build process.
