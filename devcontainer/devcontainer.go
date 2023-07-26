@@ -34,7 +34,7 @@ type Spec struct {
 	RemoteUser string            `json:"remoteUser"`
 	RemoteEnv  map[string]string `json:"remoteEnv"`
 	// Features is a map of feature names to feature configurations.
-	Features map[string]map[string]any `json:"features"`
+	Features map[string]any `json:"features"`
 
 	// Deprecated but still frequently used...
 	Dockerfile string `json:"dockerFile"`
@@ -186,15 +186,34 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, remoteUser, dock
 	// is deterministic which allows for caching.
 	sort.Strings(featureOrder)
 
-	for _, featureRef := range featureOrder {
-		featureOpts := s.Features[featureRef]
+	for _, featureRefRaw := range featureOrder {
+		featureRefParsed, err := name.NewTag(featureRefRaw)
+		if err != nil {
+			return "", fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
+		}
+		featureImage := featureRefParsed.Repository.Name()
+		featureTag := featureRefParsed.TagStr()
+
+		featureOpts := map[string]any{}
+		switch t := s.Features[featureRefRaw].(type) {
+		case string:
+			featureTag = t
+		case map[string]any:
+			featureOpts = t
+		}
+
+		featureRef := featureImage
+		if featureTag != "" {
+			featureRef += ":" + featureTag
+		}
+
 		// It's important for caching that this directory is static.
 		// If it changes on each run then the container will not be cached.
 		//
 		// devcontainers/cli has a very complex method of computing the feature
 		// name from the feature reference. We're just going to hash it for simplicity.
 		featureSha := md5.Sum([]byte(featureRef))
-		featureName := strings.Split(filepath.Base(featureRef), ":")[0]
+		featureName := filepath.Base(featureImage)
 		featureDir := filepath.Join(featuresDir, fmt.Sprintf("%s-%x", featureName, featureSha[:4]))
 		err = fs.MkdirAll(featureDir, 0644)
 		if err != nil {

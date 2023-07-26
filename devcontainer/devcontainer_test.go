@@ -1,6 +1,7 @@
 package devcontainer_test
 
 import (
+	"crypto/md5"
 	"fmt"
 	"io"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer"
+	"github.com/coder/envbuilder/devcontainer/features"
 	"github.com/coder/envbuilder/registrytest"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -34,6 +36,72 @@ func TestParse(t *testing.T) {
 	parsed, err := devcontainer.Parse([]byte(raw))
 	require.NoError(t, err)
 	require.Equal(t, "Dockerfile", parsed.Build.Dockerfile)
+}
+
+func TestCompileWithFeatures(t *testing.T) {
+	t.Parallel()
+	registry := registrytest.New(t)
+	featureOne := registrytest.WriteContainer(t, registry, "coder/test:tomato", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:          "rust",
+			Version:     "tomato",
+			Name:        "Rust",
+			Description: "Example description!",
+			ContainerEnv: map[string]string{
+				"TOMATO": "example",
+			},
+		},
+	})
+	featureTwo := registrytest.WriteContainer(t, registry, "coder/test:potato", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:          "go",
+			Version:     "potato",
+			Name:        "Go",
+			Description: "Example description!",
+			ContainerEnv: map[string]string{
+				"POTATO": "example",
+			},
+		},
+	})
+	// Update the tag to ensure it comes from the feature value!
+	featureTwoFake := strings.Join(append(strings.Split(featureTwo, ":")[:2], "faketag"), ":")
+
+	raw := `{
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".",
+  },
+  // Comments here!
+  "image": "codercom/code-server:latest",
+  "features": {
+	"` + featureOne + `": {},
+	"` + featureTwoFake + `": "potato"
+  }
+}`
+	dc, err := devcontainer.Parse([]byte(raw))
+	require.NoError(t, err)
+	fs := memfs.New()
+	params, err := dc.Compile(fs, "", envbuilder.MagicDir, "")
+	require.NoError(t, err)
+
+	// We have to SHA because we get a different MD5 every time!
+	featureOneMD5 := md5.Sum([]byte(featureOne))
+	featureOneSha := fmt.Sprintf("%x", featureOneMD5[:4])
+	featureTwoMD5 := md5.Sum([]byte(featureTwo))
+	featureTwoSha := fmt.Sprintf("%x", featureTwoMD5[:4])
+
+	require.Equal(t, `FROM codercom/code-server:latest
+
+USER root
+# Go potato - Example description!
+ENV POTATO=example
+RUN .envbuilder/features/test-`+featureTwoSha+`/install.sh
+# Rust tomato - Example description!
+ENV TOMATO=example
+RUN .envbuilder/features/test-`+featureOneSha+`/install.sh
+USER 1000`, params.DockerfileContent)
 }
 
 func TestCompileDevContainer(t *testing.T) {
