@@ -183,8 +183,7 @@ func (s *Spec) Compile(options map[string]any) (string, error) {
 	runDirective = append([]string{"RUN"}, runDirective...)
 	runDirective = append(runDirective, s.InstallScriptPath)
 
-	// Prefix and suffix with a newline to ensure the RUN command is on its own line.
-	lines := []string{"\n"}
+	lines := []string{fmt.Sprintf("# %s %s - %s", s.Name, s.Version, s.Description)}
 	envKeys := make([]string, 0, len(s.ContainerEnv))
 	for key := range s.ContainerEnv {
 		envKeys = append(envKeys, key)
@@ -195,7 +194,7 @@ func (s *Spec) Compile(options map[string]any) (string, error) {
 	for _, key := range envKeys {
 		lines = append(lines, fmt.Sprintf("ENV %s=%s", key, s.ContainerEnv[key]))
 	}
-	lines = append(lines, strings.Join(runDirective, " "), "\n")
+	lines = append(lines, strings.Join(runDirective, " "))
 
 	return strings.Join(lines, "\n"), nil
 }
