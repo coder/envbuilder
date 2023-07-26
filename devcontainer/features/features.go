@@ -183,7 +183,20 @@ func (s *Spec) Compile(options map[string]any) (string, error) {
 	runDirective = append([]string{"RUN"}, runDirective...)
 	runDirective = append(runDirective, s.InstallScriptPath)
 
-	lines := []string{fmt.Sprintf("# %s %s - %s", s.Name, s.Version, s.Description)}
+	comment := ""
+	if s.Name != "" {
+		comment += "# " + s.Name
+	}
+	if s.Version != "" {
+		comment += " " + s.Version
+	}
+	if s.Description != "" {
+		comment += " - " + s.Description
+	}
+	lines := []string{}
+	if comment != "" {
+		lines = append(lines, comment)
+	}
 	envKeys := make([]string, 0, len(s.ContainerEnv))
 	for key := range s.ContainerEnv {
 		envKeys = append(envKeys, key)
