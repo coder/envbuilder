@@ -258,21 +258,34 @@ func UserFromDockerfile(dockerfileContent string) string {
 // ImageFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the image that will be used to run the container.
 func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
+	args := map[string]string{}
+	var imageRef string
 	lines := strings.Split(dockerfileContent, "\n")
 	// Iterate over lines in reverse
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := lines[i]
-		if !strings.HasPrefix(line, "FROM ") {
+		if strings.HasPrefix(line, "ARG ") {
+			arg := strings.TrimSpace(strings.TrimPrefix(line, "ARG "))
+			if strings.Contains(arg, "=") {
+				parts := strings.SplitN(arg, "=", 2)
+				args[parts[0]] = parts[1]
+			}
 			continue
 		}
-		imageRef := strings.TrimSpace(strings.TrimPrefix(line, "FROM "))
-		image, err := name.ParseReference(imageRef)
-		if err != nil {
-			return nil, fmt.Errorf("parse image ref %q: %w", imageRef, err)
+		if imageRef == "" && strings.HasPrefix(line, "FROM ") {
+			imageRef = strings.TrimPrefix(line, "FROM ")
 		}
-		return image, nil
 	}
-	return nil, fmt.Errorf("no FROM directive found")
+	if imageRef == "" {
+		return nil, fmt.Errorf("no FROM directive found")
+	}
+	image, err := name.ParseReference(os.Expand(imageRef, func(s string) string {
+		return args[s]
+	}))
+	if err != nil {
+		return nil, fmt.Errorf("parse image ref %q: %w", imageRef, err)
+	}
+	return image, nil
 }
 
 // UserFromImage inspects the remote reference and returns the user

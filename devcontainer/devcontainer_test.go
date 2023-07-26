@@ -151,6 +151,28 @@ func TestUserFromDockerfile(t *testing.T) {
 	require.Equal(t, "kyle", user)
 }
 
+func TestImageFromDockerfile(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		content string
+		image   string
+	}{{
+		content: "FROM ubuntu",
+		image:   "index.docker.io/library/ubuntu:latest",
+	}, {
+		content: "ARG VARIANT=ionic\nFROM ubuntu:$VARIANT",
+		image:   "index.docker.io/library/ubuntu:ionic",
+	}} {
+		tc := tc
+		t.Run(tc.image, func(t *testing.T) {
+			t.Parallel()
+			ref, err := devcontainer.ImageFromDockerfile(tc.content)
+			require.NoError(t, err)
+			require.Equal(t, tc.image, ref.Name())
+		})
+	}
+}
+
 func TestUserFromImage(t *testing.T) {
 	t.Parallel()
 	registry := registrytest.New(t)
