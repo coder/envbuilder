@@ -41,7 +41,7 @@ func TestParse(t *testing.T) {
 func TestCompileWithFeatures(t *testing.T) {
 	t.Parallel()
 	registry := registrytest.New(t)
-	featureOne := registrytest.WriteContainer(t, registry, "coder/test:tomato", features.TarLayerMediaType, map[string]any{
+	featureOne := registrytest.WriteContainer(t, registry, "coder/one:tomato", features.TarLayerMediaType, map[string]any{
 		"install.sh": "hey",
 		"devcontainer-feature.json": features.Spec{
 			ID:          "rust",
@@ -53,7 +53,7 @@ func TestCompileWithFeatures(t *testing.T) {
 			},
 		},
 	})
-	featureTwo := registrytest.WriteContainer(t, registry, "coder/test:potato", features.TarLayerMediaType, map[string]any{
+	featureTwo := registrytest.WriteContainer(t, registry, "coder/two:potato", features.TarLayerMediaType, map[string]any{
 		"install.sh": "hey",
 		"devcontainer-feature.json": features.Spec{
 			ID:          "go",
@@ -63,10 +63,13 @@ func TestCompileWithFeatures(t *testing.T) {
 			ContainerEnv: map[string]string{
 				"POTATO": "example",
 			},
+			Options: map[string]features.Option{
+				"version": {
+					Type: "string",
+				},
+			},
 		},
 	})
-	// Update the tag to ensure it comes from the feature value!
-	featureTwoFake := strings.Join(append(strings.Split(featureTwo, ":")[:2], "faketag"), ":")
 
 	raw := `{
   "build": {
@@ -77,7 +80,7 @@ func TestCompileWithFeatures(t *testing.T) {
   "image": "codercom/code-server:latest",
   "features": {
 	"` + featureOne + `": {},
-	"` + featureTwoFake + `": "potato"
+	"` + featureTwo + `": "potato"
   }
 }`
 	dc, err := devcontainer.Parse([]byte(raw))
@@ -95,12 +98,12 @@ func TestCompileWithFeatures(t *testing.T) {
 	require.Equal(t, `FROM codercom/code-server:latest
 
 USER root
-# Go potato - Example description!
-ENV POTATO=example
-RUN .envbuilder/features/test-`+featureTwoSha+`/install.sh
 # Rust tomato - Example description!
 ENV TOMATO=example
-RUN .envbuilder/features/test-`+featureOneSha+`/install.sh
+RUN .envbuilder/features/one-`+featureOneSha+`/install.sh
+# Go potato - Example description!
+ENV POTATO=example
+RUN VERSION=potato .envbuilder/features/two-`+featureTwoSha+`/install.sh
 USER 1000`, params.DockerfileContent)
 }
 

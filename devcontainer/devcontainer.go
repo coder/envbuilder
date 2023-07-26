@@ -191,20 +191,16 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, remoteUser, dock
 		if err != nil {
 			return "", fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
 		}
-		featureImage := featureRefParsed.Repository.Name()
-		featureTag := featureRefParsed.TagStr()
 
 		featureOpts := map[string]any{}
 		switch t := s.Features[featureRefRaw].(type) {
 		case string:
-			featureTag = t
+			// As a shorthand, the value of the `features`` property can be provided as a
+			// single string. This string is mapped to an option called version.
+			// https://containers.dev/implementors/features/#devcontainer-json-properties
+			featureOpts["version"] = t
 		case map[string]any:
 			featureOpts = t
-		}
-
-		featureRef := featureImage
-		if featureTag != "" {
-			featureRef += ":" + featureTag
 		}
 
 		// It's important for caching that this directory is static.
@@ -212,20 +208,20 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, remoteUser, dock
 		//
 		// devcontainers/cli has a very complex method of computing the feature
 		// name from the feature reference. We're just going to hash it for simplicity.
-		featureSha := md5.Sum([]byte(featureRef))
-		featureName := filepath.Base(featureImage)
+		featureSha := md5.Sum([]byte(featureRefRaw))
+		featureName := filepath.Base(featureRefParsed.Repository.Name())
 		featureDir := filepath.Join(featuresDir, fmt.Sprintf("%s-%x", featureName, featureSha[:4]))
 		err = fs.MkdirAll(featureDir, 0644)
 		if err != nil {
 			return "", err
 		}
-		spec, err := features.Extract(fs, featureDir, featureRef)
+		spec, err := features.Extract(fs, featureDir, featureRefRaw)
 		if err != nil {
-			return "", fmt.Errorf("extract feature %s: %w", featureRef, err)
+			return "", fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
 		}
 		directive, err := spec.Compile(featureOpts)
 		if err != nil {
-			return "", fmt.Errorf("compile feature %s: %w", featureRef, err)
+			return "", fmt.Errorf("compile feature %s: %w", featureRefRaw, err)
 		}
 		featureDirectives = append(featureDirectives, directive)
 	}
