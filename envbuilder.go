@@ -505,6 +505,8 @@ func Run(ctx context.Context, options Options) error {
 		MagicDir,
 		options.LayerCacheDir,
 		options.WorkspaceFolder,
+		// See: https://github.com/coder/envbuilder/issues/37
+		"/etc/resolv.conf",
 	}, options.IgnorePaths...)
 
 	for _, ignorePath := range ignorePaths {
