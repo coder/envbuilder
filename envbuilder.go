@@ -592,7 +592,7 @@ func Run(ctx context.Context, options Options) error {
 			ForceUnpack:       true,
 			BuildArgs:         buildParams.BuildArgs,
 			CacheRepo:         options.CacheRepo,
-			Cache:             options.CacheRepo != "",
+			Cache:             options.CacheRepo != "" || options.BaseImageCacheDir != "",
 			DockerfilePath:    buildParams.DockerfilePath,
 			DockerfileContent: buildParams.DockerfileContent,
 			RegistryOptions: config.RegistryOptions{
