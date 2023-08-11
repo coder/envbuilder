@@ -96,13 +96,13 @@ For access token-based authentication, follow the following schema (if empty, th
 If using envbuilder inside of [Coder](https://github.com/coder/coder), you can use the `coder_git_auth` Terraform resource to automatically provide this token on workspace creation:
 
 ```hcl
-resource "coder_git_auth" "github" {
+data "coder_git_auth" "github" {
     id = "github"
 }
 
 resource "docker_container" "dev" {
     env = [
-        GIT_USERNAME = coder_git_auth.github.access_token,
+        GIT_USERNAME = data.coder_git_auth.github.access_token,
     ]
 }
 ```
