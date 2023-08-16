@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/prometheus/procfs"
 	"io"
 	"net"
 	"net/http"
@@ -192,6 +193,11 @@ type Options struct {
 	// Filesystem is the filesystem to use for all operations.
 	// Defaults to the host filesystem.
 	Filesystem billy.Filesystem
+}
+
+type TempRemount struct {
+	Source string
+	Target string
 }
 
 // DockerConfig represents the Docker configuration file.
@@ -516,6 +522,60 @@ func Run(ctx context.Context, options Options) error {
 		})
 	}
 
+	// temp move of all ro mounts
+	var tempRemounts []TempRemount
+
+	mountInfos, err := procfs.GetMounts()
+	if err != nil {
+		logf(codersdk.LogLevelError, "Failed to read mountinfo: %s", err)
+	} else {
+		prefixes := []string{filepath.Join("/", MagicDir), "/proc", "/sys"}
+		for _, mountInfo := range mountInfos {
+			logf(codersdk.LogLevelTrace, "Found mountpoint %s", mountInfo.MountPoint)
+			if _, ok := mountInfo.Options["ro"]; ok {
+				logf(codersdk.LogLevelTrace, "Found ro mountpoint %s ", mountInfo.MountPoint)
+
+				relevantMountpoint := true
+				for _, prefix := range prefixes {
+					if strings.HasPrefix(mountInfo.MountPoint, prefix) {
+						logf(codersdk.LogLevelTrace, "Mountpoint %s is NOT relevant (prefix: %s)", mountInfo.MountPoint, prefix)
+						relevantMountpoint = false
+						break
+					}
+				}
+				if relevantMountpoint {
+					logf(codersdk.LogLevelTrace, "Mountpoint %s is relevant", mountInfo.MountPoint)
+
+					remount := TempRemount{
+						Source: mountInfo.MountPoint,
+						Target: filepath.Join("/", MagicDir, mountInfo.MountPoint),
+					}
+
+					logf(codersdk.LogLevelTrace, "Remount mountpoint %s to %s", mountInfo.MountPoint, remount.Target)
+
+					err := os.MkdirAll(remount.Target, 0750)
+					if err == nil {
+						err := syscall.Mount(remount.Source, remount.Target, "bind", syscall.MS_BIND, "")
+						if err == nil {
+							err := syscall.Unmount(remount.Source, 0)
+							if err != nil {
+								logf(codersdk.LogLevelError, "Could not unmount %s", remount.Source)
+							}
+							tempRemounts = append(tempRemounts, remount)
+
+						} else {
+							logf(codersdk.LogLevelError, "Could not bindmount %s to %s", remount.Source, remount.Target)
+						}
+					} else {
+						logf(codersdk.LogLevelError, "Could not create temp mountpoint %s for %s", remount.Target, remount.Source)
+					}
+
+				}
+
+			}
+		}
+	}
+
 	build := func() (v1.Image, error) {
 		_, err := options.Filesystem.Stat(MagicFile)
 		if err == nil && options.SkipRebuild {
@@ -650,6 +710,24 @@ func Run(ctx context.Context, options Options) error {
 
 	if closeAfterBuild != nil {
 		closeAfterBuild()
+	}
+
+	for _, remount := range tempRemounts {
+		logf(codersdk.LogLevelTrace, "Cleanup mountpoint %s", remount.Target)
+		err := os.MkdirAll(remount.Source, 0750)
+		if err == nil {
+			err := syscall.Mount(remount.Target, remount.Source, "bind", syscall.MS_BIND, "")
+			if err == nil {
+				err := syscall.Unmount(remount.Target, 0)
+				if err != nil {
+					logf(codersdk.LogLevelError, "Could not unmount %s", remount.Target)
+				}
+			} else {
+				logf(codersdk.LogLevelError, "Could not bindmount %s to %s", remount.Target, remount.Source)
+			}
+		} else {
+			logf(codersdk.LogLevelError, "Could not create mountpoint %s for %s", remount.Source, remount.Target)
+		}
 	}
 
 	// Create the magic file to indicate that this build
