@@ -523,53 +523,53 @@ func Run(ctx context.Context, options Options) error {
 	mountInfos, err := procfs.GetMounts()
 	if err != nil {
 		logf(codersdk.LogLevelError, "Failed to read mountinfo: %s", err)
-	} else {
-		prefixes := []string{filepath.Join("/", MagicDir), "/proc", "/sys"}
-		for _, mountInfo := range mountInfos {
-			logf(codersdk.LogLevelTrace, "Found mountpoint %s", mountInfo.MountPoint)
-			if _, ok := mountInfo.Options["ro"]; !ok {
-				continue
-			}
-			logf(codersdk.LogLevelTrace, "Found ro mountpoint %s ", mountInfo.MountPoint)
+	}
 
-			relevantMountpoint := true
-			for _, prefix := range prefixes {
-				if strings.HasPrefix(mountInfo.MountPoint, prefix) {
-					logf(codersdk.LogLevelTrace, "Mountpoint %s is NOT relevant (prefix: %s)", mountInfo.MountPoint, prefix)
-					relevantMountpoint = false
-					break
-				}
-			}
-			if !relevantMountpoint {
-				continue
-			}
-
-			src := mountInfo.MountPoint
-			tgt := filepath.Join("/", MagicDir, mountInfo.MountPoint)
-
-			logf(codersdk.LogLevelTrace, "Mountpoint %s is relevant", src)
-
-			logf(codersdk.LogLevelTrace, "Remount mountpoint %s to %s", src, tgt)
-
-			err := os.MkdirAll(tgt, 0750)
-			if err != nil {
-				logf(codersdk.LogLevelError, "Could not create temp mountpoint %s for %s: %s", tgt, src, err.Error())
-				continue
-			}
-
-			err = syscall.Mount(src, tgt, "bind", syscall.MS_BIND, "")
-			if err != nil {
-				logf(codersdk.LogLevelError, "Could not bindmount %s to %s: %s", src, tgt, err.Error())
-				continue
-			}
-			err = syscall.Unmount(src, 0)
-			if err != nil {
-				logf(codersdk.LogLevelError, "Could not unmount %s: %s", src, err.Error())
-				continue
-			}
-
-			tempRemounts[src] = tgt
+	prefixes := []string{filepath.Join("/", MagicDir), "/proc", "/sys"}
+	for _, mountInfo := range mountInfos {
+		logf(codersdk.LogLevelTrace, "Found mountpoint %s", mountInfo.MountPoint)
+		if _, ok := mountInfo.Options["ro"]; !ok {
+			continue
 		}
+		logf(codersdk.LogLevelTrace, "Found ro mountpoint %s ", mountInfo.MountPoint)
+
+		relevantMountpoint := true
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(mountInfo.MountPoint, prefix) {
+				logf(codersdk.LogLevelTrace, "Mountpoint %s is NOT relevant (prefix: %s)", mountInfo.MountPoint, prefix)
+				relevantMountpoint = false
+				break
+			}
+		}
+		if !relevantMountpoint {
+			continue
+		}
+
+		src := mountInfo.MountPoint
+		tgt := filepath.Join("/", MagicDir, mountInfo.MountPoint)
+
+		logf(codersdk.LogLevelTrace, "Mountpoint %s is relevant", src)
+
+		logf(codersdk.LogLevelTrace, "Remount mountpoint %s to %s", src, tgt)
+
+		err := os.MkdirAll(tgt, 0750)
+		if err != nil {
+			logf(codersdk.LogLevelError, "Could not create temp mountpoint %s for %s: %s", tgt, src, err.Error())
+			continue
+		}
+
+		err = syscall.Mount(src, tgt, "bind", syscall.MS_BIND, "")
+		if err != nil {
+			logf(codersdk.LogLevelError, "Could not bindmount %s to %s: %s", src, tgt, err.Error())
+			continue
+		}
+		err = syscall.Unmount(src, 0)
+		if err != nil {
+			logf(codersdk.LogLevelError, "Could not unmount %s: %s", src, err.Error())
+			continue
+		}
+
+		tempRemounts[src] = tgt
 	}
 
 	build := func() (v1.Image, error) {
