@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/prometheus/procfs"
 	"io"
 	"net"
 	"net/http"
@@ -24,18 +23,13 @@ import (
 	"syscall"
 	"time"
 
-	dcontext "github.com/distribution/distribution/v3/context"
-	"github.com/kballard/go-shellquote"
-	"github.com/mattn/go-isatty"
-
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
 	"github.com/GoogleContainerTools/kaniko/pkg/util"
-	"github.com/coder/coder/codersdk"
-	"github.com/coder/envbuilder/devcontainer"
 	"github.com/containerd/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
+	dcontext "github.com/distribution/distribution/v3/context"
 	"github.com/distribution/distribution/v3/registry/handlers"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
 	"github.com/docker/cli/cli/config/configfile"
@@ -45,9 +39,15 @@ import (
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/kballard/go-shellquote"
+	"github.com/mattn/go-isatty"
+	"github.com/prometheus/procfs"
 	"github.com/sirupsen/logrus"
 	"github.com/tailscale/hujson"
 	"golang.org/x/xerrors"
+
+	"github.com/coder/coder/codersdk"
+	"github.com/coder/envbuilder/devcontainer"
 )
 
 const (
@@ -193,11 +193,6 @@ type Options struct {
 	// Filesystem is the filesystem to use for all operations.
 	// Defaults to the host filesystem.
 	Filesystem billy.Filesystem
-}
-
-type TempRemount struct {
-	Source string
-	Target string
 }
 
 // DockerConfig represents the Docker configuration file.
@@ -523,7 +518,7 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	// temp move of all ro mounts
-	var tempRemounts []TempRemount
+	tempRemounts := map[string]string{}
 
 	mountInfos, err := procfs.GetMounts()
 	if err != nil {
@@ -532,47 +527,48 @@ func Run(ctx context.Context, options Options) error {
 		prefixes := []string{filepath.Join("/", MagicDir), "/proc", "/sys"}
 		for _, mountInfo := range mountInfos {
 			logf(codersdk.LogLevelTrace, "Found mountpoint %s", mountInfo.MountPoint)
-			if _, ok := mountInfo.Options["ro"]; ok {
-				logf(codersdk.LogLevelTrace, "Found ro mountpoint %s ", mountInfo.MountPoint)
-
-				relevantMountpoint := true
-				for _, prefix := range prefixes {
-					if strings.HasPrefix(mountInfo.MountPoint, prefix) {
-						logf(codersdk.LogLevelTrace, "Mountpoint %s is NOT relevant (prefix: %s)", mountInfo.MountPoint, prefix)
-						relevantMountpoint = false
-						break
-					}
-				}
-				if relevantMountpoint {
-					logf(codersdk.LogLevelTrace, "Mountpoint %s is relevant", mountInfo.MountPoint)
-
-					remount := TempRemount{
-						Source: mountInfo.MountPoint,
-						Target: filepath.Join("/", MagicDir, mountInfo.MountPoint),
-					}
-
-					logf(codersdk.LogLevelTrace, "Remount mountpoint %s to %s", mountInfo.MountPoint, remount.Target)
-
-					err := os.MkdirAll(remount.Target, 0750)
-					if err == nil {
-						err := syscall.Mount(remount.Source, remount.Target, "bind", syscall.MS_BIND, "")
-						if err == nil {
-							err := syscall.Unmount(remount.Source, 0)
-							if err != nil {
-								logf(codersdk.LogLevelError, "Could not unmount %s", remount.Source)
-							}
-							tempRemounts = append(tempRemounts, remount)
-
-						} else {
-							logf(codersdk.LogLevelError, "Could not bindmount %s to %s", remount.Source, remount.Target)
-						}
-					} else {
-						logf(codersdk.LogLevelError, "Could not create temp mountpoint %s for %s", remount.Target, remount.Source)
-					}
-
-				}
-
+			if _, ok := mountInfo.Options["ro"]; !ok {
+				continue
 			}
+			logf(codersdk.LogLevelTrace, "Found ro mountpoint %s ", mountInfo.MountPoint)
+
+			relevantMountpoint := true
+			for _, prefix := range prefixes {
+				if strings.HasPrefix(mountInfo.MountPoint, prefix) {
+					logf(codersdk.LogLevelTrace, "Mountpoint %s is NOT relevant (prefix: %s)", mountInfo.MountPoint, prefix)
+					relevantMountpoint = false
+					break
+				}
+			}
+			if !relevantMountpoint {
+				continue
+			}
+
+			src := mountInfo.MountPoint
+			tgt := filepath.Join("/", MagicDir, mountInfo.MountPoint)
+
+			logf(codersdk.LogLevelTrace, "Mountpoint %s is relevant", src)
+
+			logf(codersdk.LogLevelTrace, "Remount mountpoint %s to %s", src, tgt)
+
+			err := os.MkdirAll(tgt, 0750)
+			if err != nil {
+				logf(codersdk.LogLevelError, "Could not create temp mountpoint %s for %s: %s", tgt, src, err.Error())
+				continue
+			}
+
+			err = syscall.Mount(src, tgt, "bind", syscall.MS_BIND, "")
+			if err != nil {
+				logf(codersdk.LogLevelError, "Could not bindmount %s to %s: %s", src, tgt, err.Error())
+				continue
+			}
+			err = syscall.Unmount(src, 0)
+			if err != nil {
+				logf(codersdk.LogLevelError, "Could not unmount %s: %s", src, err.Error())
+				continue
+			}
+
+			tempRemounts[src] = tgt
 		}
 	}
 
@@ -712,21 +708,24 @@ func Run(ctx context.Context, options Options) error {
 		closeAfterBuild()
 	}
 
-	for _, remount := range tempRemounts {
-		logf(codersdk.LogLevelTrace, "Cleanup mountpoint %s", remount.Target)
-		err := os.MkdirAll(remount.Source, 0750)
-		if err == nil {
-			err := syscall.Mount(remount.Target, remount.Source, "bind", syscall.MS_BIND, "")
-			if err == nil {
-				err := syscall.Unmount(remount.Target, 0)
-				if err != nil {
-					logf(codersdk.LogLevelError, "Could not unmount %s", remount.Target)
-				}
-			} else {
-				logf(codersdk.LogLevelError, "Could not bindmount %s to %s", remount.Target, remount.Source)
-			}
-		} else {
-			logf(codersdk.LogLevelError, "Could not create mountpoint %s for %s", remount.Source, remount.Target)
+	for src, tgt := range tempRemounts {
+		logf(codersdk.LogLevelTrace, "Cleanup mountpoint %s", tgt)
+		err := os.MkdirAll(src, 0750)
+		if err != nil {
+			logf(codersdk.LogLevelError, "Could not create mountpoint %s for %s: %w", src, tgt, err.Error())
+			continue
+		}
+
+		err = syscall.Mount(tgt, src, "bind", syscall.MS_BIND, "")
+		if err != nil {
+			logf(codersdk.LogLevelError, "Could not bindmount %s to %s: %s", tgt, src, err.Error())
+			continue
+		}
+
+		err = syscall.Unmount(tgt, 0)
+		if err != nil {
+			logf(codersdk.LogLevelError, "Could not unmount %s: %s", tgt, err.Error())
+			continue
 		}
 	}
 
