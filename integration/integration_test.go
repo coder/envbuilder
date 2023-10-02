@@ -336,6 +336,23 @@ RUN exit 1`,
 	})
 }
 
+func TestExitBuildOnFailure(t *testing.T) {
+	t.Parallel()
+	url := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			"Dockerfile": "bad syntax",
+		},
+	})
+	_, err := runEnvbuilder(t, options{env: []string{
+		"GIT_URL=" + url,
+		"DOCKERFILE_PATH=Dockerfile",
+		"FALLBACK_IMAGE=alpine",
+		// Ensures that the fallback doesn't work when an image is specified.
+		"EXIT_ON_BUILD_FAILURE=true",
+	}})
+	require.ErrorContains(t, err, "parsing dockerfile")
+}
+
 func TestPrivateRegistry(t *testing.T) {
 	t.Parallel()
 	t.Run("NoAuth", func(t *testing.T) {

@@ -137,6 +137,12 @@ type Options struct {
 	// a Dockerfile is not found.
 	FallbackImage string `env:"FALLBACK_IMAGE"`
 
+	// ExitOnBuildFailure terminates the container upon a build failure.
+	// This is handy when preferring the `FALLBACK_IMAGE` in cases where
+	// no devcontainer.json or image is provided. However, it ensures
+	// that the container stops if the build process encounters an error.
+	ExitOnBuildFailure bool `env:"EXIT_ON_BUILD_FAILURE"`
+
 	// ForceSafe ignores any filesystem safety checks.
 	// This could cause serious harm to your system!
 	// This is used in cases where bypass is needed
@@ -633,7 +639,7 @@ func Run(ctx context.Context, options Options) error {
 		case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
 			logf(codersdk.LogLevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
 		}
-		if !fallback {
+		if !fallback || options.ExitOnBuildFailure {
 			return err
 		}
 		logf(codersdk.LogLevelError, "Failed to build: %s", err)
