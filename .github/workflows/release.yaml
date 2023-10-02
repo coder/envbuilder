@@ -38,7 +38,7 @@ jobs:
           go-version: "~1.20"
 
       - name: Build
-        run: ./scripts/build.sh
+        run: ./scripts/build.sh --arch=amd64 --arch=arm64 --arch=arm
 
       - name: Docker Login
         uses: docker/login-action@v2
@@ -52,8 +52,8 @@ jobs:
           VERSION=$(./scripts/version.sh)
           BASE=ghcr.io/coder/envbuilder
           IMAGE=$BASE:$VERSION
-          docker tag envbuilder:latest $IMAGE
-          docker tag envbuilder:latest $BASE:latest
-          docker push $IMAGE
+          for arch in ( amd64 arm64 arm ); do
+            docker tag envbuilder:$arch $IMAGE-$arch
+            docker push $IMAGE-$arch
+          done
           docker push $BASE:latest
-
