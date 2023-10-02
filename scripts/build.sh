@@ -67,6 +67,6 @@ docker buildx build "${args[@]}" -t $base:$tag -t $base:latest -f Dockerfile .
 
 # Check if archs contains the current. If so, then output a message!
 if [[ " ${archs[@]} " =~ " ${current} " ]]; then
-  docker tag envbuilder:${arch} envbuilder:latest
+  docker tag $base:$tag envbuilder:latest
   echo "Tagged $current as envbuilder:latest!"
 fi
