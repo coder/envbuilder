@@ -132,9 +132,11 @@ type Options struct {
 	// container registries.
 	DockerConfigBase64 string `env:"DOCKER_CONFIG_BASE64"`
 
-	// FallbackImage is the image to use if no image is
-	// specified in the devcontainer.json file and
-	// a Dockerfile is not found.
+	// FallbackImage specifies an alternative image to use when neither
+	// an image is declared in the devcontainer.json file nor a Dockerfile is present.
+	// If there's a build failure (from a faulty Dockerfile) or a misconfiguration,
+	// this image will be the substitute.
+	// Set `ExitOnBuildFailure` to true to halt the container if the build faces an issue.
 	FallbackImage string `env:"FALLBACK_IMAGE"`
 
 	// ExitOnBuildFailure terminates the container upon a build failure.
