@@ -54,5 +54,5 @@ jobs:
             --arch=arm64 \
             --arch=arm \
             --base=$BASE \
-            --tag=$VERSION
+            --tag=$VERSION \
             --push
