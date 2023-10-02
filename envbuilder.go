@@ -132,10 +132,18 @@ type Options struct {
 	// container registries.
 	DockerConfigBase64 string `env:"DOCKER_CONFIG_BASE64"`
 
-	// FallbackImage is the image to use if no image is
-	// specified in the devcontainer.json file and
-	// a Dockerfile is not found.
+	// FallbackImage specifies an alternative image to use when neither
+	// an image is declared in the devcontainer.json file nor a Dockerfile is present.
+	// If there's a build failure (from a faulty Dockerfile) or a misconfiguration,
+	// this image will be the substitute.
+	// Set `ExitOnBuildFailure` to true to halt the container if the build faces an issue.
 	FallbackImage string `env:"FALLBACK_IMAGE"`
+
+	// ExitOnBuildFailure terminates the container upon a build failure.
+	// This is handy when preferring the `FALLBACK_IMAGE` in cases where
+	// no devcontainer.json or image is provided. However, it ensures
+	// that the container stops if the build process encounters an error.
+	ExitOnBuildFailure bool `env:"EXIT_ON_BUILD_FAILURE"`
 
 	// ForceSafe ignores any filesystem safety checks.
 	// This could cause serious harm to your system!
@@ -633,7 +641,7 @@ func Run(ctx context.Context, options Options) error {
 		case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
 			logf(codersdk.LogLevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
 		}
-		if !fallback {
+		if !fallback || options.ExitOnBuildFailure {
 			return err
 		}
 		logf(codersdk.LogLevelError, "Failed to build: %s", err)
