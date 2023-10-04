@@ -194,9 +194,9 @@ type Options struct {
 	// This is useful for self-signed certificates.
 	SSLCertBase64 string `env:"SSL_CERT_BASE64"`
 
-	// ExportEnvFile is an optional file path where envbuilder
-	// will dump environment variables from devcontainer.json
-	// and the built container image.
+	// ExportEnvFile is an optional file path to a .env file where
+	// envbuilder will dump environment variables from devcontainer.json and
+	// the built container image.
 	ExportEnvFile string `env:"EXPORT_ENV_FILE"`
 
 	// Logger is the logger to use for all operations.
@@ -686,7 +686,7 @@ func Run(ctx context.Context, options Options) error {
 		if exportEnvFile == nil {
 			return
 		}
-		fmt.Fprintf(exportEnvFile, "export %s=%q\n", key, value)
+		fmt.Fprintf(exportEnvFile, "%s=%s\n", key, value)
 	}
 
 	configFile, err := image.ConfigFile()

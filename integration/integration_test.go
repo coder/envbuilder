@@ -382,8 +382,8 @@ func TestExportEnvFile(t *testing.T) {
 
 	output := execContainer(t, ctr, "cat /env")
 	require.Contains(t, strings.TrimSpace(output),
-		`export FROM_DOCKERFILE="foo"
-export FROM_DEVCONTAINER_JSON="bar"`)
+		`FROM_DOCKERFILE=foo
+FROM_DEVCONTAINER_JSON=bar`)
 }
 
 func TestPrivateRegistry(t *testing.T) {
