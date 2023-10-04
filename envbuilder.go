@@ -676,6 +676,11 @@ func Run(ctx context.Context, options Options) error {
 	_ = file.Close()
 
 	var exportEnvFile *os.File
+	// Do not export env if we skipped a rebuild, because ENV directives
+	// from the Dockerfile would not have been processed and we'd miss these
+	// in the export. We should have generated a complete set of environment
+	// on the intial build, so exporting environment variables a second time
+	// isn't useful anyway.
 	if options.ExportEnvFile != "" && !skippedRebuild {
 		exportEnvFile, err = os.Create(options.ExportEnvFile)
 		if err != nil {
