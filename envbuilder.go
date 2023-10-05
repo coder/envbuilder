@@ -194,6 +194,11 @@ type Options struct {
 	// This is useful for self-signed certificates.
 	SSLCertBase64 string `env:"SSL_CERT_BASE64"`
 
+	// ExportEnvFile is an optional file path to a .env file where
+	// envbuilder will dump environment variables from devcontainer.json and
+	// the built container image.
+	ExportEnvFile string `env:"EXPORT_ENV_FILE"`
+
 	// Logger is the logger to use for all operations.
 	Logger func(level codersdk.LogLevel, format string, args ...interface{})
 
@@ -524,6 +529,7 @@ func Run(ctx context.Context, options Options) error {
 		})
 	}
 
+	skippedRebuild := false
 	build := func() (v1.Image, error) {
 		_, err := options.Filesystem.Stat(MagicFile)
 		if err == nil && options.SkipRebuild {
@@ -537,6 +543,7 @@ func Run(ctx context.Context, options Options) error {
 				return nil, fmt.Errorf("image from remote: %w", err)
 			}
 			endStage("🏗️ Found image from remote!")
+			skippedRebuild = true
 			return image, nil
 		}
 
@@ -668,6 +675,25 @@ func Run(ctx context.Context, options Options) error {
 	}
 	_ = file.Close()
 
+	var exportEnvFile *os.File
+	// Do not export env if we skipped a rebuild, because ENV directives
+	// from the Dockerfile would not have been processed and we'd miss these
+	// in the export. We should have generated a complete set of environment
+	// on the intial build, so exporting environment variables a second time
+	// isn't useful anyway.
+	if options.ExportEnvFile != "" && !skippedRebuild {
+		exportEnvFile, err = os.Create(options.ExportEnvFile)
+		if err != nil {
+			return fmt.Errorf("failed to open EXPORT_ENV_FILE %q: %w", options.ExportEnvFile, err)
+		}
+	}
+	exportEnv := func(key, value string) {
+		if exportEnvFile == nil {
+			return
+		}
+		fmt.Fprintf(exportEnvFile, "%s=%s\n", key, value)
+	}
+
 	configFile, err := image.ConfigFile()
 	if err != nil {
 		return fmt.Errorf("get image config: %w", err)
@@ -695,6 +721,7 @@ func Run(ctx context.Context, options Options) error {
 			if container.RemoteEnv != nil {
 				for key, value := range container.RemoteEnv {
 					os.Setenv(key, value)
+					exportEnv(key, value)
 				}
 			}
 		}
@@ -724,10 +751,16 @@ func Run(ctx context.Context, options Options) error {
 	for _, env := range configFile.Config.Env {
 		pair := strings.SplitN(env, "=", 2)
 		os.Setenv(pair[0], pair[1])
+		exportEnv(pair[0], pair[1])
 	}
 	for _, env := range buildParams.Env {
 		pair := strings.SplitN(env, "=", 2)
 		os.Setenv(pair[0], pair[1])
+		exportEnv(pair[0], pair[1])
+	}
+
+	if exportEnvFile != nil {
+		exportEnvFile.Close()
 	}
 
 	username := configFile.Config.User

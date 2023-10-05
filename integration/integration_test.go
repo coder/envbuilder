@@ -353,6 +353,39 @@ func TestExitBuildOnFailure(t *testing.T) {
 	require.ErrorContains(t, err, "parsing dockerfile")
 }
 
+func TestExportEnvFile(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	url := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+				"remoteEnv": {
+					"FROM_DEVCONTAINER_JSON": "bar"
+				}
+			}`,
+			".devcontainer/Dockerfile": "FROM alpine:latest\nENV FROM_DOCKERFILE=foo",
+		},
+	})
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		"GIT_URL=" + url,
+		"EXPORT_ENV_FILE=/env",
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /env")
+	require.Contains(t, strings.TrimSpace(output),
+		`FROM_DOCKERFILE=foo
+FROM_DEVCONTAINER_JSON=bar`)
+}
+
 func TestPrivateRegistry(t *testing.T) {
 	t.Parallel()
 	t.Run("NoAuth", func(t *testing.T) {
