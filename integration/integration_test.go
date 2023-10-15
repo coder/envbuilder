@@ -386,6 +386,46 @@ func TestExportEnvFile(t *testing.T) {
 FROM_DEVCONTAINER_JSON=bar`)
 }
 
+func TestLifecycleScripts(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	url := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+				"onCreateCommand": "echo create > /out",
+				"updateContentCommand": ["sh", "-c", "echo update >> /out"],
+				"postCreateCommand": "echo postCreate >> /out",
+				"postStartCommand": {
+					"parallel1": "echo parallel1 > /parallel1",
+					"parallel2": ["sh", "-c", "echo parallel2 > /parallel2"]
+				}
+			}`,
+			".devcontainer/Dockerfile": "FROM alpine:latest",
+		},
+	})
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		"GIT_URL=" + url,
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /out /parallel1 /parallel2")
+	require.Equal(t,
+		`create
+update
+postCreate
+parallel1
+parallel2`, strings.TrimSpace(output))
+
+}
+
 func TestPrivateRegistry(t *testing.T) {
 	t.Parallel()
 	t.Run("NoAuth", func(t *testing.T) {

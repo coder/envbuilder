@@ -385,7 +385,10 @@ func Run(ctx context.Context, options Options) error {
 		}, nil
 	}
 
-	var buildParams *devcontainer.Compiled
+	var (
+		buildParams *devcontainer.Compiled
+		scripts     devcontainer.LifecycleScripts
+	)
 	if options.DockerfilePath == "" {
 		// Only look for a devcontainer if a Dockerfile wasn't specified.
 		// devcontainer is a standard, so it's reasonable to be the default.
@@ -425,6 +428,7 @@ func Run(ctx context.Context, options Options) error {
 				if err != nil {
 					return fmt.Errorf("compile devcontainer.json: %w", err)
 				}
+				scripts = devContainer.LifecycleScripts
 			} else {
 				logf(codersdk.LogLevelError, "Failed to parse devcontainer.json: %s", err.Error())
 				logf(codersdk.LogLevelError, "Falling back to the default image...")
@@ -724,6 +728,18 @@ func Run(ctx context.Context, options Options) error {
 					exportEnv(key, value)
 				}
 			}
+			if !container.OnCreateCommand.IsEmpty() {
+				scripts.OnCreateCommand = container.OnCreateCommand
+			}
+			if !container.UpdateContentCommand.IsEmpty() {
+				scripts.UpdateContentCommand = container.UpdateContentCommand
+			}
+			if !container.PostCreateCommand.IsEmpty() {
+				scripts.OnCreateCommand = container.OnCreateCommand
+			}
+			if !container.PostStartCommand.IsEmpty() {
+				scripts.PostStartCommand = container.PostStartCommand
+			}
 		}
 	}
 
@@ -931,6 +947,41 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	logf(codersdk.LogLevelInfo, "=== Running the init command %s %+v as the %q user...", options.InitCommand, initArgs, user.Username)
+
+	execOneLifecycleScript := func(s devcontainer.LifecycleScript, name string) error {
+		if s.IsEmpty() {
+			return nil
+		}
+		logf(codersdk.LogLevelInfo, "=== Running %s as the %q user...", name, user.Username)
+		if err := s.Execute(ctx); err != nil {
+			logf(codersdk.LogLevelError, "Failed to run %s: %v", name, err)
+			return err
+		}
+		return nil
+	}
+
+	execLifecycleScripts := func() {
+		if !skippedRebuild {
+			if err := execOneLifecycleScript(scripts.OnCreateCommand, "onCreateCommand"); err != nil {
+				return
+			}
+		}
+		if err := execOneLifecycleScript(scripts.UpdateContentCommand, "updateContentCommand"); err != nil {
+			return
+		}
+		if err := execOneLifecycleScript(scripts.PostCreateCommand, "postCreateCommand"); err != nil {
+			return
+		}
+		// TODO: Technically this is supposed to run "each time the
+		// container is successfully started", so would it be more
+		// correct to pass it to InitCommand via the environment and
+		// rely on InitCommand to execute it?
+		if err := execOneLifecycleScript(scripts.PostStartCommand, "postStartCommand"); err != nil {
+			return
+		}
+	}
+
+	execLifecycleScripts()
 
 	err = syscall.Exec(options.InitCommand, append([]string{options.InitCommand}, initArgs...), os.Environ())
 	if err != nil {
