@@ -844,6 +844,48 @@ func Run(ctx context.Context, options Options) error {
 		return fmt.Errorf("change directory: %w", err)
 	}
 
+	execOneLifecycleScript := func(s devcontainer.LifecycleScript, name string) error {
+		if s.IsEmpty() {
+			return nil
+		}
+		logf(codersdk.LogLevelInfo, "=== Running %s as the %q user...", name, user.Username)
+		if err := s.Execute(ctx, uid, gid); err != nil {
+			logf(codersdk.LogLevelError, "Failed to run %s: %v", name, err)
+			return err
+		}
+		return nil
+	}
+
+	execLifecycleScripts := func() {
+		if !skippedRebuild {
+			if err := execOneLifecycleScript(scripts.OnCreateCommand, "onCreateCommand"); err != nil {
+				return
+			}
+		}
+		if err := execOneLifecycleScript(scripts.UpdateContentCommand, "updateContentCommand"); err != nil {
+			return
+		}
+		if err := execOneLifecycleScript(scripts.PostCreateCommand, "postCreateCommand"); err != nil {
+			return
+		}
+		// TODO: Technically this is supposed to run "each time the
+		// container is successfully started", so would it be more
+		// correct to pass it to InitCommand via the environment and
+		// rely on InitCommand to execute it?
+		if err := execOneLifecycleScript(scripts.PostStartCommand, "postStartCommand"); err != nil {
+			return
+		}
+	}
+
+	// This is called before the Setuid to TARGET_USER because we want the
+	// lifecycle scripts to run using the default user for the container,
+	// rather than the user specified for running the init command. For
+	// example, TARGET_USER may be set to root in the case where we will
+	// exec systemd as the init command, but that doesn't mean we should
+	// run the lifecycle scripts as root.
+	os.Setenv("HOME", user.HomeDir)
+	execLifecycleScripts()
+
 	// The setup script can specify a custom initialization command
 	// and arguments to run instead of the default shell.
 	//
@@ -947,41 +989,6 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	logf(codersdk.LogLevelInfo, "=== Running the init command %s %+v as the %q user...", options.InitCommand, initArgs, user.Username)
-
-	execOneLifecycleScript := func(s devcontainer.LifecycleScript, name string) error {
-		if s.IsEmpty() {
-			return nil
-		}
-		logf(codersdk.LogLevelInfo, "=== Running %s as the %q user...", name, user.Username)
-		if err := s.Execute(ctx); err != nil {
-			logf(codersdk.LogLevelError, "Failed to run %s: %v", name, err)
-			return err
-		}
-		return nil
-	}
-
-	execLifecycleScripts := func() {
-		if !skippedRebuild {
-			if err := execOneLifecycleScript(scripts.OnCreateCommand, "onCreateCommand"); err != nil {
-				return
-			}
-		}
-		if err := execOneLifecycleScript(scripts.UpdateContentCommand, "updateContentCommand"); err != nil {
-			return
-		}
-		if err := execOneLifecycleScript(scripts.PostCreateCommand, "postCreateCommand"); err != nil {
-			return
-		}
-		// TODO: Technically this is supposed to run "each time the
-		// container is successfully started", so would it be more
-		// correct to pass it to InitCommand via the environment and
-		// rely on InitCommand to execute it?
-		if err := execOneLifecycleScript(scripts.PostStartCommand, "postStartCommand"); err != nil {
-			return
-		}
-	}
-
-	execLifecycleScripts()
 
 	err = syscall.Exec(options.InitCommand, append([]string{options.InitCommand}, initArgs...), os.Environ())
 	if err != nil {

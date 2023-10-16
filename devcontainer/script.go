@@ -3,9 +3,12 @@ package devcontainer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -63,6 +66,9 @@ func (s *LifecycleScript) UnmarshalJSON(data []byte) error {
 }
 
 func argsFromUntypedSlice(args []any) ([]string, error) {
+	if len(args) == 0 {
+		return nil, errors.New("empty command array")
+	}
 	s := make([]string, 0, len(args))
 	for _, arg := range args {
 		arg, ok := arg.(string)
@@ -74,13 +80,24 @@ func argsFromUntypedSlice(args []any) ([]string, error) {
 	return s, nil
 }
 
-func (s *LifecycleScript) Execute(ctx context.Context) error {
+func (s *LifecycleScript) Execute(ctx context.Context, uid, gid int) error {
+	procAttr := &syscall.ProcAttr{
+		Env:   os.Environ(),
+		Files: []uintptr{os.Stdin.Fd(), os.Stdout.Fd(), os.Stderr.Fd()},
+		Sys: &syscall.SysProcAttr{
+			Credential: &syscall.Credential{
+				Uid: uint32(uid),
+				Gid: uint32(gid),
+			},
+		},
+	}
+
 	var eg errgroup.Group
 	for desc, command := range s.shellCommands {
 		desc := desc
 		command := command
 		eg.Go(func() error {
-			if err := exec.CommandContext(ctx, "/bin/sh", "-c", command).Run(); err != nil {
+			if _, err := syscall.ForkExec("/bin/sh", []string{"/bin/sh", "-c", command}, procAttr); err != nil {
 				return fmt.Errorf("lifecycle command %q failed: %v", desc, err)
 			}
 			return nil
@@ -91,7 +108,11 @@ func (s *LifecycleScript) Execute(ctx context.Context) error {
 		desc := desc
 		command := command
 		eg.Go(func() error {
-			if err := exec.CommandContext(ctx, command[0], command[1:]...).Run(); err != nil {
+			path, err := exec.LookPath(command[0])
+			if err != nil {
+				return err
+			}
+			if _, err := syscall.ForkExec(path, command, procAttr); err != nil {
 				return fmt.Errorf("lifecycle command %q failed: %v", desc, err)
 			}
 			return nil

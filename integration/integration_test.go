@@ -400,15 +400,15 @@ func TestLifecycleScripts(t *testing.T) {
 				"build": {
 					"dockerfile": "Dockerfile"
 				},
-				"onCreateCommand": "echo create > /out",
-				"updateContentCommand": ["sh", "-c", "echo update >> /out"],
-				"postCreateCommand": "echo postCreate >> /out",
+				"onCreateCommand": "echo create > /tmp/out",
+				"updateContentCommand": ["sh", "-c", "echo update >> /tmp/out"],
+				"postCreateCommand": "(echo -n postCreate. ; id -un) >> /tmp/out",
 				"postStartCommand": {
-					"parallel1": "echo parallel1 > /parallel1",
-					"parallel2": ["sh", "-c", "echo parallel2 > /parallel2"]
+					"parallel1": "echo parallel1 > /tmp/parallel1",
+					"parallel2": ["sh", "-c", "echo parallel2 > /tmp/parallel2"]
 				}
 			}`,
-			".devcontainer/Dockerfile": "FROM alpine:latest",
+			".devcontainer/Dockerfile": "FROM alpine:latest\nUSER nobody",
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
@@ -416,11 +416,11 @@ func TestLifecycleScripts(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	output := execContainer(t, ctr, "cat /out /parallel1 /parallel2")
+	output := execContainer(t, ctr, "cat /tmp/out /tmp/parallel1 /tmp/parallel2")
 	require.Equal(t,
 		`create
 update
-postCreate
+postCreate.nobody
 parallel1
 parallel2`, strings.TrimSpace(output))
 
