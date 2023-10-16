@@ -364,9 +364,6 @@ func TestExportEnvFile(t *testing.T) {
 				"build": {
 					"dockerfile": "Dockerfile"
 				},
-				"build": {
-					"dockerfile": "Dockerfile"
-				},
 				"remoteEnv": {
 					"FROM_DEVCONTAINER_JSON": "bar"
 				}
@@ -394,9 +391,6 @@ func TestLifecycleScripts(t *testing.T) {
 		files: map[string]string{
 			".devcontainer/devcontainer.json": `{
 				"name": "Test",
-				"build": {
-					"dockerfile": "Dockerfile"
-				},
 				"build": {
 					"dockerfile": "Dockerfile"
 				},
