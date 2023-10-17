@@ -104,15 +104,15 @@ func (s *LifecycleScript) Execute(ctx context.Context, uid, gid int) error {
 		})
 	}
 
-	for desc, command := range s.nonShellCommands {
+	for desc, commandAndArgs := range s.nonShellCommands {
 		desc := desc
-		command := command
+		commandAndArgs := commandAndArgs
 		eg.Go(func() error {
-			path, err := exec.LookPath(command[0])
+			path, err := exec.LookPath(commandAndArgs[0])
 			if err != nil {
 				return err
 			}
-			if _, err := syscall.ForkExec(path, command, procAttr); err != nil {
+			if _, err := syscall.ForkExec(path, commandAndArgs, procAttr); err != nil {
 				return fmt.Errorf("lifecycle command %q failed: %v", desc, err)
 			}
 			return nil
@@ -120,4 +120,34 @@ func (s *LifecycleScript) Execute(ctx context.Context, uid, gid int) error {
 	}
 
 	return eg.Wait()
+}
+
+// ScriptLines returns shell syntax for executing the commands in the
+// LifecycleScript.
+//
+// TODO: Technically the commands could be executed in parallel, but that would
+// add a bit of complexity to do portably.
+func (s *LifecycleScript) ScriptLines() string {
+	var lines string
+	for _, command := range s.shellCommands {
+		lines += command + "\n"
+	}
+	for _, commandAndArgs := range s.nonShellCommands {
+		// Quote the command arguments to prevent shell interpretation.
+		quotedCommandAndArgs := make([]string, len(commandAndArgs))
+		for i := range commandAndArgs {
+			// Surround each argument with single quotes. If the
+			// argument contains any single quotes, they are escaped
+			// by replacing them with the sequence '"'"'. This
+			// sequence ends the current single-quoted string,
+			// starts and immediately ends a double-quoted string
+			// containing a single quote, and then restarts the
+			// single-quoted string. This approach works because in
+			// shell syntax, adjacent strings are concatenated, so
+			// 'arg'"'"'arg' is interpreted as arg'arg.
+			quotedCommandAndArgs[i] = "'" + strings.ReplaceAll(commandAndArgs[i], "'", "'\"'\"'") + "'"
+		}
+		lines += strings.Join(quotedCommandAndArgs, " ") + "\n"
+	}
+	return lines
 }

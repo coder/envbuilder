@@ -417,7 +417,48 @@ update
 postCreate.nobody
 parallel1
 parallel2`, strings.TrimSpace(output))
+}
 
+func TestPostStartScript(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	url := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+				"postStartCommand": {
+					"command1": "echo command1 output > /tmp/out1",
+					"command2": ["sh", "-c", "echo 'contains \"double quotes\"' > '/tmp/out2'"]
+				}
+			}`,
+			".devcontainer/init.sh": `#!/bin/sh
+			/tmp/post-start.sh
+			sleep infinity`,
+			".devcontainer/Dockerfile": `FROM alpine:latest
+COPY init.sh /bin
+RUN chmod +x /bin/init.sh
+USER nobody`,
+		},
+	})
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		"GIT_URL=" + url,
+		"POST_START_SCRIPT_PATH=/tmp/post-start.sh",
+		"INIT_COMMAND=/bin/init.sh",
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /tmp/post-start.sh /tmp/out1 /tmp/out2")
+	require.Equal(t,
+		`#!/bin/sh
+
+echo command1 output > /tmp/out1
+'sh' '-c' 'echo '"'"'contains "double quotes"'"'"' > '"'"'/tmp/out2'"'"''
+command1 output
+contains "double quotes"`, strings.TrimSpace(output))
 }
 
 func TestPrivateRegistry(t *testing.T) {

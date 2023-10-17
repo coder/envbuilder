@@ -199,6 +199,13 @@ type Options struct {
 	// the built container image.
 	ExportEnvFile string `env:"EXPORT_ENV_FILE"`
 
+	// PostStartScriptPath is the path to a script that will be created by
+	// envbuilder based on the `postStartCommand` in devcontainer.json, if any
+	// is specified (otherwise the script is not created). If this is set, the
+	// specified InitCommand should check for the presence of this script and
+	// execute it after successful startup.
+	PostStartScriptPath string `env:"POST_START_SCRIPT_PATH"`
+
 	// Logger is the logger to use for all operations.
 	Logger func(level codersdk.LogLevel, format string, args ...interface{})
 
@@ -786,33 +793,8 @@ func Run(ctx context.Context, options Options) error {
 	if username == "" {
 		logf(codersdk.LogLevelWarn, "#3: no user specified, using root")
 	}
-	var user *user.User
-	var uid int
-	var gid int
-	updateUser := func(username string) error {
-		var err error
-		user, err = findUser(username)
-		if err != nil {
-			return fmt.Errorf("find user: %w", err)
-		}
-		uid, err = strconv.Atoi(user.Uid)
-		if err != nil {
-			return fmt.Errorf("parse uid: %w", err)
-		}
-		gid, err = strconv.Atoi(user.Gid)
-		if err != nil {
-			return fmt.Errorf("parse gid: %w", err)
-		}
-		if user.Username == "" && uid == 0 {
-			// This is nice for the visual display in log messages,
-			// but has no actual functionality since the credential
-			// in the syscall is what matters.
-			user.Username = "root"
-			user.HomeDir = "/root"
-		}
-		return err
-	}
-	err = updateUser(username)
+
+	userInfo, err := getUser(username)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}
@@ -830,7 +812,7 @@ func Run(ctx context.Context, options Options) error {
 			if err != nil {
 				return err
 			}
-			return os.Chown(path, uid, gid)
+			return os.Chown(path, userInfo.uid, userInfo.gid)
 		})
 		endStage("👤 Updated the ownership of the workspace!")
 	}
@@ -844,47 +826,16 @@ func Run(ctx context.Context, options Options) error {
 		return fmt.Errorf("change directory: %w", err)
 	}
 
-	execOneLifecycleScript := func(s devcontainer.LifecycleScript, name string) error {
-		if s.IsEmpty() {
-			return nil
-		}
-		logf(codersdk.LogLevelInfo, "=== Running %s as the %q user...", name, user.Username)
-		if err := s.Execute(ctx, uid, gid); err != nil {
-			logf(codersdk.LogLevelError, "Failed to run %s: %v", name, err)
-			return err
-		}
-		return nil
-	}
-
-	execLifecycleScripts := func() {
-		if !skippedRebuild {
-			if err := execOneLifecycleScript(scripts.OnCreateCommand, "onCreateCommand"); err != nil {
-				return
-			}
-		}
-		if err := execOneLifecycleScript(scripts.UpdateContentCommand, "updateContentCommand"); err != nil {
-			return
-		}
-		if err := execOneLifecycleScript(scripts.PostCreateCommand, "postCreateCommand"); err != nil {
-			return
-		}
-		// TODO: Technically this is supposed to run "each time the
-		// container is successfully started", so would it be more
-		// correct to pass it to InitCommand via the environment and
-		// rely on InitCommand to execute it?
-		if err := execOneLifecycleScript(scripts.PostStartCommand, "postStartCommand"); err != nil {
-			return
-		}
-	}
-
 	// This is called before the Setuid to TARGET_USER because we want the
 	// lifecycle scripts to run using the default user for the container,
 	// rather than the user specified for running the init command. For
 	// example, TARGET_USER may be set to root in the case where we will
 	// exec systemd as the init command, but that doesn't mean we should
 	// run the lifecycle scripts as root.
-	os.Setenv("HOME", user.HomeDir)
-	execLifecycleScripts()
+	os.Setenv("HOME", userInfo.user.HomeDir)
+	if err := execLifecycleScripts(ctx, options, scripts, skippedRebuild, userInfo); err != nil {
+		return err
+	}
 
 	// The setup script can specify a custom initialization command
 	// and arguments to run instead of the default shell.
@@ -908,7 +859,7 @@ func Run(ctx context.Context, options Options) error {
 		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", options.SetupScript)
 		cmd.Env = append(os.Environ(),
 			fmt.Sprintf("%s=%s", envKey, envFile),
-			fmt.Sprintf("TARGET_USER=%s", user.Username),
+			fmt.Sprintf("TARGET_USER=%s", userInfo.user.Username),
 		)
 		cmd.Dir = options.WorkspaceFolder
 		// This allows for a really nice and clean experience to experiement with!
@@ -961,7 +912,7 @@ func Run(ctx context.Context, options Options) error {
 				}
 				updatedArgs = true
 			case "TARGET_USER":
-				err = updateUser(pair[1])
+				userInfo, err = getUser(pair[1])
 				if err != nil {
 					return fmt.Errorf("update user: %w", err)
 				}
@@ -977,18 +928,18 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	// Hop into the user that should execute the initialize script!
-	os.Setenv("HOME", user.HomeDir)
+	os.Setenv("HOME", userInfo.user.HomeDir)
 
-	err = syscall.Setgid(gid)
+	err = syscall.Setgid(userInfo.gid)
 	if err != nil {
 		return fmt.Errorf("set gid: %w", err)
 	}
-	err = syscall.Setuid(uid)
+	err = syscall.Setuid(userInfo.uid)
 	if err != nil {
 		return fmt.Errorf("set uid: %w", err)
 	}
 
-	logf(codersdk.LogLevelInfo, "=== Running the init command %s %+v as the %q user...", options.InitCommand, initArgs, user.Username)
+	logf(codersdk.LogLevelInfo, "=== Running the init command %s %+v as the %q user...", options.InitCommand, initArgs, userInfo.user.Username)
 
 	err = syscall.Exec(options.InitCommand, append([]string{options.InitCommand}, initArgs...), os.Environ())
 	if err != nil {
@@ -1011,6 +962,39 @@ func DefaultWorkspaceFolder(repoURL string) (string, error) {
 	return fmt.Sprintf("/workspaces/%s", name[len(name)-1]), nil
 }
 
+type userInfo struct {
+	uid  int
+	gid  int
+	user *user.User
+}
+
+func getUser(username string) (userInfo, error) {
+	user, err := findUser(username)
+	if err != nil {
+		return userInfo{}, fmt.Errorf("find user: %w", err)
+	}
+	uid, err := strconv.Atoi(user.Uid)
+	if err != nil {
+		return userInfo{}, fmt.Errorf("parse uid: %w", err)
+	}
+	gid, err := strconv.Atoi(user.Gid)
+	if err != nil {
+		return userInfo{}, fmt.Errorf("parse gid: %w", err)
+	}
+	if user.Username == "" && uid == 0 {
+		// This is nice for the visual display in log messages,
+		// but has no actual functionality since the credential
+		// in the syscall is what matters.
+		user.Username = "root"
+		user.HomeDir = "/root"
+	}
+	return userInfo{
+		uid:  uid,
+		gid:  gid,
+		user: user,
+	}, nil
+}
+
 // findUser looks up a user by name or ID.
 func findUser(nameOrID string) (*user.User, error) {
 	if nameOrID == "" {
@@ -1024,6 +1008,80 @@ func findUser(nameOrID string) (*user.User, error) {
 		return user.LookupId(nameOrID)
 	}
 	return user.Lookup(nameOrID)
+}
+
+func execOneLifecycleScript(
+	ctx context.Context,
+	logf func(level codersdk.LogLevel, format string, args ...interface{}),
+	s devcontainer.LifecycleScript,
+	scriptName string,
+	userInfo userInfo,
+) error {
+	if s.IsEmpty() {
+		return nil
+	}
+	logf(codersdk.LogLevelInfo, "=== Running %s as the %q user...", scriptName, userInfo.user.Username)
+	if err := s.Execute(ctx, userInfo.uid, userInfo.gid); err != nil {
+		logf(codersdk.LogLevelError, "Failed to run %s: %v", scriptName, err)
+		return err
+	}
+	return nil
+}
+
+func execLifecycleScripts(
+	ctx context.Context,
+	options Options,
+	scripts devcontainer.LifecycleScripts,
+	skippedRebuild bool,
+	userInfo userInfo,
+) error {
+	if options.PostStartScriptPath != "" {
+		_ = os.Remove(options.PostStartScriptPath)
+	}
+
+	if !skippedRebuild {
+		if err := execOneLifecycleScript(ctx, options.Logger, scripts.OnCreateCommand, "onCreateCommand", userInfo); err != nil {
+			// skip remaining lifecycle commands
+			return nil
+		}
+	}
+	if err := execOneLifecycleScript(ctx, options.Logger, scripts.UpdateContentCommand, "updateContentCommand", userInfo); err != nil {
+		// skip remaining lifecycle commands
+		return nil
+	}
+	if err := execOneLifecycleScript(ctx, options.Logger, scripts.PostCreateCommand, "postCreateCommand", userInfo); err != nil {
+		// skip remaining lifecycle commands
+		return nil
+	}
+	if !scripts.PostStartCommand.IsEmpty() {
+		// If PostStartCommandPath is set, the init command is responsible
+		// for running the postStartCommand. Otherwise, we execute it now.
+		if options.PostStartScriptPath != "" {
+			if err := createPostStartScript(options.PostStartScriptPath, scripts.PostStartCommand); err != nil {
+				return fmt.Errorf("failed to create post-start script: %w", err)
+			}
+		} else {
+			_ = execOneLifecycleScript(ctx, options.Logger, scripts.PostStartCommand, "postStartCommand", userInfo)
+		}
+	}
+	return nil
+}
+
+func createPostStartScript(path string, postStartCommand devcontainer.LifecycleScript) error {
+	postStartScript, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer postStartScript.Close()
+
+	if err := postStartScript.Chmod(0755); err != nil {
+		return err
+	}
+
+	if _, err := postStartScript.WriteString("#!/bin/sh\n\n" + postStartCommand.ScriptLines()); err != nil {
+		return err
+	}
+	return nil
 }
 
 // OptionsFromEnv returns a set of options from environment variables.
