@@ -66,7 +66,7 @@ After you have a configuration that resembles the following:
 `base64` encode the JSON and provide it to envbuilder as the `DOCKER_CONFIG_BASE64` environment variable.
 
 Alternatively, if running `envbuilder` in Kubernetes, you can create an `ImagePullSecret` and
-pass it into the pod as a volume mount:
+pass it into the pod as a volume mount. This example will work for all registries.
 
 ```shell
 # Artifactory example
@@ -92,7 +92,6 @@ resource "kubernetes_deployment" "example" {
           mount_path = "/envbuilder/config.json"
           sub_path   = ".dockerconfigjson"
         }
-        # ... other container configurations
       }
       # Define the volume which maps to the pull credentials
       volume {
