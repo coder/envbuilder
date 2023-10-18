@@ -364,9 +364,6 @@ func TestExportEnvFile(t *testing.T) {
 				"build": {
 					"dockerfile": "Dockerfile"
 				},
-				"build": {
-					"dockerfile": "Dockerfile"
-				},
 				"remoteEnv": {
 					"FROM_DEVCONTAINER_JSON": "bar"
 				}
@@ -384,6 +381,84 @@ func TestExportEnvFile(t *testing.T) {
 	require.Contains(t, strings.TrimSpace(output),
 		`FROM_DOCKERFILE=foo
 FROM_DEVCONTAINER_JSON=bar`)
+}
+
+func TestLifecycleScripts(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	url := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+				"onCreateCommand": "echo create > /tmp/out",
+				"updateContentCommand": ["sh", "-c", "echo update >> /tmp/out"],
+				"postCreateCommand": "(echo -n postCreate. ; id -un) >> /tmp/out",
+				"postStartCommand": {
+					"parallel1": "echo parallel1 > /tmp/parallel1",
+					"parallel2": ["sh", "-c", "echo parallel2 > /tmp/parallel2"]
+				}
+			}`,
+			".devcontainer/Dockerfile": "FROM alpine:latest\nUSER nobody",
+		},
+	})
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		"GIT_URL=" + url,
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /tmp/out /tmp/parallel1 /tmp/parallel2")
+	require.Equal(t,
+		`create
+update
+postCreate.nobody
+parallel1
+parallel2`, strings.TrimSpace(output))
+}
+
+func TestPostStartScript(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	url := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+				"postStartCommand": {
+					"command1": "echo command1 output > /tmp/out1",
+					"command2": ["sh", "-c", "echo 'contains \"double quotes\"' > '/tmp/out2'"]
+				}
+			}`,
+			".devcontainer/init.sh": `#!/bin/sh
+			/tmp/post-start.sh
+			sleep infinity`,
+			".devcontainer/Dockerfile": `FROM alpine:latest
+COPY init.sh /bin
+RUN chmod +x /bin/init.sh
+USER nobody`,
+		},
+	})
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		"GIT_URL=" + url,
+		"POST_START_SCRIPT_PATH=/tmp/post-start.sh",
+		"INIT_COMMAND=/bin/init.sh",
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /tmp/post-start.sh /tmp/out1 /tmp/out2")
+	require.Equal(t,
+		`#!/bin/sh
+
+echo command1 output > /tmp/out1
+'sh' '-c' 'echo '"'"'contains "double quotes"'"'"' > '"'"'/tmp/out2'"'"''
+command1 output
+contains "double quotes"`, strings.TrimSpace(output))
 }
 
 func TestPrivateRegistry(t *testing.T) {

@@ -35,10 +35,18 @@ type Spec struct {
 	RemoteEnv  map[string]string `json:"remoteEnv"`
 	// Features is a map of feature names to feature configurations.
 	Features map[string]any `json:"features"`
+	LifecycleScripts
 
 	// Deprecated but still frequently used...
 	Dockerfile string `json:"dockerFile"`
 	Context    string `json:"context"`
+}
+
+type LifecycleScripts struct {
+	OnCreateCommand      LifecycleScript `json:"onCreateCommand"`
+	UpdateContentCommand LifecycleScript `json:"updateContentCommand"`
+	PostCreateCommand    LifecycleScript `json:"postCreateCommand"`
+	PostStartCommand     LifecycleScript `json:"postStartCommand"`
 }
 
 type BuildSpec struct {
