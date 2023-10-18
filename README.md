@@ -65,6 +65,47 @@ After you have a configuration that resembles the following:
 
 `base64` encode the JSON and provide it to envbuilder as the `DOCKER_CONFIG_BASE64` environment variable.
 
+Alternatively, if running `envbuilder` in Kubernetes, you can create an `ImagePullSecret` and
+pass it into the pod as a volume mount:
+
+```shell
+# Artifactory example
+kubectl create secret docker-registry regcred \
+  --docker-server=my-artifactory.jfrog.io \
+  --docker-username=read-only \
+  --docker-password=secret-pass \
+  --docker-email=me@example.com \
+  -n coder
+```
+
+```hcl
+resource "kubernetes_deployment" "example" {
+  metadata {
+    namespace = coder
+  }
+  spec {
+    spec {
+      container {  
+        # Define the volumeMount with the pull credentials
+        volume_mount {
+          name       = "docker-config-volume"
+          mount_path = "/envbuilder/config.json"
+          sub_path   = ".dockerconfigjson"
+        }
+        # ... other container configurations
+      }
+      # Define the volume which maps to the pull credentials
+      volume {
+        name = "docker-config-volume"
+        secret {
+          secret_name = "regcred"
+        }
+      }
+    }
+  }
+}
+```
+
 ### Docker Hub
 
 Authenticate with `docker login` to generate `~/.docker/config.json`. Encode this file using the `base64` command:
