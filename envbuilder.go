@@ -407,6 +407,7 @@ func Run(ctx context.Context, options Options) error {
 		if !filepath.IsAbs(devcontainerPath) {
 			devcontainerPath = filepath.Join(devcontainerDir, devcontainerPath)
 		}
+		devcontainerDir = filepath.Dir(devcontainerPath)
 		_, err := options.Filesystem.Stat(devcontainerPath)
 		if err == nil {
 			// We know a devcontainer exists.

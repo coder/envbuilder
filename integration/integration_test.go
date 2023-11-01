@@ -208,6 +208,31 @@ func TestBuildWithSetupScript(t *testing.T) {
 	require.Equal(t, "hi", strings.TrimSpace(output))
 }
 
+func TestBuildFromDevcontainerInCustomPath(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	url := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/custom/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			".devcontainer/custom/Dockerfile": "FROM ubuntu",
+		},
+	})
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		"GIT_URL=" + url,
+		"DEVCONTAINER_JSON_PATH=custom/devcontainer.json",
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "echo hello")
+	require.Equal(t, "hello", strings.TrimSpace(output))
+}
+
 func TestBuildCustomCertificates(t *testing.T) {
 	srv := httptest.NewTLSServer(createGitHandler(t, gitServerOptions{
 		files: map[string]string{
