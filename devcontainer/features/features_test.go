@@ -81,28 +81,28 @@ func TestCompile(t *testing.T) {
 	t.Run("Basic", func(t *testing.T) {
 		t.Parallel()
 		spec := &features.Spec{
-			InstallScriptPath: "install.sh",
+			Directory: "/",
 		}
 		directive, err := spec.Compile(nil)
 		require.NoError(t, err)
-		require.Equal(t, "RUN install.sh", strings.TrimSpace(directive))
+		require.Equal(t, "WORKDIR /\nRUN ./install.sh", strings.TrimSpace(directive))
 	})
 	t.Run("ContainerEnv", func(t *testing.T) {
 		t.Parallel()
 		spec := &features.Spec{
-			InstallScriptPath: "install.sh",
+			Directory: "/",
 			ContainerEnv: map[string]string{
 				"FOO": "bar",
 			},
 		}
 		directive, err := spec.Compile(nil)
 		require.NoError(t, err)
-		require.Equal(t, "ENV FOO=bar\nRUN install.sh", strings.TrimSpace(directive))
+		require.Equal(t, "WORKDIR /\nENV FOO=bar\nRUN ./install.sh", strings.TrimSpace(directive))
 	})
 	t.Run("OptionsEnv", func(t *testing.T) {
 		t.Parallel()
 		spec := &features.Spec{
-			InstallScriptPath: "install.sh",
+			Directory: "/",
 			Options: map[string]features.Option{
 				"foo": {
 					Default: "bar",
@@ -111,6 +111,6 @@ func TestCompile(t *testing.T) {
 		}
 		directive, err := spec.Compile(nil)
 		require.NoError(t, err)
-		require.Equal(t, "RUN FOO=bar install.sh", strings.TrimSpace(directive))
+		require.Equal(t, "WORKDIR /\nRUN FOO=bar ./install.sh", strings.TrimSpace(directive))
 	})
 }

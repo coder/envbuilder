@@ -137,7 +137,7 @@ func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
 		return nil, errors.New(`devcontainer-feature.json: name is required`)
 	}
 
-	spec.InstallScriptPath = installScriptPath
+	spec.Directory = directory
 	return spec, nil
 }
 
@@ -164,7 +164,7 @@ type Spec struct {
 	Options          map[string]Option `json:"options"`
 	ContainerEnv     map[string]string `json:"containerEnv"`
 
-	InstallScriptPath string `json:"-"`
+	Directory string `json:"-"`
 }
 
 // Extract unpacks the feature from the image and returns a set of lines
@@ -189,7 +189,7 @@ func (s *Spec) Compile(options map[string]any) (string, error) {
 	sort.Strings(runDirective)
 	// See https://containers.dev/implementors/features/#invoking-installsh
 	runDirective = append([]string{"RUN"}, runDirective...)
-	runDirective = append(runDirective, s.InstallScriptPath)
+	runDirective = append(runDirective, "./install.sh")
 
 	comment := ""
 	if s.Name != "" {
@@ -205,6 +205,7 @@ func (s *Spec) Compile(options map[string]any) (string, error) {
 	if comment != "" {
 		lines = append(lines, comment)
 	}
+	lines = append(lines, fmt.Sprintf("WORKDIR %s", s.Directory))
 	envKeys := make([]string, 0, len(s.ContainerEnv))
 	for key := range s.ContainerEnv {
 		envKeys = append(envKeys, key)
