@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/tailscale/hujson"
 )
 
 // Extract unpacks the feature from the image and returns the
@@ -113,9 +114,16 @@ func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
 		return nil, fmt.Errorf("open devcontainer-feature.json: %w", err)
 	}
 	defer featureFile.Close()
-	var spec *Spec
-	err = json.NewDecoder(featureFile).Decode(&spec)
+	featureFileBytes, err := io.ReadAll(featureFile)
 	if err != nil {
+		return nil, fmt.Errorf("read devcontainer-feature.json: %w", err)
+	}
+	standardizedFeatureFileBytes, err := hujson.Standardize(featureFileBytes)
+	if err != nil {
+		return nil, fmt.Errorf("standardize devcontainer-feature.json: %w", err)
+	}
+	var spec *Spec
+	if err := json.Unmarshal(standardizedFeatureFileBytes, &spec); err != nil {
 		return nil, fmt.Errorf("decode devcontainer-feature.json: %w", err)
 	}
 	// See https://containers.dev/implementors/features/#devcontainer-feature-json-properties
