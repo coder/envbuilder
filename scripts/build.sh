@@ -45,7 +45,7 @@ else
 fi
 
 # Ensure the builder is bootstrapped and ready to use
-docker buildx inspect --bootstrap
+docker buildx inspect --bootstrap &> /dev/null
 
 for arch in "${archs[@]}"; do
   echo "Building for $arch..."
@@ -66,7 +66,7 @@ fi
 docker buildx build "${args[@]}" -t $base:$tag -t $base:latest -f Dockerfile .
 
 # Check if archs contains the current. If so, then output a message!
-if [[ " ${archs[@]} " =~ " ${current} " ]]; then
+if [[ -z "${CI:-}" ]] && [[ " ${archs[@]} " =~ " ${current} " ]]; then
   docker tag $base:$tag envbuilder:latest
   echo "Tagged $current as envbuilder:latest!"
 fi
