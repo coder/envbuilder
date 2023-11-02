@@ -112,10 +112,18 @@ type Options struct {
 	// It will override CacheRepo if both are specified.
 	LayerCacheDir string `env:"LAYER_CACHE_DIR"`
 
-	// DevcontainerJSONPath is a relative or absolute path to a
-	// devcontainer.json file. This can be used in cases where
-	// one wants to substitute an edited devcontainer.json file
-	// for the one that exists in the repo.
+	// DevcontainerDir is a path to the folder containing
+	// the devcontainer.json file that will be used to build the
+	// workspace and can either be an absolute path or a path
+	// relative to the workspace folder. If not provided, defaults to
+	// `.devcontainer`.
+	DevcontainerDir string `env:"DEVCONTAINER_DIR"`
+
+	// DevcontainerJSONPath is a path to a devcontainer.json file
+	// that is either an absolute path or a path relative to
+	// DevcontainerDir. This can be used in cases where one wants
+	// to substitute an edited devcontainer.json file for the one
+	// that exists in the repo.
 	DevcontainerJSONPath string `env:"DEVCONTAINER_JSON_PATH"`
 
 	// DockerfilePath is a relative path to the Dockerfile that
@@ -399,7 +407,13 @@ func Run(ctx context.Context, options Options) error {
 	if options.DockerfilePath == "" {
 		// Only look for a devcontainer if a Dockerfile wasn't specified.
 		// devcontainer is a standard, so it's reasonable to be the default.
-		devcontainerDir := filepath.Join(options.WorkspaceFolder, ".devcontainer")
+		devcontainerDir := options.DevcontainerDir
+		if devcontainerDir == "" {
+			devcontainerDir = ".devcontainer"
+		}
+		if !filepath.IsAbs(devcontainerDir) {
+			devcontainerDir = filepath.Join(options.WorkspaceFolder, devcontainerDir)
+		}
 		devcontainerPath := options.DevcontainerJSONPath
 		if devcontainerPath == "" {
 			devcontainerPath = "devcontainer.json"
