@@ -111,6 +111,6 @@ func TestCompile(t *testing.T) {
 		}
 		directive, err := spec.Compile(nil)
 		require.NoError(t, err)
-		require.Equal(t, "WORKDIR /\nRUN FOO=bar ./install.sh", strings.TrimSpace(directive))
+		require.Equal(t, "WORKDIR /\nRUN FOO=\"bar\" ./install.sh", strings.TrimSpace(directive))
 	})
 }

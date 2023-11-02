@@ -91,9 +91,9 @@ func TestCompileWithFeatures(t *testing.T) {
 
 	// We have to SHA because we get a different MD5 every time!
 	featureOneMD5 := md5.Sum([]byte(featureOne))
-	featureOneDir := fmt.Sprintf(".envbuilder/features/one-%x", featureOneMD5[:4])
+	featureOneDir := fmt.Sprintf("/.envbuilder/features/one-%x", featureOneMD5[:4])
 	featureTwoMD5 := md5.Sum([]byte(featureTwo))
-	featureTwoDir := fmt.Sprintf(".envbuilder/features/two-%x", featureTwoMD5[:4])
+	featureTwoDir := fmt.Sprintf("/.envbuilder/features/two-%x", featureTwoMD5[:4])
 
 	require.Equal(t, `FROM codercom/code-server:latest
 
@@ -105,7 +105,7 @@ RUN ./install.sh
 # Go potato - Example description!
 WORKDIR `+featureTwoDir+`
 ENV POTATO=example
-RUN VERSION=potato ./install.sh
+RUN VERSION="potato" ./install.sh
 USER 1000`, params.DockerfileContent)
 }
 

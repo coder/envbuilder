@@ -179,7 +179,7 @@ func (s *Spec) Compile(options map[string]any) (string, error) {
 			// delete so we can check if there are any unknown options
 			delete(options, key)
 		}
-		runDirective = append(runDirective, fmt.Sprintf("%s=%s", convertOptionNameToEnv(key), strValue))
+		runDirective = append(runDirective, fmt.Sprintf(`%s="%s"`, convertOptionNameToEnv(key), strValue))
 	}
 	if len(options) > 0 {
 		return "", fmt.Errorf("unknown option: %v", options)
