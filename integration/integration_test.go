@@ -225,7 +225,7 @@ func TestBuildFromDevcontainerInCustomPath(t *testing.T) {
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + url,
-		"DEVCONTAINER_JSON_PATH=custom/devcontainer.json",
+		"DEVCONTAINER_DIR=.devcontainer/custom",
 	}})
 	require.NoError(t, err)
 
