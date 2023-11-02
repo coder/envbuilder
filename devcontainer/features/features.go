@@ -205,7 +205,7 @@ func (s *Spec) Compile(options map[string]any) (string, error) {
 	if comment != "" {
 		lines = append(lines, comment)
 	}
-	lines = append(lines, fmt.Sprintf("WORKDIR %s", s.Directory))
+	lines = append(lines, "WORKDIR "+s.Directory)
 	envKeys := make([]string, 0, len(s.ContainerEnv))
 	for key := range s.ContainerEnv {
 		envKeys = append(envKeys, key)
