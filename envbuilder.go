@@ -112,9 +112,11 @@ type Options struct {
 	// It will override CacheRepo if both are specified.
 	LayerCacheDir string `env:"LAYER_CACHE_DIR"`
 
-	// DevcontainerDir is a relative path to the folder containing
+	// DevcontainerDir is a path to the folder containing
 	// the devcontainer.json file that will be used to build the
-	// workspace. If not provided, defaults to `.devcontainer`.
+	// workspace and can either be an absolute path or a path
+	// relative to the workspace folder. If not provided, defaults to
+	// `.devcontainer`.
 	DevcontainerDir string `env:"DEVCONTAINER_DIR"`
 
 	// DevcontainerJSONPath is a path to a devcontainer.json file
@@ -409,7 +411,9 @@ func Run(ctx context.Context, options Options) error {
 		if devcontainerDir == "" {
 			devcontainerDir = ".devcontainer"
 		}
-		devcontainerDir = filepath.Join(options.WorkspaceFolder, devcontainerDir)
+		if !filepath.IsAbs(devcontainerDir) {
+			devcontainerDir = filepath.Join(options.WorkspaceFolder, devcontainerDir)
+		}
 		devcontainerPath := options.DevcontainerJSONPath
 		if devcontainerPath == "" {
 			devcontainerPath = "devcontainer.json"
