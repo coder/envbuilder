@@ -82,10 +82,10 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 	t.Parallel()
 
 	registry := registrytest.New(t)
-	ref := registrytest.WriteContainer(t, registry, "coder/test:latest", features.TarLayerMediaType, map[string]any{
+	feature1Ref := registrytest.WriteContainer(t, registry, "coder/test1:latest", features.TarLayerMediaType, map[string]any{
 		"devcontainer-feature.json": &features.Spec{
-			ID:      "test",
-			Name:    "test",
+			ID:      "test1",
+			Name:    "test1",
 			Version: "1.0.0",
 			Options: map[string]features.Option{
 				"bananas": {
@@ -93,7 +93,21 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 				},
 			},
 		},
-		"install.sh": "echo $BANANAS > /test",
+		"install.sh": "echo $BANANAS > /test1output",
+	})
+
+	feature2Ref := registrytest.WriteContainer(t, registry, "coder/test2:latest", features.TarLayerMediaType, map[string]any{
+		"devcontainer-feature.json": &features.Spec{
+			ID:      "test2",
+			Name:    "test2",
+			Version: "1.0.0",
+			Options: map[string]features.Option{
+				"pineapple": {
+					Type: "string",
+				},
+			},
+		},
+		"install.sh": "echo $PINEAPPLE > /test2output",
 	})
 
 	// Ensures that a Git repository with a devcontainer.json is cloned and built.
@@ -105,8 +119,11 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 					"dockerfile": "Dockerfile"
 				},
 				"features": {
-					"` + ref + `": {
-						"bananas": "hello"
+					"` + feature1Ref + `": {
+						"bananas": "hello from test 1!"
+					},
+					"` + feature2Ref + `": {
+						"pineapple": "hello from test 2!"
 					}
 				}
 			}`,
@@ -118,8 +135,11 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	output := execContainer(t, ctr, "cat /test")
-	require.Equal(t, "hello", strings.TrimSpace(output))
+	test1Output := execContainer(t, ctr, "cat /test1output")
+	require.Equal(t, "hello from test 1!", strings.TrimSpace(test1Output))
+
+	test2Output := execContainer(t, ctr, "cat /test2output")
+	require.Equal(t, "hello from test 2!", strings.TrimSpace(test2Output))
 }
 
 func TestBuildFromDockerfile(t *testing.T) {

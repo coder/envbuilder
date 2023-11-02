@@ -61,7 +61,7 @@ const (
 	// MagicDir is where all envbuilder related files are stored.
 	// This is a special directory that must not be modified
 	// by the user or images.
-	MagicDir = ".envbuilder"
+	MagicDir = "/.envbuilder"
 )
 
 var (
@@ -304,7 +304,7 @@ func Run(ctx context.Context, options Options) error {
 		if err != nil {
 			return fmt.Errorf("parse docker config: %w", err)
 		}
-		err = os.WriteFile(filepath.Join("/", MagicDir, "config.json"), decoded, 0644)
+		err = os.WriteFile(filepath.Join(MagicDir, "config.json"), decoded, 0644)
 		if err != nil {
 			return fmt.Errorf("write docker config: %w", err)
 		}
