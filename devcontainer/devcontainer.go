@@ -29,10 +29,11 @@ func Parse(content []byte) (*Spec, error) {
 }
 
 type Spec struct {
-	Image      string            `json:"image"`
-	Build      BuildSpec         `json:"build"`
-	RemoteUser string            `json:"remoteUser"`
-	RemoteEnv  map[string]string `json:"remoteEnv"`
+	Image         string            `json:"image"`
+	Build         BuildSpec         `json:"build"`
+	RemoteUser    string            `json:"remoteUser"`
+	ContainerUser string            `json:"containerUser"`
+	RemoteEnv     map[string]string `json:"remoteEnv"`
 	// Features is a map of feature names to feature configurations.
 	Features map[string]any `json:"features"`
 	LifecycleScripts
@@ -89,7 +90,7 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbac
 		env = append(env, key+"="+value)
 	}
 	params := &Compiled{
-		User: s.RemoteUser,
+		User: s.ContainerUser,
 		Env:  env,
 	}
 
@@ -164,14 +165,18 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbac
 			return nil, fmt.Errorf("get user from image: %w", err)
 		}
 	}
-	params.DockerfileContent, err = s.compileFeatures(fs, scratchDir, params.User, params.DockerfileContent)
+	remoteUser := s.RemoteUser
+	if remoteUser == "" {
+		remoteUser = params.User
+	}
+	params.DockerfileContent, err = s.compileFeatures(fs, scratchDir, params.User, remoteUser, params.DockerfileContent)
 	if err != nil {
 		return nil, err
 	}
 	return params, nil
 }
 
-func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, remoteUser, dockerfileContent string) (string, error) {
+func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, containerUser, remoteUser, dockerfileContent string) (string, error) {
 	// If there are no features, we don't need to do anything!
 	if len(s.Features) == 0 {
 		return dockerfileContent, nil
@@ -227,7 +232,7 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, remoteUser, dock
 		if err != nil {
 			return "", fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
 		}
-		directive, err := spec.Compile(featureOpts)
+		directive, err := spec.Compile(containerUser, remoteUser, featureOpts)
 		if err != nil {
 			return "", fmt.Errorf("compile feature %s: %w", featureRefRaw, err)
 		}
