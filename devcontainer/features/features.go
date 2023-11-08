@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
@@ -169,8 +170,14 @@ type Spec struct {
 
 // Extract unpacks the feature from the image and returns a set of lines
 // that should be appended to a Dockerfile to install the feature.
-func (s *Spec) Compile(options map[string]any) (string, error) {
-	var runDirective []string
+func (s *Spec) Compile(containerUser, remoteUser string, options map[string]any) (string, error) {
+	// TODO not sure how we figure out _(REMOTE|CONTAINER)_USER_HOME
+	// as per the feature spec.
+	// See https://containers.dev/implementors/features/#user-env-var
+	runDirective := []string{
+		"_CONTAINER_USER=" + strconv.Quote(containerUser),
+		"_REMOTE_USER=" + strconv.Quote(remoteUser),
+	}
 	for key, value := range s.Options {
 		strValue := fmt.Sprint(value.Default)
 		provided, ok := options[key]
@@ -179,7 +186,7 @@ func (s *Spec) Compile(options map[string]any) (string, error) {
 			// delete so we can check if there are any unknown options
 			delete(options, key)
 		}
-		runDirective = append(runDirective, fmt.Sprintf(`%s="%s"`, convertOptionNameToEnv(key), strValue))
+		runDirective = append(runDirective, fmt.Sprintf(`%s=%q`, convertOptionNameToEnv(key), strValue))
 	}
 	if len(options) > 0 {
 		return "", fmt.Errorf("unknown option: %v", options)
