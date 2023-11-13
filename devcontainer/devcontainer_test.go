@@ -101,11 +101,11 @@ USER root
 # Rust tomato - Example description!
 WORKDIR `+featureOneDir+`
 ENV TOMATO=example
-RUN ./install.sh
+RUN _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 # Go potato - Example description!
 WORKDIR `+featureTwoDir+`
 ENV POTATO=example
-RUN VERSION="potato" ./install.sh
+RUN VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 USER 1000`, params.DockerfileContent)
 }
 
