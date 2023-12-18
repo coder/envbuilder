@@ -22,6 +22,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
@@ -52,6 +53,25 @@ type logrusFormatter struct {
 func (f *logrusFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	f.callback(entry)
 	return f.empty, nil
+}
+
+// WriteContainerFromTar uploads a container to the registry server.
+// The `imagePath` is the path to the result of `docker image save`...
+func WriteContainerFromTar(t *testing.T, serverURL, containerRef, imagePath string) string {
+	image, err := tarball.ImageFromPath(imagePath, nil)
+	require.NoError(t, err)
+
+	parsed, err := url.Parse(serverURL)
+	require.NoError(t, err)
+	parsed.Path = containerRef
+
+	ref, err := name.ParseReference(strings.TrimPrefix(parsed.String(), "http://"))
+	require.NoError(t, err)
+
+	err = remote.Write(ref, image)
+	require.NoError(t, err)
+
+	return ref.String()
 }
 
 // WriteContainer uploads a container to the registry server.

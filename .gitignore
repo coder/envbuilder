@@ -1,1 +1,3 @@
+# Stores benchmark images
+.cache
 scripts/envbuilder-*
