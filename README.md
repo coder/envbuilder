@@ -7,7 +7,13 @@
 
 Build development environments from a Dockerfile on Docker, Kubernetes, and OpenShift. Allow developers to modify their environment in a tight feedback loop.
 
-- Supports [`devcontainer.json`](https://containers.dev/) and `Dockerfile`
+- Supports a subset of [`devcontainer.json`](https://containers.dev/) and `Dockerfile`. Currently support is missing for the following `devcontainer.json` features
+
+  - `image`
+  - `build`
+  - `runArgs`
+  - `workspaceFolder`
+
 - Cache image layers with registries for speedy builds
 - Runs on Kubernetes, Docker, and OpenShift
 
@@ -85,7 +91,7 @@ resource "kubernetes_deployment" "example" {
   }
   spec {
     spec {
-      container {  
+      container {
         # Define the volumeMount with the pull credentials
         volume_mount {
           name       = "docker-config-volume"
@@ -172,8 +178,7 @@ The performance improvement of builds depends on the complexity of your Dockerfi
 
 The `SETUP_SCRIPT` environment variable dynamically configures the user and init command (PID 1) after the container build process.
 
-> **Note**
-> `TARGET_USER` is passed to the setup script to specify who will execute `INIT_COMMAND` (e.g., `code`).
+> **Note** > `TARGET_USER` is passed to the setup script to specify who will execute `INIT_COMMAND` (e.g., `code`).
 
 Write the following to `$ENVBUILDER_ENV` to shape the container's init process:
 
