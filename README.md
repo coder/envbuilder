@@ -178,7 +178,8 @@ The performance improvement of builds depends on the complexity of your Dockerfi
 
 The `SETUP_SCRIPT` environment variable dynamically configures the user and init command (PID 1) after the container build process.
 
-> **Note** > `TARGET_USER` is passed to the setup script to specify who will execute `INIT_COMMAND` (e.g., `code`).
+> [!NOTE]
+> `TARGET_USER` is passed to the setup script to specify who will execute `INIT_COMMAND` (e.g., `code`).
 
 Write the following to `$ENVBUILDER_ENV` to shape the container's init process:
 
