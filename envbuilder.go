@@ -756,7 +756,7 @@ func Run(ctx context.Context, options Options) error {
 				scripts.UpdateContentCommand = container.UpdateContentCommand
 			}
 			if !container.PostCreateCommand.IsEmpty() {
-				scripts.OnCreateCommand = container.OnCreateCommand
+				scripts.PostCreateCommand = container.PostCreateCommand
 			}
 			if !container.PostStartCommand.IsEmpty() {
 				scripts.PostStartCommand = container.PostStartCommand
