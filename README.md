@@ -26,6 +26,7 @@ The easiest way to get started is to run the `envbuilder` Docker container that 
 
 > `/tmp/envbuilder` is used to persist data between commands for the purpose of this demo. You can change it to any directory you want.
 
+for public repository:
 ```bash
 docker run -it --rm \
     -v /tmp/envbuilder:/workspaces \
@@ -121,7 +122,7 @@ DOCKER_CONFIG_BASE64=ewoJImF1dGhzIjogewoJCSJodHRwczovL2luZGV4LmRvY2tlci5pby92MS8
 ```
 
 ## Git Authentication
-
+### Token-based authentication
 `GIT_USERNAME` and `GIT_PASSWORD` are environment variables to provide Git authentication for private repositories.
 
 For access token-based authentication, follow the following schema (if empty, there's no need to provide the field):
@@ -145,6 +146,30 @@ resource "docker_container" "dev" {
         GIT_USERNAME = data.coder_external_auth.github.access_token,
     ]
 }
+```
+
+### PrivateKey-based authentication
+* Prebuild private key in your envbuilder image
+Script will generate private key under `scripts/.ssh` or you can place your key in same path to skip key generation.
+```bash
+# use `--ssh` flag to install ssh key in envbuilder images
+scripts/build.sh \
+  --arch=amd64 \
+  --base=envbuilder \
+  --tag=latest \
+  --ssh
+```
+
+* Use envbuilder to clone repository
+>Remenber to register the public key on git (`scripts/.ssh/id_ed25519.pub`)
+```bash
+docker run -it --rm \
+    -v /tmp/envbuilder:/workspaces \
+    -e GIT_URL=git@github.com:<username>/<project_name>.git \
+    -e INIT_SCRIPT=bash \
+    -e GIT_SSH=true \
+    -e GIT_SSHKEY=/root/.ssh/id_ed25519 \
+    envbuilder:latest
 ```
 
 ## Layer Caching

@@ -20,6 +20,7 @@ require (
 	github.com/docker/docker v23.0.8+incompatible
 	github.com/fatih/color v1.15.0
 	github.com/go-git/go-billy/v5 v5.5.0
+	github.com/go-git/go-git v4.7.0+incompatible
 	github.com/go-git/go-git/v5 v5.11.0
 	github.com/google/go-containerregistry v0.15.2
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
@@ -200,6 +201,7 @@ require (
 	github.com/skeema/knownhosts v1.2.1 // indirect
 	github.com/spf13/afero v1.9.5 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/src-d/gcfg v1.4.0 // indirect
 	github.com/tabbed/pqtype v0.1.1 // indirect
 	github.com/tailscale/certstore v0.1.1-0.20220316223106-78d6e1c49d8d // indirect
 	github.com/tailscale/golang-x-crypto v0.0.0-20221102133106-bc99ab8c2d17 // indirect
@@ -256,6 +258,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230530153820-e85fd2cbaebc // indirect
 	google.golang.org/grpc v1.56.3 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
+	gopkg.in/src-d/go-git.v4 v4.13.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

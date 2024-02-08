@@ -5,6 +5,7 @@ set -euo pipefail
 
 archs=()
 push=false
+ssh=false
 base="envbuilder"
 tag="latest"
 
@@ -18,6 +19,8 @@ for arg in "$@"; do
     base="${arg#*=}"
   elif [[ $arg == --tag=* ]]; then
     tag="${arg#*=}"
+  elif [[ $arg == --ssh ]]; then
+    ssh=true
   else
     echo "Unknown argument: $arg"
     exit 1
@@ -63,7 +66,18 @@ else
   args+=( --load )
 fi
 
-docker buildx build "${args[@]}" -t $base:$tag -t $base:latest -f Dockerfile .
+if [ "$ssh" = true ]; then
+  if [ -d "./.ssh" ] && [ "$(ls -A ./.ssh)" ]; then
+    echo "The .ssh/ directory is not empty. Skipping key generation."
+  else
+    echo "Generate default private key under .ssh/ folder"
+    mkdir -p "./.ssh"
+    ssh-keygen -t ed25519 -f "./.ssh/id_ed25519"
+  fi
+  docker buildx build "${args[@]}" -t $base:$tag -t $base:latest -f Dockerfile.sshkey .
+else
+  docker buildx build "${args[@]}" -t $base:$tag -t $base:latest -f Dockerfile .
+fi
 
 # Check if archs contains the current. If so, then output a message!
 if [[ -z "${CI:-}" ]] && [[ " ${archs[@]} " =~ " ${current} " ]]; then
