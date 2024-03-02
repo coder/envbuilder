@@ -31,7 +31,7 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
 	"github.com/GoogleContainerTools/kaniko/pkg/util"
-	"github.com/coder/coder/codersdk"
+	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/containerd/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
