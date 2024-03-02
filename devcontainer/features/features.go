@@ -16,23 +16,22 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/otiai10/copy"
 	"github.com/tailscale/hujson"
 )
 
-// Extract unpacks the feature from the image and returns the
-// parsed specification.
-func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
+func extractFromImage(fs billy.Filesystem, directory, reference string) error {
 	ref, err := name.ParseReference(reference)
 	if err != nil {
-		return nil, fmt.Errorf("parse feature ref %s: %w", reference, err)
+		return fmt.Errorf("parse feature ref %s: %w", reference, err)
 	}
 	image, err := remote.Image(ref)
 	if err != nil {
-		return nil, fmt.Errorf("fetch feature image %s: %w", reference, err)
+		return fmt.Errorf("fetch feature image %s: %w", reference, err)
 	}
 	manifest, err := image.Manifest()
 	if err != nil {
-		return nil, fmt.Errorf("fetch feature manifest %s: %w", reference, err)
+		return fmt.Errorf("fetch feature manifest %s: %w", reference, err)
 	}
 
 	var tarLayer *tar.Reader
@@ -42,17 +41,17 @@ func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
 		}
 		layer, err := image.LayerByDigest(manifestLayer.Digest)
 		if err != nil {
-			return nil, fmt.Errorf("fetch feature layer %s: %w", reference, err)
+			return fmt.Errorf("fetch feature layer %s: %w", reference, err)
 		}
 		layerReader, err := layer.Uncompressed()
 		if err != nil {
-			return nil, fmt.Errorf("uncompress feature layer %s: %w", reference, err)
+			return fmt.Errorf("uncompress feature layer %s: %w", reference, err)
 		}
 		tarLayer = tar.NewReader(layerReader)
 		break
 	}
 	if tarLayer == nil {
-		return nil, fmt.Errorf("no tar layer found with media type %q: are you sure this is a devcontainer feature?", TarLayerMediaType)
+		return fmt.Errorf("no tar layer found with media type %q: are you sure this is a devcontainer feature?", TarLayerMediaType)
 	}
 
 	for {
@@ -61,35 +60,60 @@ func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("read feature layer %s: %w", reference, err)
+			return fmt.Errorf("read feature layer %s: %w", reference, err)
 		}
 		path := filepath.Join(directory, header.Name)
 		switch header.Typeflag {
 		case tar.TypeDir:
 			err = fs.MkdirAll(path, 0755)
 			if err != nil {
-				return nil, fmt.Errorf("mkdir %s: %w", path, err)
+				return fmt.Errorf("mkdir %s: %w", path, err)
 			}
 		case tar.TypeReg:
 			outFile, err := fs.Create(path)
 			if err != nil {
-				return nil, fmt.Errorf("create %s: %w", path, err)
+				return fmt.Errorf("create %s: %w", path, err)
 			}
 			_, err = io.Copy(outFile, tarLayer)
 			if err != nil {
-				return nil, fmt.Errorf("copy %s: %w", path, err)
+				return fmt.Errorf("copy %s: %w", path, err)
 			}
 			err = outFile.Close()
 			if err != nil {
-				return nil, fmt.Errorf("close %s: %w", path, err)
+				return fmt.Errorf("close %s: %w", path, err)
 			}
 		default:
-			return nil, fmt.Errorf("unknown type %d in %s", header.Typeflag, path)
+			return fmt.Errorf("unknown type %d in %s", header.Typeflag, path)
 		}
+	}
+	return nil
+}
+
+// Extract unpacks the feature from the image and returns the
+// parsed specification.
+func Extract(fs billy.Filesystem, devcontainerDir, directory, reference string) (*Spec, error) {
+	if strings.HasPrefix(reference, "./") {
+		if err := copy.Copy(filepath.Join(devcontainerDir, reference), directory, copy.Options{
+			PreserveTimes: true,
+			PreserveOwner: true,
+			OnSymlink: func(src string) copy.SymlinkAction {
+				return copy.Shallow
+			},
+			OnError: func(src, dest string, err error) error {
+				if err == nil {
+					return nil
+				}
+				return fmt.Errorf("copy error: %q -> %q: %w", reference, directory, err)
+			},
+		}); err != nil {
+			return nil, err
+		}
+	} else if err := extractFromImage(fs, directory, reference); err != nil {
+		return nil, err
 	}
 
 	installScriptPath := filepath.Join(directory, "install.sh")
-	_, err = fs.Stat(installScriptPath)
+	_, err := fs.Stat(installScriptPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, errors.New("install.sh must be in the root of the feature")

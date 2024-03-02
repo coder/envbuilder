@@ -110,6 +110,18 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 		"install.sh": "echo $PINEAPPLE > /test2output",
 	})
 
+	feature3Spec, err := json.Marshal(features.Spec{
+		ID:      "test3",
+		Name:    "test3",
+		Version: "1.0.0",
+		Options: map[string]features.Option{
+			"grape": {
+				Type: "string",
+			},
+		},
+	})
+	require.NoError(t, err)
+
 	// Ensures that a Git repository with a devcontainer.json is cloned and built.
 	url := createGitServer(t, gitServerOptions{
 		files: map[string]string{
@@ -124,10 +136,15 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 					},
 					"` + feature2Ref + `": {
 						"pineapple": "hello from test 2!"
+					},
+					"./feature3": {
+						"grape": "hello from test 3!"
 					}
 				}
 			}`,
-			".devcontainer/Dockerfile": "FROM ubuntu",
+			".devcontainer/Dockerfile":                         "FROM ubuntu",
+			".devcontainer/feature3/devcontainer-feature.json": string(feature3Spec),
+			".devcontainer/feature3/install.sh":                "echo $GRAPE > /test3output",
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
@@ -140,6 +157,9 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 
 	test2Output := execContainer(t, ctr, "cat /test2output")
 	require.Equal(t, "hello from test 2!", strings.TrimSpace(test2Output))
+
+	test3Output := execContainer(t, ctr, "cat /test3output")
+	require.Equal(t, "hello from test 3!", strings.TrimSpace(test3Output))
 }
 
 func TestBuildFromDockerfile(t *testing.T) {

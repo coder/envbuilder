@@ -169,14 +169,14 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbac
 	if remoteUser == "" {
 		remoteUser = params.User
 	}
-	params.DockerfileContent, err = s.compileFeatures(fs, scratchDir, params.User, remoteUser, params.DockerfileContent)
+	params.DockerfileContent, err = s.compileFeatures(fs, devcontainerDir, scratchDir, params.User, remoteUser, params.DockerfileContent)
 	if err != nil {
 		return nil, err
 	}
 	return params, nil
 }
 
-func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, containerUser, remoteUser, dockerfileContent string) (string, error) {
+func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir, containerUser, remoteUser, dockerfileContent string) (string, error) {
 	// If there are no features, we don't need to do anything!
 	if len(s.Features) == 0 {
 		return dockerfileContent, nil
@@ -200,9 +200,16 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, containerUser, r
 	sort.Strings(featureOrder)
 
 	for _, featureRefRaw := range featureOrder {
-		featureRefParsed, err := name.NewTag(featureRefRaw)
-		if err != nil {
-			return "", fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
+		var (
+			featureRef string
+			ok         bool
+		)
+		if _, featureRef, ok = strings.Cut(featureRefRaw, "./"); !ok {
+			featureRefParsed, err := name.NewTag(featureRefRaw)
+			if err != nil {
+				return "", fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
+			}
+			featureRef = featureRefParsed.Repository.Name()
 		}
 
 		featureOpts := map[string]any{}
@@ -222,13 +229,13 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, containerUser, r
 		// devcontainers/cli has a very complex method of computing the feature
 		// name from the feature reference. We're just going to hash it for simplicity.
 		featureSha := md5.Sum([]byte(featureRefRaw))
-		featureName := filepath.Base(featureRefParsed.Repository.Name())
+		featureName := filepath.Base(featureRef)
 		featureDir := filepath.Join(featuresDir, fmt.Sprintf("%s-%x", featureName, featureSha[:4]))
 		err = fs.MkdirAll(featureDir, 0644)
 		if err != nil {
 			return "", err
 		}
-		spec, err := features.Extract(fs, featureDir, featureRefRaw)
+		spec, err := features.Extract(fs, devcontainerDir, featureDir, featureRefRaw)
 		if err != nil {
 			return "", fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
 		}
