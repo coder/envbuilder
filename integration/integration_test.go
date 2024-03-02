@@ -409,8 +409,11 @@ func TestExportEnvFile(t *testing.T) {
 				"build": {
 					"dockerfile": "Dockerfile"
 				},
+				"containerEnv": {
+					"FROM_CONTAINER_ENV": "bar"
+				},
 				"remoteEnv": {
-					"FROM_DEVCONTAINER_JSON": "bar"
+					"FROM_REMOTE_ENV": "baz"
 				}
 			}`,
 			".devcontainer/Dockerfile": "FROM alpine:latest\nENV FROM_DOCKERFILE=foo",
@@ -425,7 +428,8 @@ func TestExportEnvFile(t *testing.T) {
 	output := execContainer(t, ctr, "cat /env")
 	require.Contains(t, strings.TrimSpace(output),
 		`FROM_DOCKERFILE=foo
-FROM_DEVCONTAINER_JSON=bar`)
+FROM_CONTAINER_ENV=bar
+FROM_REMOTE_ENV=baz`)
 }
 
 func TestLifecycleScripts(t *testing.T) {

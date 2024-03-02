@@ -33,6 +33,7 @@ type Spec struct {
 	Build         BuildSpec         `json:"build"`
 	RemoteUser    string            `json:"remoteUser"`
 	ContainerUser string            `json:"containerUser"`
+	ContainerEnv  map[string]string `json:"containerEnv"`
 	RemoteEnv     map[string]string `json:"remoteEnv"`
 	// Features is a map of feature names to feature configurations.
 	Features map[string]any `json:"features"`
@@ -86,8 +87,10 @@ func (s Spec) HasDockerfile() bool {
 // be written to if one doesn't exist.
 func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbackDockerfile string) (*Compiled, error) {
 	env := make([]string, 0)
-	for key, value := range s.RemoteEnv {
-		env = append(env, key+"="+value)
+	for _, envMap := range []map[string]string{s.ContainerEnv, s.RemoteEnv} {
+		for key, value := range envMap {
+			env = append(env, key+"="+value)
+		}
 	}
 	params := &Compiled{
 		User: s.ContainerUser,
