@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"cdr.dev/slog"
-	"github.com/coder/coder/codersdk"
-	"github.com/coder/coder/codersdk/agentsdk"
+	"github.com/coder/coder/v2/codersdk"
+	"github.com/coder/coder/v2/codersdk/agentsdk"
 	"github.com/coder/envbuilder"
 	"github.com/spf13/cobra"
 
@@ -32,7 +32,7 @@ func main() {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options := envbuilder.OptionsFromEnv(os.LookupEnv)
 
-			var sendLogs func(ctx context.Context, log ...agentsdk.StartupLog) error
+			var sendLogs func(ctx context.Context, log ...agentsdk.Log) error
 			agentURL := os.Getenv("CODER_AGENT_URL")
 			agentToken := os.Getenv("CODER_AGENT_TOKEN")
 			if agentToken != "" {
@@ -53,7 +53,7 @@ func main() {
 					},
 				}
 				var flushAndClose func(ctx context.Context) error
-				sendLogs, flushAndClose = agentsdk.StartupLogsSender(client.PatchStartupLogs, slog.Logger{})
+				sendLogs, flushAndClose = agentsdk.LogsSender(agentsdk.ExternalLogSourceID, client.PatchLogs, slog.Logger{})
 				defer flushAndClose(cmd.Context())
 			}
 
@@ -61,7 +61,7 @@ func main() {
 				output := fmt.Sprintf(format, args...)
 				fmt.Fprintln(cmd.ErrOrStderr(), output)
 				if sendLogs != nil {
-					sendLogs(cmd.Context(), agentsdk.StartupLog{
+					sendLogs(cmd.Context(), agentsdk.Log{
 						CreatedAt: time.Now(),
 						Output:    output,
 						Level:     level,
