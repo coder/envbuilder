@@ -1,0 +1,16 @@
+FROM alpine:3.19
+ARG TARGETARCH
+
+RUN apk update && apk add openssh
+COPY .ssh /root/.ssh
+
+# Scan github public key, replace to your self host git domain (if needed)
+RUN ssh-keyscan github.com >> /root/.ssh/known_hosts
+
+COPY envbuilder-${TARGETARCH} /.envbuilder/bin/envbuilder
+
+ENV KANIKO_DIR /.envbuilder
+# Kaniko looks for the Docker config at $DOCKER_CONFIG/config.json
+ENV DOCKER_CONFIG /.envbuilder
+
+ENTRYPOINT ["/.envbuilder/bin/envbuilder"]
