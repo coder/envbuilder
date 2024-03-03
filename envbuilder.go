@@ -743,8 +743,8 @@ func Run(ctx context.Context, options Options) error {
 
 				configFile.Config.User = container.RemoteUser
 			}
-			if container.RemoteEnv != nil {
-				for key, value := range container.RemoteEnv {
+			for _, env := range []map[string]string{container.ContainerEnv, container.RemoteEnv} {
+				for key, value := range env {
 					os.Setenv(key, value)
 					exportEnv(key, value)
 				}
