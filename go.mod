@@ -20,7 +20,7 @@ require (
 	github.com/GoogleContainerTools/kaniko v1.9.2
 	github.com/breml/rootcerts v0.2.10
 	github.com/coder/coder/v2 v2.3.3
-	github.com/containerd/containerd v1.7.7
+	github.com/containerd/containerd v1.7.11
 	github.com/distribution/distribution/v3 v3.0.0-20230629214736-bac7f02e02a1
 	github.com/docker/cli v23.0.5+incompatible
 	github.com/docker/docker v23.0.8+incompatible
@@ -64,7 +64,7 @@ require (
 	github.com/DataDog/gostackparse v0.7.0 // indirect
 	github.com/DataDog/sketches-go v1.4.2 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
-	github.com/Microsoft/hcsshim v0.11.1 // indirect
+	github.com/Microsoft/hcsshim v0.11.4 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20230828082145-3c4c8a2d2371 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/akutz/memconn v0.1.0 // indirect
@@ -242,7 +242,6 @@ require (
 	github.com/zeebo/errs v1.3.0 // indirect
 	go.etcd.io/etcd/raft/v3 v3.5.6 // indirect
 	go.nhat.io/otelsql v0.12.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.45.0 // indirect
 	go.opentelemetry.io/otel v1.19.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.19.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.19.0 // indirect
