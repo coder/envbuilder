@@ -17,7 +17,7 @@ func TestExtract(t *testing.T) {
 		registry := registrytest.New(t)
 		ref := registrytest.WriteContainer(t, registry, "coder/test:latest", "some/type", nil)
 		fs := memfs.New()
-		_, err := features.Extract(fs, "/", ref)
+		_, err := features.Extract(fs, "", "/", ref)
 		require.ErrorContains(t, err, "no tar layer found")
 	})
 	t.Run("MissingInstallScript", func(t *testing.T) {
@@ -27,7 +27,7 @@ func TestExtract(t *testing.T) {
 			"devcontainer-feature.json": "{}",
 		})
 		fs := memfs.New()
-		_, err := features.Extract(fs, "/", ref)
+		_, err := features.Extract(fs, "", "/", ref)
 		require.ErrorContains(t, err, "install.sh")
 	})
 	t.Run("MissingFeatureFile", func(t *testing.T) {
@@ -37,7 +37,7 @@ func TestExtract(t *testing.T) {
 			"install.sh": "hey",
 		})
 		fs := memfs.New()
-		_, err := features.Extract(fs, "/", ref)
+		_, err := features.Extract(fs, "", "/", ref)
 		require.ErrorContains(t, err, "devcontainer-feature.json")
 	})
 	t.Run("MissingFeatureProperties", func(t *testing.T) {
@@ -48,7 +48,7 @@ func TestExtract(t *testing.T) {
 			"devcontainer-feature.json": features.Spec{},
 		})
 		fs := memfs.New()
-		_, err := features.Extract(fs, "/", ref)
+		_, err := features.Extract(fs, "", "/", ref)
 		require.ErrorContains(t, err, "id is required")
 	})
 	t.Run("Success", func(t *testing.T) {
@@ -63,7 +63,7 @@ func TestExtract(t *testing.T) {
 			},
 		})
 		fs := memfs.New()
-		_, err := features.Extract(fs, "/", ref)
+		_, err := features.Extract(fs, "", "/", ref)
 		require.NoError(t, err)
 	})
 }
