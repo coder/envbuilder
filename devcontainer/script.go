@@ -97,10 +97,11 @@ func (s *LifecycleScript) Execute(ctx context.Context, uid, gid int) error {
 		desc := desc
 		command := command
 		eg.Go(func() error {
-			if _, err := syscall.ForkExec("/bin/sh", []string{"/bin/sh", "-c", command}, procAttr); err != nil {
+			pid, err := syscall.ForkExec("/bin/sh", []string{"/bin/sh", "-c", command}, procAttr)
+			if err != nil {
 				return fmt.Errorf("lifecycle command %q failed: %v", desc, err)
 			}
-			return nil
+			return waitForCommand(desc, pid)
 		})
 	}
 
@@ -112,14 +113,30 @@ func (s *LifecycleScript) Execute(ctx context.Context, uid, gid int) error {
 			if err != nil {
 				return err
 			}
-			if _, err := syscall.ForkExec(path, commandAndArgs, procAttr); err != nil {
-				return fmt.Errorf("lifecycle command %q failed: %v", desc, err)
+			pid, err := syscall.ForkExec(path, commandAndArgs, procAttr)
+			if err != nil {
+				return fmt.Errorf("failed to exec lifecycle command %q: %v", desc, err)
 			}
-			return nil
+			return waitForCommand(desc, pid)
 		})
 	}
 
 	return eg.Wait()
+}
+
+func waitForCommand(desc string, pid int) error {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return fmt.Errorf("failed to look up process for lifecycle command %q: %v", desc, err)
+	}
+	status, err := process.Wait()
+	if err != nil {
+		return fmt.Errorf("failed to wait for lifecycle command %q: %v", desc, err)
+	}
+	if exitCode := status.ExitCode(); exitCode != 0 {
+		return fmt.Errorf("lifecycle command %q failed with status %d", desc, exitCode)
+	}
+	return nil
 }
 
 // ScriptLines returns shell syntax for executing the commands in the
