@@ -88,6 +88,8 @@ func SubstituteVars(s string, workspaceFolder string) string {
 	}
 }
 
+// Spec for variable substitutions:
+// https://containers.dev/implementors/json_reference/#variables-in-devcontainerjson
 func substitute(varExpr string, workspaceFolder string) string {
 	parts := strings.Split(varExpr, ":")
 	if len(parts) == 1 {
