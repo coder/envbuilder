@@ -418,7 +418,7 @@ func TestExitBuildOnFailure(t *testing.T) {
 	require.ErrorContains(t, err, "parsing dockerfile")
 }
 
-func TestExportEnvFile(t *testing.T) {
+func TestContainerEnv(t *testing.T) {
 	t.Parallel()
 
 	// Ensures that a Git repository with a devcontainer.json is cloned and built.
@@ -430,10 +430,13 @@ func TestExportEnvFile(t *testing.T) {
 					"dockerfile": "Dockerfile"
 				},
 				"containerEnv": {
-					"FROM_CONTAINER_ENV": "bar"
+					"FROM_CONTAINER_ENV": "bar",
+					"PATH": "/bin"
 				},
 				"remoteEnv": {
-					"FROM_REMOTE_ENV": "baz"
+					"FROM_REMOTE_ENV": "baz",
+					"PATH": "/usr/local/bin:${containerEnv:PATH}:${containerEnv:GOPATH:/go/bin}:/opt",
+					"REMOTE_BAR": "${FROM_CONTAINER_ENV}"
 				}
 			}`,
 			".devcontainer/Dockerfile": "FROM alpine:latest\nENV FROM_DOCKERFILE=foo",
@@ -447,9 +450,11 @@ func TestExportEnvFile(t *testing.T) {
 
 	output := execContainer(t, ctr, "cat /env")
 	require.Contains(t, strings.TrimSpace(output),
-		`FROM_DOCKERFILE=foo
-FROM_CONTAINER_ENV=bar
-FROM_REMOTE_ENV=baz`)
+		`FROM_CONTAINER_ENV=bar
+FROM_DOCKERFILE=foo
+FROM_REMOTE_ENV=baz
+PATH=/usr/local/bin:/bin:/go/bin:/opt
+REMOTE_BAR=bar`)
 }
 
 func TestLifecycleScripts(t *testing.T) {

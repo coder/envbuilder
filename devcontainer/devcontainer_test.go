@@ -86,7 +86,7 @@ func TestCompileWithFeatures(t *testing.T) {
 	dc, err := devcontainer.Parse([]byte(raw))
 	require.NoError(t, err)
 	fs := memfs.New()
-	params, err := dc.Compile(fs, "", envbuilder.MagicDir, "")
+	params, err := dc.Compile(fs, "", envbuilder.MagicDir, "", "")
 	require.NoError(t, err)
 
 	// We have to SHA because we get a different MD5 every time!
@@ -117,7 +117,7 @@ func TestCompileDevContainer(t *testing.T) {
 		dc := &devcontainer.Spec{
 			Image: "codercom/code-server:latest",
 		}
-		params, err := dc.Compile(fs, "", envbuilder.MagicDir, "")
+		params, err := dc.Compile(fs, "", envbuilder.MagicDir, "", "")
 		require.NoError(t, err)
 		require.Equal(t, filepath.Join(envbuilder.MagicDir, "Dockerfile"), params.DockerfilePath)
 		require.Equal(t, envbuilder.MagicDir, params.BuildContext)
@@ -131,6 +131,7 @@ func TestCompileDevContainer(t *testing.T) {
 				Context:    ".",
 				Args: map[string]string{
 					"ARG1": "value1",
+					"ARG2": "${localWorkspaceFolderBasename}",
 				},
 			},
 		}
@@ -142,9 +143,10 @@ func TestCompileDevContainer(t *testing.T) {
 		_, err = io.WriteString(file, "FROM ubuntu")
 		require.NoError(t, err)
 		_ = file.Close()
-		params, err := dc.Compile(fs, dcDir, envbuilder.MagicDir, "")
+		params, err := dc.Compile(fs, dcDir, envbuilder.MagicDir, "", "/var/workspace")
 		require.NoError(t, err)
 		require.Equal(t, "ARG1=value1", params.BuildArgs[0])
+		require.Equal(t, "ARG2=workspace", params.BuildArgs[1])
 		require.Equal(t, filepath.Join(dcDir, "Dockerfile"), params.DockerfilePath)
 		require.Equal(t, dcDir, params.BuildContext)
 	})
