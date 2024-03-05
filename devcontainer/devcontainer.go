@@ -66,8 +66,50 @@ type Compiled struct {
 	BuildContext      string
 	BuildArgs         []string
 
-	User string
-	Env  []string
+	User         string
+	ContainerEnv map[string]string
+	RemoteEnv    map[string]string
+}
+
+func SubstituteVars(s string, workspaceFolder string) string {
+	var buf string
+	for {
+		beforeOpen, afterOpen, ok := strings.Cut(s, "${")
+		if !ok {
+			return buf + s
+		}
+		varExpr, afterClose, ok := strings.Cut(afterOpen, "}")
+		if !ok {
+			return buf + s
+		}
+
+		buf += beforeOpen + substitute(varExpr, workspaceFolder)
+		s = afterClose
+	}
+}
+
+func substitute(varExpr string, workspaceFolder string) string {
+	parts := strings.Split(varExpr, ":")
+	if len(parts) == 1 {
+		switch varExpr {
+		case "localWorkspaceFolder", "containerWorkspaceFolder":
+			return workspaceFolder
+		case "localWorkspaceFolderBasename", "containerWorkspaceFolderBasename":
+			return filepath.Base(workspaceFolder)
+		default:
+			return os.Getenv(varExpr)
+		}
+	}
+	switch parts[0] {
+	case "env", "localEnv", "containerEnv":
+		if val, ok := os.LookupEnv(parts[1]); ok {
+			return val
+		}
+		if len(parts) == 3 {
+			return parts[2]
+		}
+	}
+	return ""
 }
 
 // HasImage returns true if the devcontainer.json specifies an image.
@@ -85,16 +127,11 @@ func (s Spec) HasDockerfile() bool {
 // devcontainerDir is the path to the directory where the devcontainer.json file
 // is located. scratchDir is the path to the directory where the Dockerfile will
 // be written to if one doesn't exist.
-func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbackDockerfile string) (*Compiled, error) {
-	env := make([]string, 0)
-	for _, envMap := range []map[string]string{s.ContainerEnv, s.RemoteEnv} {
-		for key, value := range envMap {
-			env = append(env, key+"="+value)
-		}
-	}
+func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbackDockerfile, workspaceFolder string) (*Compiled, error) {
 	params := &Compiled{
-		User: s.ContainerUser,
-		Env:  env,
+		User:         s.ContainerUser,
+		ContainerEnv: s.ContainerEnv,
+		RemoteEnv:    s.RemoteEnv,
 	}
 
 	if s.Image != "" {
@@ -137,7 +174,8 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbac
 
 	buildArgs := make([]string, 0)
 	for _, key := range buildArgkeys {
-		buildArgs = append(buildArgs, key+"="+s.Build.Args[key])
+		val := SubstituteVars(s.Build.Args[key], workspaceFolder)
+		buildArgs = append(buildArgs, key+"="+val)
 	}
 	params.BuildArgs = buildArgs
 

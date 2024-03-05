@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,6 +19,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -445,7 +447,7 @@ func Run(ctx context.Context, options Options) error {
 					logf(codersdk.LogLevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
-				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir, fallbackDockerfile)
+				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir, fallbackDockerfile, options.WorkspaceFolder)
 				if err != nil {
 					return fmt.Errorf("compile devcontainer.json: %w", err)
 				}
@@ -700,29 +702,13 @@ func Run(ctx context.Context, options Options) error {
 	}
 	_ = file.Close()
 
-	var exportEnvFile *os.File
-	// Do not export env if we skipped a rebuild, because ENV directives
-	// from the Dockerfile would not have been processed and we'd miss these
-	// in the export. We should have generated a complete set of environment
-	// on the intial build, so exporting environment variables a second time
-	// isn't useful anyway.
-	if options.ExportEnvFile != "" && !skippedRebuild {
-		exportEnvFile, err = os.Create(options.ExportEnvFile)
-		if err != nil {
-			return fmt.Errorf("failed to open EXPORT_ENV_FILE %q: %w", options.ExportEnvFile, err)
-		}
-	}
-	exportEnv := func(key, value string) {
-		if exportEnvFile == nil {
-			return
-		}
-		fmt.Fprintf(exportEnvFile, "%s=%s\n", key, value)
-	}
-
 	configFile, err := image.ConfigFile()
 	if err != nil {
 		return fmt.Errorf("get image config: %w", err)
 	}
+
+	containerEnv := make(map[string]string)
+	remoteEnv := make(map[string]string)
 
 	// devcontainer metadata can be persisted through a standard label
 	devContainerMetadata, exists := configFile.Config.Labels["devcontainer.metadata"]
@@ -743,12 +729,8 @@ func Run(ctx context.Context, options Options) error {
 
 				configFile.Config.User = container.RemoteUser
 			}
-			for _, env := range []map[string]string{container.ContainerEnv, container.RemoteEnv} {
-				for key, value := range env {
-					os.Setenv(key, value)
-					exportEnv(key, value)
-				}
-			}
+			maps.Copy(containerEnv, container.ContainerEnv)
+			maps.Copy(remoteEnv, container.RemoteEnv)
 			if !container.OnCreateCommand.IsEmpty() {
 				scripts.OnCreateCommand = container.OnCreateCommand
 			}
@@ -784,19 +766,50 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
+	allEnvKeys := make(map[string]struct{})
+
 	// It must be set in this parent process otherwise nothing will be found!
 	for _, env := range configFile.Config.Env {
 		pair := strings.SplitN(env, "=", 2)
 		os.Setenv(pair[0], pair[1])
-		exportEnv(pair[0], pair[1])
+		allEnvKeys[pair[0]] = struct{}{}
 	}
-	for _, env := range buildParams.Env {
-		pair := strings.SplitN(env, "=", 2)
-		os.Setenv(pair[0], pair[1])
-		exportEnv(pair[0], pair[1])
+	maps.Copy(containerEnv, buildParams.ContainerEnv)
+	maps.Copy(remoteEnv, buildParams.RemoteEnv)
+
+	for _, env := range []map[string]string{containerEnv, remoteEnv} {
+		envKeys := make([]string, 0, len(env))
+		for key := range env {
+			envKeys = append(envKeys, key)
+			allEnvKeys[key] = struct{}{}
+		}
+		sort.Strings(envKeys)
+		for _, envVar := range envKeys {
+			value := devcontainer.SubstituteVars(env[envVar], options.WorkspaceFolder)
+			os.Setenv(envVar, value)
+		}
 	}
 
-	if exportEnvFile != nil {
+	// Do not export env if we skipped a rebuild, because ENV directives
+	// from the Dockerfile would not have been processed and we'd miss these
+	// in the export. We should have generated a complete set of environment
+	// on the intial build, so exporting environment variables a second time
+	// isn't useful anyway.
+	if options.ExportEnvFile != "" && !skippedRebuild {
+		exportEnvFile, err := os.Create(options.ExportEnvFile)
+		if err != nil {
+			return fmt.Errorf("failed to open EXPORT_ENV_FILE %q: %w", options.ExportEnvFile, err)
+		}
+
+		envKeys := make([]string, 0, len(allEnvKeys))
+		for key := range allEnvKeys {
+			envKeys = append(envKeys, key)
+		}
+		sort.Strings(envKeys)
+		for _, key := range envKeys {
+			fmt.Fprintf(exportEnvFile, "%s=%s\n", key, os.Getenv(key))
+		}
+
 		exportEnvFile.Close()
 	}
 
