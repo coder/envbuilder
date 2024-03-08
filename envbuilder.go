@@ -340,6 +340,16 @@ func Run(ctx context.Context, options Options) error {
 			}
 		}()
 
+		cloneOpts := CloneRepoOptions{
+			Path:         options.WorkspaceFolder,
+			Storage:      options.Filesystem,
+			Insecure:     options.Insecure,
+			Progress:     writer,
+			SingleBranch: options.GitCloneSingleBranch,
+			Depth:        options.GitCloneDepth,
+			CABundle:     caBundle,
+		}
+
 		if options.GitUsername != "" || options.GitPassword != "" {
 			gitURL, err := url.Parse(options.GitURL)
 			if err != nil {
@@ -347,22 +357,15 @@ func Run(ctx context.Context, options Options) error {
 			}
 			gitURL.User = url.UserPassword(options.GitUsername, options.GitPassword)
 			options.GitURL = gitURL.String()
-		}
 
-		cloned, fallbackErr = CloneRepo(ctx, CloneRepoOptions{
-			Path:     options.WorkspaceFolder,
-			Storage:  options.Filesystem,
-			RepoURL:  options.GitURL,
-			Insecure: options.Insecure,
-			Progress: writer,
-			RepoAuth: &githttp.BasicAuth{
+			cloneOpts.RepoAuth = &githttp.BasicAuth{
 				Username: options.GitUsername,
 				Password: options.GitPassword,
-			},
-			SingleBranch: options.GitCloneSingleBranch,
-			Depth:        options.GitCloneDepth,
-			CABundle:     caBundle,
-		})
+			}
+		}
+		cloneOpts.RepoURL = options.GitURL
+
+		cloned, fallbackErr = CloneRepo(ctx, cloneOpts)
 		if fallbackErr == nil {
 			if cloned {
 				endStage("📦 Cloned repository!")
