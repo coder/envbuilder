@@ -167,8 +167,14 @@ func TestImageFromDockerfile(t *testing.T) {
 		content: "FROM ubuntu",
 		image:   "index.docker.io/library/ubuntu:latest",
 	}, {
-		content: "ARG VARIANT=ionic\nFROM ubuntu:$VARIANT",
-		image:   "index.docker.io/library/ubuntu:ionic",
+		content: "ARG VARIANT=bionic\nFROM ubuntu:$VARIANT",
+		image:   "index.docker.io/library/ubuntu:bionic",
+	}, {
+		content: "ARG VARIANT=\"3.10\"\nFROM mcr.microsoft.com/devcontainers/python:0-${VARIANT}",
+		image:   "mcr.microsoft.com/devcontainers/python:0-3.10",
+	}, {
+		content: "ARG VARIANT=\"3.10\"\nFROM mcr.microsoft.com/devcontainers/python:0-$VARIANT ",
+		image:   "mcr.microsoft.com/devcontainers/python:0-3.10",
 	}} {
 		tc := tc
 		t.Run(tc.image, func(t *testing.T) {
