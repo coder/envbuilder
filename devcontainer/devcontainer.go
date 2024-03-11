@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/tailscale/hujson"
 )
 
@@ -317,30 +318,43 @@ func UserFromDockerfile(dockerfileContent string) string {
 // ImageFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the image that will be used to run the container.
 func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
-	args := map[string]string{}
+	lexer := shell.NewLex('\\')
+	var args []string
 	var imageRef string
 	lines := strings.Split(dockerfileContent, "\n")
 	// Iterate over lines in reverse
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := lines[i]
-		if strings.HasPrefix(line, "ARG ") {
-			arg := strings.TrimSpace(strings.TrimPrefix(line, "ARG "))
+		if arg, ok := strings.CutPrefix(line, "ARG "); ok {
+			arg = strings.TrimSpace(arg)
 			if strings.Contains(arg, "=") {
 				parts := strings.SplitN(arg, "=", 2)
-				args[parts[0]] = parts[1]
+				key, err := lexer.ProcessWord(parts[0], args)
+				if err != nil {
+					return nil, fmt.Errorf("processing %q: %w", line, err)
+				}
+				val, err := lexer.ProcessWord(parts[1], args)
+				if err != nil {
+					return nil, fmt.Errorf("processing %q: %w", line, err)
+				}
+				args = append(args, key+"="+val)
 			}
 			continue
 		}
-		if imageRef == "" && strings.HasPrefix(line, "FROM ") {
-			imageRef = strings.TrimPrefix(line, "FROM ")
+		if imageRef == "" {
+			if fromArgs, ok := strings.CutPrefix(line, "FROM "); ok {
+				imageRef = fromArgs
+			}
 		}
 	}
 	if imageRef == "" {
 		return nil, fmt.Errorf("no FROM directive found")
 	}
-	image, err := name.ParseReference(os.Expand(imageRef, func(s string) string {
-		return args[s]
-	}))
+	imageRef, err := lexer.ProcessWord(imageRef, args)
+	if err != nil {
+		return nil, fmt.Errorf("processing %q: %w", imageRef, err)
+	}
+	image, err := name.ParseReference(strings.TrimSpace(imageRef))
 	if err != nil {
 		return nil, fmt.Errorf("parse image ref %q: %w", imageRef, err)
 	}
