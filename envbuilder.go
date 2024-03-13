@@ -197,9 +197,9 @@ type Options struct {
 	// This is optional!
 	GitPassword string `env:"GIT_PASSWORD"`
 
-	// GitHttpProxyURL is the url for the http proxy.
+	// GitHTTPProxyURL is the url for the http proxy.
 	// This is optional!
-	GitHttpProxyURL string `env:"GIT_HTTP_PROXY_URL"`
+	GitHTTPProxyURL string `env:"GIT_HTTP_PROXY_URL"`
 
 	// WorkspaceFolder is the path to the workspace folder
 	// that will be built. This is optional!
@@ -368,15 +368,9 @@ func Run(ctx context.Context, options Options) error {
 				Password: options.GitPassword,
 			}
 		}
-		if options.GitHttpProxyURL != "" {
-			gitHttpProxyURL, err := url.Parse(options.GitHttpProxyURL)
-			if err != nil {
-				return fmt.Errorf("parse git http proxy url: %w", err)
-			}
-			options.GitHttpProxyURL = gitHttpProxyURL.String()
-
+		if options.GitHTTPProxyURL != "" {
 			cloneOpts.ProxyOptions = transport.ProxyOptions{
-				URL: options.GitHttpProxyURL,
+				URL: options.GitHTTPProxyURL,
 			}
 		}
 		cloneOpts.RepoURL = options.GitURL
