@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"io"
 	"maps"
 	"net"
@@ -196,6 +197,10 @@ type Options struct {
 	// This is optional!
 	GitPassword string `env:"GIT_PASSWORD"`
 
+	// GitHttpProxyURL is the url for the http proxy.
+	// This is optional!
+	GitHttpProxyURL string `env:"GIT_HTTP_PROXY_URL"`
+
 	// WorkspaceFolder is the path to the workspace folder
 	// that will be built. This is optional!
 	WorkspaceFolder string `env:"WORKSPACE_FOLDER"`
@@ -361,6 +366,17 @@ func Run(ctx context.Context, options Options) error {
 			cloneOpts.RepoAuth = &githttp.BasicAuth{
 				Username: options.GitUsername,
 				Password: options.GitPassword,
+			}
+		}
+		if options.GitHttpProxyURL != "" {
+			gitHttpProxyURL, err := url.Parse(options.GitHttpProxyURL)
+			if err != nil {
+				return fmt.Errorf("parse git http proxy url: %w", err)
+			}
+			options.GitHttpProxyURL = gitHttpProxyURL.String()
+
+			cloneOpts.ProxyOptions = transport.ProxyOptions{
+				URL: options.GitHttpProxyURL,
 			}
 		}
 		cloneOpts.RepoURL = options.GitURL
