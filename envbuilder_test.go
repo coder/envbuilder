@@ -32,6 +32,7 @@ func TestSystemOptions(t *testing.T) {
 		"GIT_CLONE_DEPTH":        "1",
 		"GIT_URL":                "https://github.com/coder/coder",
 		"WORKSPACE_FOLDER":       "/workspaces/coder",
+		"GIT_HTTP_PROXY_URL":     "http://company-proxy.com:8081",
 	}
 	env := envbuilder.OptionsFromEnv(func(s string) (string, bool) {
 		return opts[s], true
@@ -47,4 +48,5 @@ func TestSystemOptions(t *testing.T) {
 	require.Equal(t, 1, env.GitCloneDepth)
 	require.Equal(t, "https://github.com/coder/coder", env.GitURL)
 	require.Equal(t, "/workspaces/coder", env.WorkspaceFolder)
+	require.Equal(t, "http://company-proxy.com:8081", env.GitHTTPProxyURL)
 }
