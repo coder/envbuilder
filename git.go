@@ -26,6 +26,7 @@ type CloneRepoOptions struct {
 	SingleBranch bool
 	Depth        int
 	CABundle     []byte
+	ProxyOptions transport.ProxyOptions
 }
 
 // CloneRepo will clone the repository at the given URL into the given path.
@@ -78,6 +79,7 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
 		Depth:           opts.Depth,
 		SingleBranch:    opts.SingleBranch,
 		CABundle:        opts.CABundle,
+		ProxyOptions:    opts.ProxyOptions,
 	})
 	if errors.Is(err, git.ErrRepositoryAlreadyExists) {
 		return false, nil

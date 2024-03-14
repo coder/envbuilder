@@ -43,6 +43,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -195,6 +196,10 @@ type Options struct {
 	// GitPassword is the password to use for Git authentication.
 	// This is optional!
 	GitPassword string `env:"GIT_PASSWORD"`
+
+	// GitHTTPProxyURL is the url for the http proxy.
+	// This is optional!
+	GitHTTPProxyURL string `env:"GIT_HTTP_PROXY_URL"`
 
 	// WorkspaceFolder is the path to the workspace folder
 	// that will be built. This is optional!
@@ -361,6 +366,11 @@ func Run(ctx context.Context, options Options) error {
 			cloneOpts.RepoAuth = &githttp.BasicAuth{
 				Username: options.GitUsername,
 				Password: options.GitPassword,
+			}
+		}
+		if options.GitHTTPProxyURL != "" {
+			cloneOpts.ProxyOptions = transport.ProxyOptions{
+				URL: options.GitHTTPProxyURL,
 			}
 		}
 		cloneOpts.RepoURL = options.GitURL
