@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"cdr.dev/slog"
-	"github.com/coder/coder/v2/agent"
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/coder/v2/codersdk/agentsdk"
 	"github.com/coder/envbuilder"
@@ -61,12 +60,12 @@ func main() {
 				// If telemetry is enabled in a Coder deployment,
 				// this will be reported and help us understand
 				// envbuilder usage.
-				subsystems := os.Getenv(agent.EnvAgentSubsystem)
+				subsystems := os.Getenv("CODER_AGENT_SUBSYSTEM")
 				if subsystems != "" {
 					subsystems += ","
 				}
 				subsystems += string(codersdk.AgentSubsystemEnvbuilder)
-				os.Setenv(agent.EnvAgentSubsystem, subsystems)
+				os.Setenv("CODER_AGENT_SUBSYSTEM", subsystems)
 			}
 
 			options.Logger = func(level codersdk.LogLevel, format string, args ...interface{}) {
