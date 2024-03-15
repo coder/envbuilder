@@ -67,11 +67,14 @@ require (
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/Microsoft/hcsshim v0.11.4 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20230828082145-3c4c8a2d2371 // indirect
+	github.com/adrg/xdg v0.4.0 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/akutz/memconn v0.1.0 // indirect
 	github.com/alexbrainman/sspi v0.0.0-20210105120005-909beea2cc74 // indirect
+	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/apparentlymart/go-textseg/v13 v13.0.0 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
+	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.20.3 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.18.32 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.31 // indirect
@@ -89,6 +92,7 @@ require (
 	github.com/aws/smithy-go v1.19.0 // indirect
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20230522190001-adf1bafd791a // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/cakturk/go-netstat v0.0.0-20200220111822-e5b49efee7a5 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/chrismellard/docker-credential-acr-env v0.0.0-20230304212654-82a0ddb27589 // indirect
@@ -105,6 +109,7 @@ require (
 	github.com/coreos/go-iptables v0.6.0 // indirect
 	github.com/coreos/go-oidc/v3 v3.9.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
+	github.com/creack/pty v1.1.18 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
@@ -123,13 +128,19 @@ require (
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/fxamacker/cbor/v2 v2.4.0 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.2 // indirect
+	github.com/gliderlabs/ssh v0.3.5 // indirect
 	github.com/go-chi/chi/v5 v5.0.10 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
+	github.com/go-playground/locales v0.14.1 // indirect
+	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-playground/validator/v10 v10.15.1 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
+	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
@@ -171,6 +182,8 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.17.4 // indirect
 	github.com/kortschak/wol v0.0.0-20200729010619-da482cc4850a // indirect
+	github.com/kr/fs v0.1.0 // indirect
+	github.com/leodido/go-urn v1.2.4 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mdlayher/genetlink v1.3.2 // indirect
 	github.com/mdlayher/netlink v1.7.2 // indirect
@@ -186,6 +199,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/moby/locker v1.0.1 // indirect
+	github.com/moby/moby v24.0.1+incompatible // indirect
 	github.com/moby/patternmatcher v0.5.0 // indirect
 	github.com/moby/swarmkit/v2 v2.0.0-20230315203717-e28e8ba9bc83 // indirect
 	github.com/moby/sys/mount v0.3.3 // indirect
@@ -206,6 +220,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pkg/sftp v1.13.6 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_golang v1.18.0 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect
@@ -228,6 +243,7 @@ require (
 	github.com/tcnksm/go-httpstat v0.2.0 // indirect
 	github.com/tinylib/msgp v1.1.8 // indirect
 	github.com/tonistiigi/fsutil v0.0.0-20230105215944-fb433841cbfa // indirect
+	github.com/u-root/u-root v0.11.0 // indirect
 	github.com/u-root/uio v0.0.0-20230305220412-3e8cd9d6bf63 // indirect
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/vbatts/tar-split v0.11.3 // indirect

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cdr.dev/slog"
+	"github.com/coder/coder/v2/agent"
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/coder/v2/codersdk/agentsdk"
 	"github.com/coder/envbuilder"
@@ -55,6 +56,17 @@ func main() {
 				var flushAndClose func(ctx context.Context) error
 				sendLogs, flushAndClose = agentsdk.LogsSender(agentsdk.ExternalLogSourceID, client.PatchLogs, slog.Logger{})
 				defer flushAndClose(cmd.Context())
+
+				// This adds the envbuilder subsystem.
+				// If telemetry is enabled in a Coder deployment,
+				// this will be reported and help us understand
+				// envbuilder usage.
+				subsystems := os.Getenv(agent.EnvAgentSubsystem)
+				if subsystems != "" {
+					subsystems += ","
+				}
+				subsystems += string(codersdk.AgentSubsystemEnvbuilder)
+				os.Setenv(agent.EnvAgentSubsystem, subsystems)
 			}
 
 			options.Logger = func(level codersdk.LogLevel, format string, args ...interface{}) {
