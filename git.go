@@ -10,6 +10,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/filesystem"
@@ -39,6 +40,29 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("parse url %q: %w", opts.RepoURL, err)
 	}
+	if parsed.Hostname() == "dev.azure.com" {
+		// Azure DevOps requires capabilities multi_ack / multi_ack_detailed,
+		// which are not fully implemented and by default are included in
+		// transport.UnsupportedCapabilities.
+		//
+		// The initial clone operations require a full download of the repository,
+		// and therefore those unsupported capabilities are not as crucial, so
+		// by removing them from that list allows for the first clone to work
+		// successfully.
+		//
+		// Additional fetches will yield issues, therefore work always from a clean
+		// clone until those capabilities are fully supported.
+		//
+		// New commits and pushes against a remote worked without any issues.
+		// See: https://github.com/go-git/go-git/issues/64
+		//
+		// This is knowingly not safe to call in parallel, but it seemed
+		// like the least-janky place to add a super janky hack.
+		transport.UnsupportedCapabilities = []capability.Capability{
+			capability.ThinPack,
+		}
+	}
+
 	err = opts.Storage.MkdirAll(opts.Path, 0755)
 	if err != nil {
 		return false, fmt.Errorf("mkdir %q: %w", opts.Path, err)
