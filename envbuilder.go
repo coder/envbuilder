@@ -625,9 +625,9 @@ func Run(ctx context.Context, options Options) error {
 
 		endStage := startStage("🏗️ Building image...")
 		// At this point we have all the context, we can now build!
-		var registry_mirror []string = nil
+		registryMirror := []string{}
 		if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
-			registry_mirror = strings.Split(val, ";")
+			registryMirror = strings.Split(val, ";")
 		}
 		image, err := executor.DoBuild(&config.KanikoOptions{
 			// Boilerplate!
@@ -664,7 +664,7 @@ func Run(ctx context.Context, options Options) error {
 				// https://github.com/GoogleContainerTools/kaniko?tab=readme-ov-file#flag---registry-mirror
 				// Related to PR #114
 				// https://github.com/coder/envbuilder/pull/114
-				RegistryMirrors: registry_mirror,
+				RegistryMirrors: registryMirror,
 			},
 			SrcContext: buildParams.BuildContext,
 		})
