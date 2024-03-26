@@ -656,6 +656,7 @@ func Run(ctx context.Context, options Options) error {
 				Insecure:      options.Insecure,
 				InsecurePull:  options.Insecure,
 				SkipTLSVerify: options.Insecure,
+				RegistryMirrors: strings.Split(os.Getenv("KANIKO_REGISTRY_MIRROR"), ";"),
 			},
 			SrcContext: buildParams.BuildContext,
 		})
