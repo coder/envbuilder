@@ -625,6 +625,10 @@ func Run(ctx context.Context, options Options) error {
 
 		endStage := startStage("🏗️ Building image...")
 		// At this point we have all the context, we can now build!
+		registryMirror := []string{}
+		if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
+			registryMirror = strings.Split(val, ";")
+		}
 		image, err := executor.DoBuild(&config.KanikoOptions{
 			// Boilerplate!
 			CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
@@ -656,6 +660,11 @@ func Run(ctx context.Context, options Options) error {
 				Insecure:      options.Insecure,
 				InsecurePull:  options.Insecure,
 				SkipTLSVerify: options.Insecure,
+				// Enables registry mirror features in Kaniko, see more in link below
+				// https://github.com/GoogleContainerTools/kaniko?tab=readme-ov-file#flag---registry-mirror
+				// Related to PR #114
+				// https://github.com/coder/envbuilder/pull/114
+				RegistryMirrors: registryMirror,
 			},
 			SrcContext: buildParams.BuildContext,
 		})
