@@ -656,7 +656,11 @@ func Run(ctx context.Context, options Options) error {
 				Insecure:      options.Insecure,
 				InsecurePull:  options.Insecure,
 				SkipTLSVerify: options.Insecure,
-				RegistryMirrors: strings.Split(os.Getenv("KANIKO_REGISTRY_MIRROR"), ";"),
+				// Enables registry mirror features in Kaniko, see more in link below
+				// https://github.com/GoogleContainerTools/kaniko?tab=readme-ov-file#flag---registry-mirror
+				// Related to PR #114
+				// https://github.com/coder/envbuilder/pull/114
+				RegistryMirrors: strings.Split(os.Getenv("·"), ";"),
 			},
 			SrcContext: buildParams.BuildContext,
 		})
