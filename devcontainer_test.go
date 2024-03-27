@@ -1,4 +1,4 @@
-package devcontainer_test
+package envbuilder_test
 
 import (
 	"crypto/md5"
