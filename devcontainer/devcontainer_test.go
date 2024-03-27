@@ -1,4 +1,4 @@
-package envbuilder_test
+package devcontainer_test
 
 import (
 	"crypto/md5"
@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/coder/envbuilder/devcontainer/features"
 	"github.com/coder/envbuilder/registrytest"
@@ -22,6 +21,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 )
+
+const magicDir = "/.envbuilder"
 
 func TestParse(t *testing.T) {
 	t.Parallel()
@@ -86,7 +87,7 @@ func TestCompileWithFeatures(t *testing.T) {
 	dc, err := devcontainer.Parse([]byte(raw))
 	require.NoError(t, err)
 	fs := memfs.New()
-	params, err := dc.Compile(fs, "", envbuilder.MagicDir, "", "")
+	params, err := dc.Compile(fs, "", magicDir, "", "")
 	require.NoError(t, err)
 
 	// We have to SHA because we get a different MD5 every time!
@@ -117,10 +118,10 @@ func TestCompileDevContainer(t *testing.T) {
 		dc := &devcontainer.Spec{
 			Image: "codercom/code-server:latest",
 		}
-		params, err := dc.Compile(fs, "", envbuilder.MagicDir, "", "")
+		params, err := dc.Compile(fs, "", magicDir, "", "")
 		require.NoError(t, err)
-		require.Equal(t, filepath.Join(envbuilder.MagicDir, "Dockerfile"), params.DockerfilePath)
-		require.Equal(t, envbuilder.MagicDir, params.BuildContext)
+		require.Equal(t, filepath.Join(magicDir, "Dockerfile"), params.DockerfilePath)
+		require.Equal(t, magicDir, params.BuildContext)
 	})
 	t.Run("WithBuild", func(t *testing.T) {
 		t.Parallel()
@@ -143,7 +144,7 @@ func TestCompileDevContainer(t *testing.T) {
 		_, err = io.WriteString(file, "FROM ubuntu")
 		require.NoError(t, err)
 		_ = file.Close()
-		params, err := dc.Compile(fs, dcDir, envbuilder.MagicDir, "", "/var/workspace")
+		params, err := dc.Compile(fs, dcDir, magicDir, "", "/var/workspace")
 		require.NoError(t, err)
 		require.Equal(t, "ARG1=value1", params.BuildArgs[0])
 		require.Equal(t, "ARG2=workspace", params.BuildArgs[1])
