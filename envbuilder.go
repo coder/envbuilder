@@ -460,7 +460,7 @@ func Run(ctx context.Context, options Options) error {
 					logf(codersdk.LogLevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
-				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir, fallbackDockerfile, options.WorkspaceFolder)
+				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir, fallbackDockerfile, options.WorkspaceFolder, false)
 				if err != nil {
 					return fmt.Errorf("compile devcontainer.json: %w", err)
 				}
