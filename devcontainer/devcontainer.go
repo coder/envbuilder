@@ -65,6 +65,7 @@ type Compiled struct {
 	DockerfilePath    string
 	DockerfileContent string
 	BuildContext      string
+	FeatureContexts   map[string]string
 	BuildArgs         []string
 
 	User         string
@@ -130,7 +131,7 @@ func (s Spec) HasDockerfile() bool {
 // devcontainerDir is the path to the directory where the devcontainer.json file
 // is located. scratchDir is the path to the directory where the Dockerfile will
 // be written to if one doesn't exist.
-func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbackDockerfile, workspaceFolder string) (*Compiled, error) {
+func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, fallbackDockerfile, workspaceFolder string, useBuildContexts bool) (*Compiled, error) {
 	params := &Compiled{
 		User:         s.ContainerUser,
 		ContainerEnv: s.ContainerEnv,
@@ -213,25 +214,26 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbac
 	if remoteUser == "" {
 		remoteUser = params.User
 	}
-	params.DockerfileContent, err = s.compileFeatures(fs, devcontainerDir, scratchDir, params.User, remoteUser, params.DockerfileContent)
+	params.DockerfileContent, params.FeatureContexts, err = s.compileFeatures(fs, devcontainerDir, scratchDir, params.User, remoteUser, params.DockerfileContent, useBuildContexts)
 	if err != nil {
 		return nil, err
 	}
 	return params, nil
 }
 
-func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir, containerUser, remoteUser, dockerfileContent string) (string, error) {
+func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir string, containerUser, remoteUser, dockerfileContent string, useBuildContexts bool) (string, map[string]string, error) {
 	// If there are no features, we don't need to do anything!
 	if len(s.Features) == 0 {
-		return dockerfileContent, nil
+		return dockerfileContent, nil, nil
 	}
 
 	featuresDir := filepath.Join(scratchDir, "features")
 	err := fs.MkdirAll(featuresDir, 0644)
 	if err != nil {
-		return "", fmt.Errorf("create features directory: %w", err)
+		return "", nil, fmt.Errorf("create features directory: %w", err)
 	}
 	featureDirectives := []string{}
+	featureContexts := make(map[string]string)
 
 	// TODO: Respect the installation order outlined by the spec:
 	// https://containers.dev/implementors/features/#installation-order
@@ -251,7 +253,7 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir,
 		if _, featureRef, ok = strings.Cut(featureRefRaw, "./"); !ok {
 			featureRefParsed, err := name.NewTag(featureRefRaw)
 			if err != nil {
-				return "", fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
+				return "", nil, fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
 			}
 			featureRef = featureRefParsed.Repository.Name()
 		}
@@ -275,19 +277,21 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir,
 		featureSha := md5.Sum([]byte(featureRefRaw))
 		featureName := filepath.Base(featureRef)
 		featureDir := filepath.Join(featuresDir, fmt.Sprintf("%s-%x", featureName, featureSha[:4]))
-		err = fs.MkdirAll(featureDir, 0644)
-		if err != nil {
-			return "", err
+		if err := fs.MkdirAll(featureDir, 0644); err != nil {
+			return "", nil, err
 		}
 		spec, err := features.Extract(fs, devcontainerDir, featureDir, featureRefRaw)
 		if err != nil {
-			return "", fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
+			return "", nil, fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
 		}
-		directive, err := spec.Compile(containerUser, remoteUser, featureOpts)
+		directive, err := spec.Compile(featureName, containerUser, remoteUser, useBuildContexts, featureOpts)
 		if err != nil {
-			return "", fmt.Errorf("compile feature %s: %w", featureRefRaw, err)
+			return "", nil, fmt.Errorf("compile feature %s: %w", featureRefRaw, err)
 		}
 		featureDirectives = append(featureDirectives, directive)
+		if useBuildContexts {
+			featureContexts[featureName] = featureDir
+		}
 	}
 
 	lines := []string{"\nUSER root"}
@@ -297,7 +301,7 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir,
 		// we're going to run as root.
 		lines = append(lines, fmt.Sprintf("USER %s", remoteUser))
 	}
-	return strings.Join(append([]string{dockerfileContent}, lines...), "\n"), err
+	return strings.Join(append([]string{dockerfileContent}, lines...), "\n"), featureContexts, err
 }
 
 // UserFromDockerfile inspects the contents of a provided Dockerfile

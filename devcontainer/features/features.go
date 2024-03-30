@@ -194,7 +194,7 @@ type Spec struct {
 
 // Extract unpacks the feature from the image and returns a set of lines
 // that should be appended to a Dockerfile to install the feature.
-func (s *Spec) Compile(containerUser, remoteUser string, options map[string]any) (string, error) {
+func (s *Spec) Compile(featureName, containerUser, remoteUser string, useBuildContexts bool, options map[string]any) (string, error) {
 	// TODO not sure how we figure out _(REMOTE|CONTAINER)_USER_HOME
 	// as per the feature spec.
 	// See https://containers.dev/implementors/features/#user-env-var
@@ -219,7 +219,11 @@ func (s *Spec) Compile(containerUser, remoteUser string, options map[string]any)
 	// regardless of map iteration order.
 	sort.Strings(runDirective)
 	// See https://containers.dev/implementors/features/#invoking-installsh
-	runDirective = append([]string{"RUN"}, runDirective...)
+	if useBuildContexts {
+		runDirective = append([]string{"RUN", "--mount=type=bind,from=" + featureName + ",target=/envbuilder-features/" + featureName + ",rw"}, runDirective...)
+	} else {
+		runDirective = append([]string{"RUN"}, runDirective...)
+	}
 	runDirective = append(runDirective, "./install.sh")
 
 	comment := ""
@@ -236,7 +240,11 @@ func (s *Spec) Compile(containerUser, remoteUser string, options map[string]any)
 	if comment != "" {
 		lines = append(lines, comment)
 	}
-	lines = append(lines, "WORKDIR "+s.Directory)
+	if useBuildContexts {
+		lines = append(lines, "WORKDIR /envbuilder-features/"+featureName)
+	} else {
+		lines = append(lines, "WORKDIR "+s.Directory)
+	}
 	envKeys := make([]string, 0, len(s.ContainerEnv))
 	for key := range s.ContainerEnv {
 		envKeys = append(envKeys, key)
