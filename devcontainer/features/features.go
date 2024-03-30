@@ -194,10 +194,11 @@ type Spec struct {
 
 // Extract unpacks the feature from the image and returns a set of lines
 // that should be appended to a Dockerfile to install the feature.
-func (s *Spec) Compile(featureName, containerUser, remoteUser string, useBuildContexts bool, options map[string]any) (string, error) {
+func (s *Spec) Compile(featureName, containerUser, remoteUser string, useBuildContexts bool, options map[string]any) (string, string, error) {
 	// TODO not sure how we figure out _(REMOTE|CONTAINER)_USER_HOME
 	// as per the feature spec.
 	// See https://containers.dev/implementors/features/#user-env-var
+	var fromDirective string
 	runDirective := []string{
 		"_CONTAINER_USER=" + strconv.Quote(containerUser),
 		"_REMOTE_USER=" + strconv.Quote(remoteUser),
@@ -213,14 +214,15 @@ func (s *Spec) Compile(featureName, containerUser, remoteUser string, useBuildCo
 		runDirective = append(runDirective, fmt.Sprintf(`%s=%q`, convertOptionNameToEnv(key), strValue))
 	}
 	if len(options) > 0 {
-		return "", fmt.Errorf("unknown option: %v", options)
+		return "", "", fmt.Errorf("unknown option: %v", options)
 	}
 	// It's critical that the Dockerfile produced is deterministic,
 	// regardless of map iteration order.
 	sort.Strings(runDirective)
 	// See https://containers.dev/implementors/features/#invoking-installsh
 	if useBuildContexts {
-		runDirective = append([]string{"RUN", "--mount=type=bind,from=" + featureName + ",target=/envbuilder-features/" + featureName + ",rw"}, runDirective...)
+		fromDirective = "FROM scratch AS envbuilder_feature_" + featureName + "\nCOPY --from=" + featureName + " / /\n"
+		runDirective = append([]string{"RUN", "--mount=type=bind,from=envbuilder_feature_" + featureName + ",target=/envbuilder-features/" + featureName + ",rw"}, runDirective...)
 	} else {
 		runDirective = append([]string{"RUN"}, runDirective...)
 	}
@@ -257,7 +259,7 @@ func (s *Spec) Compile(featureName, containerUser, remoteUser string, useBuildCo
 	}
 	lines = append(lines, strings.Join(runDirective, " "))
 
-	return strings.Join(lines, "\n"), nil
+	return fromDirective, strings.Join(lines, "\n"), nil
 }
 
 var (

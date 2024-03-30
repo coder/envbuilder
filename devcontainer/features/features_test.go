@@ -73,7 +73,7 @@ func TestCompile(t *testing.T) {
 	t.Run("UnknownOption", func(t *testing.T) {
 		t.Parallel()
 		spec := &features.Spec{}
-		_, err := spec.Compile("test", "containerUser", "remoteUser", false, map[string]any{
+		_, _, err := spec.Compile("test", "containerUser", "remoteUser", false, map[string]any{
 			"unknown": "value",
 		})
 		require.ErrorContains(t, err, "unknown option")
@@ -83,7 +83,7 @@ func TestCompile(t *testing.T) {
 		spec := &features.Spec{
 			Directory: "/",
 		}
-		directive, err := spec.Compile("test", "containerUser", "remoteUser", false, nil)
+		_, directive, err := spec.Compile("test", "containerUser", "remoteUser", false, nil)
 		require.NoError(t, err)
 		require.Equal(t, "WORKDIR /\nRUN _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(directive))
 	})
@@ -95,7 +95,7 @@ func TestCompile(t *testing.T) {
 				"FOO": "bar",
 			},
 		}
-		directive, err := spec.Compile("test", "containerUser", "remoteUser", false, nil)
+		_, directive, err := spec.Compile("test", "containerUser", "remoteUser", false, nil)
 		require.NoError(t, err)
 		require.Equal(t, "WORKDIR /\nENV FOO=bar\nRUN _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(directive))
 	})
@@ -109,7 +109,7 @@ func TestCompile(t *testing.T) {
 				},
 			},
 		}
-		directive, err := spec.Compile("test", "containerUser", "remoteUser", false, nil)
+		_, directive, err := spec.Compile("test", "containerUser", "remoteUser", false, nil)
 		require.NoError(t, err)
 		require.Equal(t, "WORKDIR /\nRUN FOO=\"bar\" _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(directive))
 	})
@@ -118,8 +118,9 @@ func TestCompile(t *testing.T) {
 		spec := &features.Spec{
 			Directory: "/",
 		}
-		directive, err := spec.Compile("test", "containerUser", "remoteUser", true, nil)
+		fromDirective, runDirective, err := spec.Compile("test", "containerUser", "remoteUser", true, nil)
 		require.NoError(t, err)
-		require.Equal(t, "WORKDIR /envbuilder-features/test\nRUN --mount=type=bind,from=test,target=/envbuilder-features/test,rw _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(directive))
+		require.Equal(t, "FROM scratch AS envbuilder_feature_test\nCOPY --from=test / /", strings.TrimSpace(fromDirective))
+		require.Equal(t, "WORKDIR /envbuilder-features/test\nRUN --mount=type=bind,from=envbuilder_feature_test,target=/envbuilder-features/test,rw _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(runDirective))
 	})
 }
