@@ -245,6 +245,7 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 	// is deterministic which allows for caching.
 	sort.Strings(featureOrder)
 
+	var lines []string
 	for _, featureRefRaw := range featureOrder {
 		var (
 			featureRef string
@@ -284,24 +285,26 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		if err != nil {
 			return "", nil, fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
 		}
-		directive, err := spec.Compile(featureName, containerUser, remoteUser, useBuildContexts, featureOpts)
+		fromDirective, directive, err := spec.Compile(featureName, containerUser, remoteUser, useBuildContexts, featureOpts)
 		if err != nil {
 			return "", nil, fmt.Errorf("compile feature %s: %w", featureRefRaw, err)
 		}
 		featureDirectives = append(featureDirectives, directive)
 		if useBuildContexts {
 			featureContexts[featureName] = featureDir
+			lines = append(lines, fromDirective)
 		}
 	}
 
-	lines := []string{"\nUSER root"}
+	lines = append(lines, dockerfileContent)
+	lines = append(lines, "\nUSER root")
 	lines = append(lines, featureDirectives...)
 	if remoteUser != "" {
 		// TODO: We should warn that because we were unable to find the remote user,
 		// we're going to run as root.
 		lines = append(lines, fmt.Sprintf("USER %s", remoteUser))
 	}
-	return strings.Join(append([]string{dockerfileContent}, lines...), "\n"), featureContexts, err
+	return strings.Join(lines, "\n"), featureContexts, err
 }
 
 // UserFromDockerfile inspects the contents of a provided Dockerfile
