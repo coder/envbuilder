@@ -772,9 +772,11 @@ func Run(ctx context.Context, options Options) error {
 	unsetOptionsEnv()
 
 	// Remove the Docker config secret file!
-	err = os.Remove(filepath.Join(os.Getenv("DOCKER_CONFIG"), "config.json"))
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove docker config: %w", err)
+	if options.DockerConfigBase64 != "" {
+		err = os.Remove(filepath.Join(MagicDir, "config.json"))
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove docker config: %w", err)
+		}
 	}
 
 	environ, err := os.ReadFile("/etc/environment")
