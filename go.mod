@@ -20,7 +20,6 @@ require (
 	github.com/docker/docker v23.0.8+incompatible
 	github.com/fatih/color v1.15.0
 	github.com/go-git/go-billy/v5 v5.5.0
-	github.com/go-git/go-git v4.7.0+incompatible
 	github.com/go-git/go-git/v5 v5.11.0
 	github.com/google/go-containerregistry v0.15.2
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
