@@ -1228,7 +1228,7 @@ func LoadPrivateKey(username, path string) (*ssh.PublicKeys, error) {
 	}
 
 	if err != nil {
-		log.Fatalf("Failed to create ssh auth publickey: ", err)
+		log.Fatalf("Failed to create ssh auth publickey: %s", err)
 		return nil, err
 	}
 
