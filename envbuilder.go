@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -1199,38 +1200,36 @@ func (fs *osfsWithChmod) Chmod(name string, mode os.FileMode) error {
 	return os.Chmod(name, mode)
 }
 
-func LoadPrivateKey(username, path string) (*ssh.PublicKeys, error) {
-	file, err := os.Open(path)
+// load valid private key under given path
+func LoadPrivateKey(username, keyPath string) (*ssh.PublicKeys, error) {
+	e, err := os.ReadDir(keyPath)
 	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	// Get file size and read into byte slice
-	stat, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	key := make([]byte, stat.Size())
-	_, err = bufio.NewReader(file).Read(key)
-	if err != nil && err != io.EOF {
+		log.Fatalf("Failed to read sshkey path: %s", err)
 		return nil, err
 	}
 
-	// Username must be "git" for SSH auth to work, not your real username.
-	// See https://github.com/src-d/go-git/issues/637
+	for _, entry := range e {
+		if !entry.IsDir() {
+			content, err := os.ReadFile(path.Join(keyPath, entry.Name()))
+			if err != nil {
+				log.Fatalf("Failed to read sshkey file: %s", err)
+			}
 
-	var publicKey *ssh.PublicKeys
-	if username != "" {
-		publicKey, err = ssh.NewPublicKeys(username, []byte(key), "")
-	} else {
-		publicKey, err = ssh.NewPublicKeys("git", []byte(key), "")
+			var publicKey *ssh.PublicKeys
+			if username != "" {
+				publicKey, err = ssh.NewPublicKeys(username, []byte(content), "")
+			} else {
+				// Username must be "git" for SSH auth to work, not your real username.
+				// See https://github.com/src-d/go-git/issues/637
+				publicKey, err = ssh.NewPublicKeys("git", []byte(content), "")
+			}
+
+			// return valid key
+			if err == nil {
+				return publicKey, err
+			}
+		}
 	}
 
-	if err != nil {
-		log.Fatalf("Failed to create ssh auth publickey: %s", err)
-		return nil, err
-	}
-
-	return publicKey, nil
+	return nil, errors.New("no valid key found")
 }

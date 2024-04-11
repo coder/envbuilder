@@ -161,7 +161,7 @@ scripts/build.sh \
 ```
 
 * Use envbuilder to clone repository
->Remenber to register the public key on git (`scripts/.ssh/id_ed25519.pub`)
+>Remenber to register the public key on git (`scripts/.ssh/*.pub`)
 ```bash
 # for Github, Gitlab
 docker run -it --rm \
@@ -169,7 +169,7 @@ docker run -it --rm \
     -e GIT_URL=git@github.com:<username>/<project_name>.git \
     -e INIT_SCRIPT=bash \
     -e GIT_SSH=true \
-    -e GIT_SSHKEY=/root/.ssh/id_ed25519 \
+    -e GIT_SSHKEY=/root/.ssh \
     envbuilder:latest
 
 # for Gerrit (needs to specify ssh key user)
@@ -179,7 +179,7 @@ docker run -it --rm \
     -e INIT_SCRIPT=bash \
     -e GIT_SSH=true \
     -e GIT_USERNAME=<gerrit_user> \
-    -e GIT_SSHKEY=/root/.ssh/id_ed25519 \
+    -e GIT_SSHKEY=/root/.ssh \
     envbuilder:latest
 ```
 
