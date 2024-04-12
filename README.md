@@ -188,6 +188,8 @@ docker run -it --rm \
 
 In Kubernetes, you can pre-populate a persistent volume with the same warmer image, then mount it into many workspaces with the [`ReadOnlyMany` access mode](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes).
 
+A sample script to pre-fetch a number of images can be viewed [here](./scripts/kaniko-cache-warmer.sh). This can be run, for example, as a cron job to periodically fetch the latest versions of a number of base images.
+
 ## Setup Script
 
 The `SETUP_SCRIPT` environment variable dynamically configures the user and init command (PID 1) after the container build process.
