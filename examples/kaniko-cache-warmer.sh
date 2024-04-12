@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# This is an example script to pull a number of images into the Kaniko cache
+# to have them ready for consumption by envbuilder.
+# Ref: https://github.com/coder/envbuilder/blob/main/README.md#image-caching
 KANIKO_CACHE_VOLUME=${KANIKO_CACHE_VOLUME:-"kanikocache"}
 IMAGES=(
     alpine:latest
