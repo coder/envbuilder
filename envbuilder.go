@@ -118,8 +118,8 @@ type Options struct {
 	// DevcontainerDir is a path to the folder containing
 	// the devcontainer.json file that will be used to build the
 	// workspace and can either be an absolute path or a path
-	// relative to the workspace folder. If not provided, defaults to
-	// `.devcontainer`.
+	// relative to the workspace folder.
+	// If not provided, it defaults to `.devcontainer`.
 	DevcontainerDir string `env:"DEVCONTAINER_DIR"`
 
 	// DevcontainerJSONPath is a path to a devcontainer.json file
@@ -127,6 +127,11 @@ type Options struct {
 	// DevcontainerDir. This can be used in cases where one wants
 	// to substitute an edited devcontainer.json file for the one
 	// that exists in the repo.
+	// If neither `DevcontainerDir` nor `DevcontainerJSONPath` is provided,
+	// envbuilder will browse following directories to locate it:
+	// 1. `.devcontainer/devcontainer.json`
+	// 2. `.devcontainer.json`
+	// 3. `.devcontainer/<folder>/devcontainer.json`
 	DevcontainerJSONPath string `env:"DEVCONTAINER_JSON_PATH"`
 
 	// DockerfilePath is a relative path to the Dockerfile that
@@ -422,20 +427,7 @@ func Run(ctx context.Context, options Options) error {
 	if options.DockerfilePath == "" {
 		// Only look for a devcontainer if a Dockerfile wasn't specified.
 		// devcontainer is a standard, so it's reasonable to be the default.
-		devcontainerDir := options.DevcontainerDir
-		if devcontainerDir == "" {
-			devcontainerDir = ".devcontainer"
-		}
-		if !filepath.IsAbs(devcontainerDir) {
-			devcontainerDir = filepath.Join(options.WorkspaceFolder, devcontainerDir)
-		}
-		devcontainerPath := options.DevcontainerJSONPath
-		if devcontainerPath == "" {
-			devcontainerPath = "devcontainer.json"
-		}
-		if !filepath.IsAbs(devcontainerPath) {
-			devcontainerPath = filepath.Join(devcontainerDir, devcontainerPath)
-		}
+		devcontainerPath, devcontainerDir := findDevcontainerJSON(options)
 		_, err := options.Filesystem.Stat(devcontainerPath)
 		if err == nil {
 			// We know a devcontainer exists.
@@ -1200,4 +1192,43 @@ type osfsWithChmod struct {
 
 func (fs *osfsWithChmod) Chmod(name string, mode os.FileMode) error {
 	return os.Chmod(name, mode)
+}
+
+func findDevcontainerJSON(options Options) (string, string) {
+	// 0. Check provided options
+	if options.DevcontainerDir != "" || options.DevcontainerJSONPath != "" {
+		// Locate .devcontainer directory.
+		devcontainerDir := options.DevcontainerDir
+		if devcontainerDir == "" {
+			devcontainerDir = ".devcontainer"
+		}
+		// If `devcontainerDir` is not an absolute path, assume it is relative to the workspace folder.
+		if !filepath.IsAbs(devcontainerDir) {
+			devcontainerDir = filepath.Join(options.WorkspaceFolder, devcontainerDir)
+		}
+
+		// Locate devcontainer.json manifest.
+		devcontainerPath := options.DevcontainerJSONPath
+
+		// An absolute location always takes a precedence.
+		if filepath.IsAbs(devcontainerPath) {
+			return options.DevcontainerJSONPath, devcontainerDir
+		}
+
+		// If an override is not provided, assume it is just `devcontainer.json`.
+		if devcontainerPath == "" {
+			devcontainerPath = "devcontainer.json"
+		}
+
+		if !filepath.IsAbs(devcontainerPath) {
+			devcontainerPath = filepath.Join(devcontainerDir, devcontainerPath)
+		}
+		return devcontainerDir, devcontainerPath
+	}
+
+	// 1. Check `options.WorkspaceFolder`/.devcontainer/devcontainer.json
+	// 2. Check `options.WorkspaceFolder`/devcontainer.json
+	// 3. Check every folder: `options.WorkspaceFolder`/<folder>/devcontainer.json
+
+	panic("not implemented yet")
 }
