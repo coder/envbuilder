@@ -279,13 +279,13 @@ func TestBuildFromDevcontainerInSubfolder(t *testing.T) {
 	// Ensures that a Git repository with a devcontainer.json is cloned and built.
 	url := createGitServer(t, gitServerOptions{
 		files: map[string]string{
-			"./devcontainer/subfolder/devcontainer.json": `{
+			".devcontainer/subfolder/devcontainer.json": `{
 				"name": "Test",
 				"build": {
 					"dockerfile": "Dockerfile"
 				},
 			}`,
-			"Dockerfile": "FROM ubuntu",
+			".devcontainer/subfolder/Dockerfile": "FROM ubuntu",
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
