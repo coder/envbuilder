@@ -1195,7 +1195,7 @@ func (fs *osfsWithChmod) Chmod(name string, mode os.FileMode) error {
 }
 
 func findDevcontainerJSON(options Options) (string, string) {
-	// 0. Check provided options
+	// 0. Check provided options.
 	if options.DevcontainerDir != "" || options.DevcontainerJSONPath != "" {
 		// Locate .devcontainer directory.
 		devcontainerDir := options.DevcontainerDir
@@ -1226,9 +1226,21 @@ func findDevcontainerJSON(options Options) (string, string) {
 		return devcontainerDir, devcontainerPath
 	}
 
-	// 1. Check `options.WorkspaceFolder`/.devcontainer/devcontainer.json
-	// 2. Check `options.WorkspaceFolder`/devcontainer.json
-	// 3. Check every folder: `options.WorkspaceFolder`/<folder>/devcontainer.json
+	// 1. Check `options.WorkspaceFolder`/.devcontainer/devcontainer.json.
+	location := filepath.Join(options.WorkspaceFolder, ".devcontainer", "devcontainer.json")
+	_, err := options.Filesystem.Stat(location)
+	if err == nil {
+		return filepath.Dir(location), location
+	}
+
+	// 2. Check `options.WorkspaceFolder`/devcontainer.json.
+	location = filepath.Join(options.WorkspaceFolder, "devcontainer.json")
+	_, err = options.Filesystem.Stat(location)
+	if err == nil {
+		return filepath.Dir(location), location
+	}
+
+	// 3. Check every folder: `options.WorkspaceFolder`/<folder>/devcontainer.json.
 
 	panic("not implemented yet")
 }
