@@ -118,8 +118,8 @@ type Options struct {
 	// DevcontainerDir is a path to the folder containing
 	// the devcontainer.json file that will be used to build the
 	// workspace and can either be an absolute path or a path
-	// relative to the workspace folder.
-	// If not provided, it defaults to `.devcontainer`.
+	// relative to the workspace folder. If not provided, defaults to
+	// `.devcontainer`.
 	DevcontainerDir string `env:"DEVCONTAINER_DIR"`
 
 	// DevcontainerJSONPath is a path to a devcontainer.json file
@@ -1197,9 +1197,8 @@ func (fs *osfsWithChmod) Chmod(name string, mode os.FileMode) error {
 }
 
 func findDevcontainerJSON(options Options) (string, string, error) {
-	// 0. Check provided options.
+	// 0. Check if custom devcontainer directory or path is provided.
 	if options.DevcontainerDir != "" || options.DevcontainerJSONPath != "" {
-		// Locate .devcontainer directory.
 		devcontainerDir := options.DevcontainerDir
 		if devcontainerDir == "" {
 			devcontainerDir = ".devcontainer"
@@ -1209,14 +1208,11 @@ func findDevcontainerJSON(options Options) (string, string, error) {
 			devcontainerDir = filepath.Join(options.WorkspaceFolder, devcontainerDir)
 		}
 
-		// Locate devcontainer.json manifest.
-		devcontainerPath := options.DevcontainerJSONPath
-
 		// An absolute location always takes a precedence.
+		devcontainerPath := options.DevcontainerJSONPath
 		if filepath.IsAbs(devcontainerPath) {
 			return options.DevcontainerJSONPath, devcontainerDir, nil
 		}
-
 		// If an override is not provided, assume it is just `devcontainer.json`.
 		if devcontainerPath == "" {
 			devcontainerPath = "devcontainer.json"
@@ -1230,15 +1226,13 @@ func findDevcontainerJSON(options Options) (string, string, error) {
 
 	// 1. Check `options.WorkspaceFolder`/.devcontainer/devcontainer.json.
 	location := filepath.Join(options.WorkspaceFolder, ".devcontainer", "devcontainer.json")
-	_, err := options.Filesystem.Stat(location)
-	if err == nil {
+	if _, err := options.Filesystem.Stat(location); err == nil {
 		return location, filepath.Dir(location), nil
 	}
 
 	// 2. Check `options.WorkspaceFolder`/devcontainer.json.
 	location = filepath.Join(options.WorkspaceFolder, "devcontainer.json")
-	_, err = options.Filesystem.Stat(location)
-	if err == nil {
+	if _, err := options.Filesystem.Stat(location); err == nil {
 		return location, filepath.Dir(location), nil
 	}
 
@@ -1258,8 +1252,7 @@ func findDevcontainerJSON(options Options) (string, string, error) {
 		}
 
 		location := filepath.Join(devcontainerDir, fileInfo.Name(), "devcontainer.json")
-		_, err := options.Filesystem.Stat(location)
-		if err != nil {
+		if _, err := options.Filesystem.Stat(location); err != nil {
 			logf(codersdk.LogLevelDebug, `stat %s failed: %s`, location, err.Error())
 			continue
 		}
