@@ -1223,21 +1223,21 @@ func findDevcontainerJSON(options Options) (string, string) {
 		if !filepath.IsAbs(devcontainerPath) {
 			devcontainerPath = filepath.Join(devcontainerDir, devcontainerPath)
 		}
-		return devcontainerDir, devcontainerPath
+		return devcontainerPath, devcontainerDir
 	}
 
 	// 1. Check `options.WorkspaceFolder`/.devcontainer/devcontainer.json.
 	location := filepath.Join(options.WorkspaceFolder, ".devcontainer", "devcontainer.json")
 	_, err := options.Filesystem.Stat(location)
 	if err == nil {
-		return filepath.Dir(location), location
+		return location, filepath.Dir(location)
 	}
 
 	// 2. Check `options.WorkspaceFolder`/devcontainer.json.
 	location = filepath.Join(options.WorkspaceFolder, "devcontainer.json")
 	_, err = options.Filesystem.Stat(location)
 	if err == nil {
-		return filepath.Dir(location), location
+		return location, filepath.Dir(location)
 	}
 
 	// 3. Check every folder: `options.WorkspaceFolder`/<folder>/devcontainer.json.
