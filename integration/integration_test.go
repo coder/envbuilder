@@ -742,14 +742,33 @@ type gitServerOptions struct {
 	files    map[string]string
 	username string
 	password string
+	authMW   func(http.Handler) http.Handler
 }
 
 // createGitServer creates a git repository with an in-memory filesystem
 // and serves it over HTTP using a httptest.Server.
 func createGitServer(t *testing.T, opts gitServerOptions) string {
 	t.Helper()
-	srv := httptest.NewServer(createGitHandler(t, opts))
+	if opts.authMW == nil {
+		opts.authMW = checkBasicAuth(opts.username, opts.password)
+	}
+	srv := httptest.NewServer(opts.authMW(createGitHandler(t, opts)))
 	return srv.URL
+}
+
+func checkBasicAuth(username, password string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if username != "" && password != "" {
+				authUser, authPass, ok := r.BasicAuth()
+				if !ok || username != authUser || password != authPass {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func createGitHandler(t *testing.T, opts gitServerOptions) http.Handler {
@@ -773,16 +792,7 @@ func createGitHandler(t *testing.T, opts gitServerOptions) http.Handler {
 	require.NoError(t, err)
 	_, err = repo.CommitObject(commit)
 	require.NoError(t, err)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if opts.username != "" || opts.password != "" {
-			username, password, ok := r.BasicAuth()
-			if !ok || username != opts.username || password != opts.password {
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-		}
-		gittest.NewServer(fs).ServeHTTP(w, r)
-	})
+	return gittest.NewServer(fs)
 }
 
 // cleanOldEnvbuilders removes any old envbuilder containers.
