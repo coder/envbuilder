@@ -471,6 +471,15 @@ func Run(ctx context.Context, options Options) error {
 	} else {
 		// If a Dockerfile was specified, we use that.
 		dockerfilePath := filepath.Join(options.WorkspaceFolder, options.DockerfilePath)
+
+		// If the dockerfilePath is specified and deeper than the base of WorkspaceFolder AND the BuildContextPath is
+		// not defined, show a warning
+		dockerfileDir := filepath.Dir(dockerfilePath)
+		if dockerfileDir != filepath.Clean(options.WorkspaceFolder) && options.BuildContextPath == "" {
+			logf(codersdk.LogLevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, options.WorkspaceFolder)
+			logf(codersdk.LogLevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
+		}
+
 		dockerfile, err := options.Filesystem.Open(dockerfilePath)
 		if err == nil {
 			content, err := io.ReadAll(dockerfile)
