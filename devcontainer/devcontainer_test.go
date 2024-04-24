@@ -78,7 +78,7 @@ func TestCompileWithFeatures(t *testing.T) {
     "context": ".",
   },
   // Comments here!
-  "image": "codercom/code-server:latest",
+  "image": "localhost:5000/envbuilder-test-codercom-code-server:latest",
   "features": {
 	"` + featureOne + `": {},
 	"` + featureTwo + `": "potato"
@@ -96,7 +96,7 @@ func TestCompileWithFeatures(t *testing.T) {
 	featureTwoMD5 := md5.Sum([]byte(featureTwo))
 	featureTwoDir := fmt.Sprintf("/.envbuilder/features/two-%x", featureTwoMD5[:4])
 
-	require.Equal(t, `FROM codercom/code-server:latest
+	require.Equal(t, `FROM localhost:5000/envbuilder-test-codercom-code-server:latest
 
 USER root
 # Rust tomato - Example description!
@@ -116,7 +116,7 @@ func TestCompileDevContainer(t *testing.T) {
 		t.Parallel()
 		fs := memfs.New()
 		dc := &devcontainer.Spec{
-			Image: "codercom/code-server:latest",
+			Image: "localhost:5000/envbuilder-test-ubuntu:latest",
 		}
 		params, err := dc.Compile(fs, "", magicDir, "", "", false)
 		require.NoError(t, err)
@@ -141,7 +141,7 @@ func TestCompileDevContainer(t *testing.T) {
 		require.NoError(t, err)
 		file, err := fs.OpenFile(filepath.Join(dcDir, "Dockerfile"), os.O_CREATE|os.O_WRONLY, 0644)
 		require.NoError(t, err)
-		_, err = io.WriteString(file, "FROM ubuntu")
+		_, err = io.WriteString(file, "FROM localhost:5000/envbuilder-test-ubuntu:latest")
 		require.NoError(t, err)
 		_ = file.Close()
 		params, err := dc.Compile(fs, dcDir, magicDir, "", "/var/workspace", false)
