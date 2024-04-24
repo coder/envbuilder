@@ -14,8 +14,8 @@ test: test-registry test-images
 # Starts a local Docker registry on port 5000 with a local disk cache.
 .PHONY: test-registry
 test-registry: .registry-cache
-	if [ ! curl -fsSL http://localhost:5000/v2/_catalog >/dev/null 2>&1 ]; then \
-		docker rm -f envbuilder-registry; \
+	if ! curl -fsSL http://localhost:5000/v2/_catalog > /dev/null 2>&1; then \
+		docker rm -f envbuilder-registry && \
 		docker run -d -p 5000:5000 --name envbuilder-registry --volume $(PWD)/.registry-cache:/var/lib/registry registry:2; \
 	fi
 
