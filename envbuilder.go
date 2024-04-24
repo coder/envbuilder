@@ -139,6 +139,10 @@ type Options struct {
 	// to using a devcontainer that some might find simpler.
 	DockerfilePath string `env:"DOCKERFILE_PATH"`
 
+	// BuildContextPath can be specified when a DockerfilePath is specified outside the base WorkspaceFolder.
+	// This path MUST be relative to the WorkspaceFolder path into which the repo is cloned.
+	BuildContextPath string `env:"BUILD_CONTEXT_PATH"`
+
 	// CacheTTLDays is the number of days to use cached layers before
 	// expiring them. Defaults to 7 days.
 	CacheTTLDays int `env:"CACHE_TTL_DAYS"`
@@ -467,6 +471,15 @@ func Run(ctx context.Context, options Options) error {
 	} else {
 		// If a Dockerfile was specified, we use that.
 		dockerfilePath := filepath.Join(options.WorkspaceFolder, options.DockerfilePath)
+
+		// If the dockerfilePath is specified and deeper than the base of WorkspaceFolder AND the BuildContextPath is
+		// not defined, show a warning
+		dockerfileDir := filepath.Dir(dockerfilePath)
+		if dockerfileDir != filepath.Clean(options.WorkspaceFolder) && options.BuildContextPath == "" {
+			logf(codersdk.LogLevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, options.WorkspaceFolder)
+			logf(codersdk.LogLevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
+		}
+
 		dockerfile, err := options.Filesystem.Open(dockerfilePath)
 		if err == nil {
 			content, err := io.ReadAll(dockerfile)
@@ -476,7 +489,7 @@ func Run(ctx context.Context, options Options) error {
 			buildParams = &devcontainer.Compiled{
 				DockerfilePath:    dockerfilePath,
 				DockerfileContent: string(content),
-				BuildContext:      options.WorkspaceFolder,
+				BuildContext:      filepath.Join(options.WorkspaceFolder, options.BuildContextPath),
 			}
 		}
 	}

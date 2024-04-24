@@ -719,6 +719,91 @@ func TestNoMethodFails(t *testing.T) {
 	require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 }
 
+func TestDockerfileBuildContext(t *testing.T) {
+	t.Parallel()
+
+	inclFile := "myfile"
+	dockerfile := fmt.Sprintf(`FROM %s
+COPY %s .`, testImageAlpine, inclFile)
+
+	tests := []struct {
+		name             string
+		files            map[string]string
+		dockerfilePath   string
+		buildContextPath string
+		expectedErr      string
+	}{
+		{
+			// Dockerfile & build context are in the same dir, copying inclFile should work.
+			name: "same build context (default)",
+			files: map[string]string{
+				"Dockerfile": dockerfile,
+				inclFile:     "...",
+			},
+			dockerfilePath:   "Dockerfile",
+			buildContextPath: "", // use default
+			expectedErr:      "", // expect no errors
+		},
+		{
+			// Dockerfile & build context are not in the same dir, build context is still the default; this should fail
+			// to copy inclFile since it is not in the same dir as the Dockerfile.
+			name: "different build context (default)",
+			files: map[string]string{
+				"a/Dockerfile":  dockerfile,
+				"a/" + inclFile: "...",
+			},
+			dockerfilePath:   "a/Dockerfile",
+			buildContextPath: "", // use default
+			expectedErr:      inclFile + ": no such file or directory",
+		},
+		{
+			// Dockerfile & build context are not in the same dir, but inclFile is in the default build context dir;
+			// this should allow inclFile to be copied. This is probably not desirable though?
+			name: "different build context (default, different content roots)",
+			files: map[string]string{
+				"a/Dockerfile": dockerfile,
+				inclFile:       "...",
+			},
+			dockerfilePath:   "a/Dockerfile",
+			buildContextPath: "", // use default
+			expectedErr:      "",
+		},
+		{
+			// Dockerfile is not in the default build context dir, but the build context has been overridden; this should
+			// allow inclFile to be copied.
+			name: "different build context (custom)",
+			files: map[string]string{
+				"a/Dockerfile":  dockerfile,
+				"a/" + inclFile: "...",
+			},
+			dockerfilePath:   "a/Dockerfile",
+			buildContextPath: "a/",
+			expectedErr:      "",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			url := createGitServer(t, gitServerOptions{
+				files: tc.files,
+			})
+			_, err := runEnvbuilder(t, options{env: []string{
+				"GIT_URL=" + url,
+				"DOCKERFILE_PATH=" + tc.dockerfilePath,
+				"BUILD_CONTEXT_PATH=" + tc.buildContextPath,
+			}})
+
+			if tc.expectedErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.expectedErr)
+			}
+		})
+	}
+}
+
 // TestMain runs before all tests to build the envbuilder image.
 func TestMain(m *testing.M) {
 	cleanOldEnvbuilders()
