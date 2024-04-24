@@ -68,23 +68,21 @@ func main() {
 				os.Setenv("CODER_AGENT_SUBSYSTEM", subsystems)
 			}
 
-			deps := envbuilder.Dependencies{
-				Logger: func(level codersdk.LogLevel, format string, args ...interface{}) {
-					output := fmt.Sprintf(format, args...)
-					fmt.Fprintln(cmd.ErrOrStderr(), output)
-					if sendLogs != nil {
-						sendLogs(cmd.Context(), agentsdk.Log{
-							CreatedAt: time.Now(),
-							Output:    output,
-							Level:     level,
-						})
-					}
-				},
+			logger := func(level codersdk.LogLevel, format string, args ...interface{}) {
+				output := fmt.Sprintf(format, args...)
+				fmt.Fprintln(cmd.ErrOrStderr(), output)
+				if sendLogs != nil {
+					sendLogs(cmd.Context(), agentsdk.Log{
+						CreatedAt: time.Now(),
+						Output:    output,
+						Level:     level,
+					})
+				}
 			}
 
-			err := envbuilder.Run(cmd.Context(), options, deps)
+			err := envbuilder.Run(cmd.Context(), options, nil, logger)
 			if err != nil {
-				deps.Logger(codersdk.LogLevelError, "error: %s", err)
+				logger(codersdk.LogLevelError, "error: %s", err)
 			}
 			return err
 		},

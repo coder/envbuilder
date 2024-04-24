@@ -76,20 +76,16 @@ var (
 	MagicFile = filepath.Join(MagicDir, "built")
 )
 
-type Dependencies struct {
-	// Logger is the logger to use for all operations.
-	Logger func(level codersdk.LogLevel, format string, args ...any)
-
-	// Filesystem is the filesystem to use for all operations.
-	// Defaults to the host filesystem.
-	Filesystem billy.Filesystem
-}
+type Logger func(level codersdk.LogLevel, format string, args ...any)
 
 // DockerConfig represents the Docker configuration file.
 type DockerConfig configfile.ConfigFile
 
 // Run runs the envbuilder.
-func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
+// Logger is the logger to use for all operations.
+// Filesystem is the filesystem to use for all operations.
+// Defaults to the host filesystem.
+func Run(ctx context.Context, options OptionsMap, fs billy.Filesystem, logger Logger) error {
 	// Default to the shell!
 	initArgs := []string{"-c", options.GetString("InitScript")}
 	if options.GetString("InitArgs") != "" {
@@ -99,8 +95,8 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 			return fmt.Errorf("parse init args: %w", err)
 		}
 	}
-	if deps.Filesystem == nil {
-		deps.Filesystem = &osfsWithChmod{osfs.New("/")}
+	if fs == nil {
+		fs = &osfsWithChmod{osfs.New("/")}
 	}
 	if options.GetString("WorkspaceFolder") == "" {
 		var err error
@@ -110,20 +106,20 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 			return err
 		}
 	}
-	logf := deps.Logger
+
 	stageNumber := 1
 	startStage := func(format string, args ...any) func(format string, args ...any) {
 		now := time.Now()
 		stageNum := stageNumber
 		stageNumber++
-		logf(codersdk.LogLevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
+		logger(codersdk.LogLevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
 
 		return func(format string, args ...any) {
-			logf(codersdk.LogLevelInfo, "#%d: %s [%s]", stageNum, fmt.Sprintf(format, args...), time.Since(now))
+			logger(codersdk.LogLevelInfo, "#%d: %s [%s]", stageNum, fmt.Sprintf(format, args...), time.Since(now))
 		}
 	}
 
-	logf(codersdk.LogLevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
+	logger(codersdk.LogLevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
 
 	var caBundle []byte
 	if options.GetString("SSLCertBase64") != "" {
@@ -185,14 +181,14 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 					if line == "" {
 						continue
 					}
-					logf(codersdk.LogLevelInfo, "#1: %s", strings.TrimSpace(line))
+					logger(codersdk.LogLevelInfo, "#1: %s", strings.TrimSpace(line))
 				}
 			}
 		}()
 
 		cloneOpts := CloneRepoOptions{
 			Path:         options.GetString("WorkspaceFolder"),
-			Storage:      deps.Filesystem,
+			Storage:      fs,
 			Insecure:     options.GetBool("Insecure"),
 			Progress:     writer,
 			SingleBranch: options.GetBool("GitCloneSingleBranch"),
@@ -228,14 +224,14 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 				endStage("📦 The repository already exists!")
 			}
 		} else {
-			logf(codersdk.LogLevelError, "Failed to clone repository: %s", fallbackErr.Error())
-			logf(codersdk.LogLevelError, "Falling back to the default image...")
+			logger(codersdk.LogLevelError, "Failed to clone repository: %s", fallbackErr.Error())
+			logger(codersdk.LogLevelError, "Falling back to the default image...")
 		}
 	}
 
 	defaultBuildParams := func() (*devcontainer.Compiled, error) {
 		dockerfile := filepath.Join(MagicDir, "Dockerfile")
-		file, err := deps.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0644)
+		file, err := fs.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return nil, err
 		}
@@ -267,14 +263,14 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 	if options.GetString("DockerFilepath") == "" {
 		// Only look for a devcontainer if a Dockerfile wasn't specified.
 		// devcontainer is a standard, so it's reasonable to be the default.
-		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(&options, &deps)
+		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(options, fs, logger)
 		if err != nil {
-			logf(codersdk.LogLevelError, "Failed to locate devcontainer.json: %s", err.Error())
-			logf(codersdk.LogLevelError, "Falling back to the default image...")
+			logger(codersdk.LogLevelError, "Failed to locate devcontainer.json: %s", err.Error())
+			logger(codersdk.LogLevelError, "Falling back to the default image...")
 		} else {
 			// We know a devcontainer exists.
 			// Let's parse it and use it!
-			file, err := deps.Filesystem.Open(devcontainerPath)
+			file, err := fs.Open(devcontainerPath)
 			if err != nil {
 				return fmt.Errorf("open devcontainer.json: %w", err)
 			}
@@ -291,17 +287,17 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 					if err != nil {
 						return fmt.Errorf("no Dockerfile or image found: %w", err)
 					}
-					logf(codersdk.LogLevelInfo, "No Dockerfile or image specified; falling back to the default image...")
+					logger(codersdk.LogLevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
-				buildParams, err = devContainer.Compile(deps.Filesystem, devcontainerDir, MagicDir, fallbackDockerfile, options.GetString("WorkspaceFolder"), false)
+				buildParams, err = devContainer.Compile(fs, devcontainerDir, MagicDir, fallbackDockerfile, options.GetString("WorkspaceFolder"), false)
 				if err != nil {
 					return fmt.Errorf("compile devcontainer.json: %w", err)
 				}
 				scripts = devContainer.LifecycleScripts
 			} else {
-				logf(codersdk.LogLevelError, "Failed to parse devcontainer.json: %s", err.Error())
-				logf(codersdk.LogLevelError, "Falling back to the default image...")
+				logger(codersdk.LogLevelError, "Failed to parse devcontainer.json: %s", err.Error())
+				logger(codersdk.LogLevelError, "Falling back to the default image...")
 			}
 		}
 	} else {
@@ -312,11 +308,11 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 		// not defined, show a warning
 		dockerfileDir := filepath.Dir(dockerfilePath)
 		if dockerfileDir != filepath.Clean(options.GetString("WorkspaceFolder")) && options.GetString("BuildContextPath") == "" {
-			logf(codersdk.LogLevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, options.GetString("WorkspaceFolder"))
-			logf(codersdk.LogLevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
+			logger(codersdk.LogLevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, options.GetString("WorkspaceFolder"))
+			logger(codersdk.LogLevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
 		}
 
-		dockerfile, err := deps.Filesystem.Open(dockerfilePath)
+		dockerfile, err := fs.Open(dockerfilePath)
 		if err == nil {
 			content, err := io.ReadAll(dockerfile)
 			if err != nil {
@@ -342,7 +338,7 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 
 	HijackLogrus(func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
-			logf(codersdk.LogLevelInfo, "#2: %s", color.HiBlackString(line))
+			logger(codersdk.LogLevelInfo, "#2: %s", color.HiBlackString(line))
 		}
 	})
 
@@ -358,9 +354,9 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 		}
 
 		// Disable all logging from the registry...
-		logger := logrus.New()
-		logger.SetOutput(io.Discard)
-		entry := logrus.NewEntry(logger)
+		logrusLogger := logrus.New()
+		logrusLogger.SetOutput(io.Discard)
+		entry := logrus.NewEntry(logrusLogger)
 		dcontext.SetDefaultLogger(entry)
 		ctx = dcontext.WithLogger(ctx, entry)
 
@@ -381,7 +377,7 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 		go func() {
 			err := srv.Serve(listener)
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				logf(codersdk.LogLevelError, "Failed to serve registry: %s", err.Error())
+				logger(codersdk.LogLevelError, "Failed to serve registry: %s", err.Error())
 			}
 		}()
 		closeAfterBuild = func() {
@@ -389,7 +385,7 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 			_ = listener.Close()
 		}
 		if options.GetString("CacheRepo") != "" {
-			logf(codersdk.LogLevelWarn, "Overriding cache repo with local registry...")
+			logger(codersdk.LogLevelWarn, "Overriding cache repo with local registry...")
 		}
 		options.SetString("CacheRepo", fmt.Sprintf("localhost:%d/local/cache", tcpAddr.Port))
 	}
@@ -414,7 +410,7 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 
 	skippedRebuild := false
 	build := func() (v1.Image, error) {
-		_, err := deps.Filesystem.Stat(MagicFile)
+		_, err := fs.Stat(MagicFile)
 		if err == nil && options.GetBool("SkipRebuild") {
 			endStage := startStage("🏗️ Skipping build because of cache...")
 			imageRef, err := devcontainer.ImageFromDockerfile(buildParams.DockerfileContent)
@@ -452,13 +448,13 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 		go func() {
 			scanner := bufio.NewScanner(stdoutReader)
 			for scanner.Scan() {
-				logf(codersdk.LogLevelInfo, "%s", scanner.Text())
+				logger(codersdk.LogLevelInfo, "%s", scanner.Text())
 			}
 		}()
 		go func() {
 			scanner := bufio.NewScanner(stderrReader)
 			for scanner.Scan() {
-				logf(codersdk.LogLevelInfo, "%s", scanner.Text())
+				logger(codersdk.LogLevelInfo, "%s", scanner.Text())
 			}
 		}()
 		cacheTTL := time.Hour * 24 * 7
@@ -538,13 +534,13 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 			fallback = true
 			fallbackErr = err
 		case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
-			logf(codersdk.LogLevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
+			logger(codersdk.LogLevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
 		}
 		if !fallback || options.GetBool("ExitOnBuildFailure") {
 			return err
 		}
-		logf(codersdk.LogLevelError, "Failed to build: %s", err)
-		logf(codersdk.LogLevelError, "Falling back to the default image...")
+		logger(codersdk.LogLevelError, "Failed to build: %s", err)
+		logger(codersdk.LogLevelError, "Falling back to the default image...")
 		buildParams, err = defaultBuildParams()
 		if err != nil {
 			return err
@@ -561,7 +557,7 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 
 	// Create the magic file to indicate that this build
 	// has already been ran before!
-	file, err := deps.Filesystem.Create(MagicFile)
+	file, err := fs.Create(MagicFile)
 	if err != nil {
 		return fmt.Errorf("create magic file: %w", err)
 	}
@@ -587,10 +583,10 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 		if err != nil {
 			return fmt.Errorf("unmarshal metadata: %w", err)
 		}
-		logf(codersdk.LogLevelInfo, "#3: 👀 Found devcontainer.json label metadata in image...")
+		logger(codersdk.LogLevelInfo, "#3: 👀 Found devcontainer.json label metadata in image...")
 		for _, container := range devContainer {
 			if container.RemoteUser != "" {
-				logf(codersdk.LogLevelInfo, "#3: 🧑 Updating the user to %q!", container.RemoteUser)
+				logger(codersdk.LogLevelInfo, "#3: 🧑 Updating the user to %q!", container.RemoteUser)
 
 				configFile.Config.User = container.RemoteUser
 			}
@@ -685,7 +681,7 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 		username = buildParams.User
 	}
 	if username == "" {
-		logf(codersdk.LogLevelWarn, "#3: no user specified, using root")
+		logger(codersdk.LogLevelWarn, "#3: no user specified, using root")
 	}
 
 	userInfo, err := getUser(username)
@@ -727,7 +723,7 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 	// exec systemd as the init command, but that doesn't mean we should
 	// run the lifecycle scripts as root.
 	os.Setenv("HOME", userInfo.user.HomeDir)
-	if err := execLifecycleScripts(ctx, options, deps, scripts, skippedRebuild, userInfo); err != nil {
+	if err := execLifecycleScripts(ctx, options, fs, logger, scripts, skippedRebuild, userInfo); err != nil {
 		return err
 	}
 
@@ -740,7 +736,7 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 		// We execute the initialize script as the root user!
 		os.Setenv("HOME", "/root")
 
-		logf(codersdk.LogLevelInfo, "=== Running the setup command %q as the root user...", options.GetString("SetupScript"))
+		logger(codersdk.LogLevelInfo, "=== Running the setup command %q as the root user...", options.GetString("SetupScript"))
 
 		envKey := "ENVBUILDER_ENV"
 		envFile := filepath.Join("/", MagicDir, "environ")
@@ -767,7 +763,7 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 			go func() {
 				scanner := bufio.NewScanner(&buf)
 				for scanner.Scan() {
-					logf(codersdk.LogLevelInfo, "%s", scanner.Text())
+					logger(codersdk.LogLevelInfo, "%s", scanner.Text())
 				}
 			}()
 
@@ -833,7 +829,7 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 		return fmt.Errorf("set uid: %w", err)
 	}
 
-	logf(codersdk.LogLevelInfo, "=== Running the init command %s %+v as the %q user...", options.GetString("InitCommand"), initArgs, userInfo.user.Username)
+	logger(codersdk.LogLevelInfo, "=== Running the init command %s %+v as the %q user...", options.GetString("InitCommand"), initArgs, userInfo.user.Username)
 
 	err = syscall.Exec(options.GetString("InitCommand"), append([]string{options.GetString("InitCommand")}, initArgs...), os.Environ())
 	if err != nil {
@@ -906,7 +902,7 @@ func findUser(nameOrID string) (*user.User, error) {
 
 func execOneLifecycleScript(
 	ctx context.Context,
-	logf func(level codersdk.LogLevel, format string, args ...any),
+	logger func(level codersdk.LogLevel, format string, args ...any),
 	s devcontainer.LifecycleScript,
 	scriptName string,
 	userInfo userInfo,
@@ -914,9 +910,9 @@ func execOneLifecycleScript(
 	if s.IsEmpty() {
 		return nil
 	}
-	logf(codersdk.LogLevelInfo, "=== Running %s as the %q user...", scriptName, userInfo.user.Username)
+	logger(codersdk.LogLevelInfo, "=== Running %s as the %q user...", scriptName, userInfo.user.Username)
 	if err := s.Execute(ctx, userInfo.uid, userInfo.gid); err != nil {
-		logf(codersdk.LogLevelError, "Failed to run %s: %v", scriptName, err)
+		logger(codersdk.LogLevelError, "Failed to run %s: %v", scriptName, err)
 		return err
 	}
 	return nil
@@ -925,7 +921,8 @@ func execOneLifecycleScript(
 func execLifecycleScripts(
 	ctx context.Context,
 	options OptionsMap,
-	deps Dependencies,
+	fs billy.Filesystem,
+	logger Logger,
 	scripts devcontainer.LifecycleScripts,
 	skippedRebuild bool,
 	userInfo userInfo,
@@ -935,16 +932,16 @@ func execLifecycleScripts(
 	}
 
 	if !skippedRebuild {
-		if err := execOneLifecycleScript(ctx, deps.Logger, scripts.OnCreateCommand, "onCreateCommand", userInfo); err != nil {
+		if err := execOneLifecycleScript(ctx, logger, scripts.OnCreateCommand, "onCreateCommand", userInfo); err != nil {
 			// skip remaining lifecycle commands
 			return nil
 		}
 	}
-	if err := execOneLifecycleScript(ctx, deps.Logger, scripts.UpdateContentCommand, "updateContentCommand", userInfo); err != nil {
+	if err := execOneLifecycleScript(ctx, logger, scripts.UpdateContentCommand, "updateContentCommand", userInfo); err != nil {
 		// skip remaining lifecycle commands
 		return nil
 	}
-	if err := execOneLifecycleScript(ctx, deps.Logger, scripts.PostCreateCommand, "postCreateCommand", userInfo); err != nil {
+	if err := execOneLifecycleScript(ctx, logger, scripts.PostCreateCommand, "postCreateCommand", userInfo); err != nil {
 		// skip remaining lifecycle commands
 		return nil
 	}
@@ -956,7 +953,7 @@ func execLifecycleScripts(
 				return fmt.Errorf("failed to create post-start script: %w", err)
 			}
 		} else {
-			_ = execOneLifecycleScript(ctx, deps.Logger, scripts.PostStartCommand, "postStartCommand", userInfo)
+			_ = execOneLifecycleScript(ctx, logger, scripts.PostStartCommand, "postStartCommand", userInfo)
 		}
 	}
 	return nil
@@ -1001,7 +998,7 @@ func (fs *osfsWithChmod) Chmod(name string, mode os.FileMode) error {
 	return os.Chmod(name, mode)
 }
 
-func findDevcontainerJSON(options *OptionsMap, deps *Dependencies) (string, string, error) {
+func findDevcontainerJSON(options OptionsMap, fs billy.Filesystem, logger Logger) (string, string, error) {
 	// 0. Check if custom devcontainer directory or path is provided.
 	if options.GetString("DevcontainerDir") != "" || options.GetString("DevcontainerJSONPath") != "" {
 		devcontainerDir := options.GetString("DevcontainerDir")
@@ -1032,34 +1029,33 @@ func findDevcontainerJSON(options *OptionsMap, deps *Dependencies) (string, stri
 
 	// 1. Check `options.WorkspaceFolder`/.devcontainer/devcontainer.json.
 	location := filepath.Join(options.GetString("WorkspaceFolder"), ".devcontainer", "devcontainer.json")
-	if _, err := deps.Filesystem.Stat(location); err == nil {
+	if _, err := fs.Stat(location); err == nil {
 		return location, filepath.Dir(location), nil
 	}
 
 	// 2. Check `options.WorkspaceFolder`/devcontainer.json.
 	location = filepath.Join(options.GetString("WorkspaceFolder"), "devcontainer.json")
-	if _, err := deps.Filesystem.Stat(location); err == nil {
+	if _, err := fs.Stat(location); err == nil {
 		return location, filepath.Dir(location), nil
 	}
 
 	// 3. Check every folder: `options.WorkspaceFolder`/.devcontainer/<folder>/devcontainer.json.
 	devcontainerDir := filepath.Join(options.GetString("WorkspaceFolder"), ".devcontainer")
 
-	fileInfos, err := deps.Filesystem.ReadDir(devcontainerDir)
+	fileInfos, err := fs.ReadDir(devcontainerDir)
 	if err != nil {
 		return "", "", err
 	}
 
-	logf := deps.Logger
 	for _, fileInfo := range fileInfos {
 		if !fileInfo.IsDir() {
-			logf(codersdk.LogLevelDebug, `%s is a file`, fileInfo.Name())
+			logger(codersdk.LogLevelDebug, `%s is a file`, fileInfo.Name())
 			continue
 		}
 
 		location := filepath.Join(devcontainerDir, fileInfo.Name(), "devcontainer.json")
-		if _, err := deps.Filesystem.Stat(location); err != nil {
-			logf(codersdk.LogLevelDebug, `stat %s failed: %s`, location, err.Error())
+		if _, err := fs.Stat(location); err != nil {
+			logger(codersdk.LogLevelDebug, `stat %s failed: %s`, location, err.Error())
 			continue
 		}
 
