@@ -71,7 +71,7 @@ func (c *Config) Options() serpent.OptionSet {
 			Value: serpent.StringOf(&c.InitArgs),
 			Description: `InitArgs are the arguments to pass to the init command.
 			They are split according to ` + "`/bin/sh`" + ` rules with
-			https://github.com/kballard/go-shellquote`,
+			https://github.com/kballard/go-shellquote.`,
 		},
 		{
 			Name:  "Cache Repo",
