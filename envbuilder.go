@@ -723,7 +723,7 @@ func Run(ctx context.Context, options OptionsMap, fs billy.Filesystem, logger Lo
 	// exec systemd as the init command, but that doesn't mean we should
 	// run the lifecycle scripts as root.
 	os.Setenv("HOME", userInfo.user.HomeDir)
-	if err := execLifecycleScripts(ctx, options, fs, logger, scripts, skippedRebuild, userInfo); err != nil {
+	if err := execLifecycleScripts(ctx, options, logger, scripts, skippedRebuild, userInfo); err != nil {
 		return err
 	}
 
@@ -921,7 +921,6 @@ func execOneLifecycleScript(
 func execLifecycleScripts(
 	ctx context.Context,
 	options OptionsMap,
-	fs billy.Filesystem,
 	logger Logger,
 	scripts devcontainer.LifecycleScripts,
 	skippedRebuild bool,
