@@ -35,3 +35,8 @@ test-images: .registry-cache .registry-cache/docker/registry/v2/repositories/env
 	docker pull ubuntu:latest
 	docker tag ubuntu:latest localhost:5000/envbuilder-test-ubuntu:latest
 	docker push localhost:5000/envbuilder-test-ubuntu:latest
+
+.registry-cache/docker/registry/v2/repositories/envbuilder-test-codercom-code-server:
+	docker pull codercom/code-server:latest
+	docker tag codercom/code-server:latest localhost:5000/envbuilder-test-codercom-code-server:latest
+	docker push localhost:5000/envbuilder-test-codercom-code-server:latest
