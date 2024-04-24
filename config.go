@@ -172,7 +172,7 @@ func (c *Config) Options() serpent.OptionSet {
 			Description: `ForceSafe ignores any filesystem safety checks.
 			This could cause serious harm to your system!
 			This is used in cases where bypass is needed
-			to unblock customers!`,
+			to unblock customers.`,
 		},
 		{
 			Name:  "Insecure",
@@ -207,7 +207,7 @@ func (c *Config) Options() serpent.OptionSet {
 			Env:   "GIT_URL",
 			Value: serpent.StringOf(&c.GitURL),
 			Description: `GitURL is the URL of the Git repository to clone.
-			This is optional!`,
+			This is optional.`,
 		},
 		{
 			Name:  "Git Clone Depth",
@@ -228,28 +228,28 @@ func (c *Config) Options() serpent.OptionSet {
 			Env:   "GIT_USERNAME",
 			Value: serpent.StringOf(&c.GitUsername),
 			Description: `GitUsername is the username to use for Git authentication.
-			This is optional!`,
+			This is optional.`,
 		},
 		{
 			Name:  "Git Password",
 			Env:   "GIT_PASSWORD",
 			Value: serpent.StringOf(&c.GitPassword),
 			Description: `GitPassword is the password to use for Git authentication.
-			This is optional!`,
+			This is optional.`,
 		},
 		{
 			Name:  "Git HTTP Proxy URL",
 			Env:   "GIT_HTTP_PROXY_URL",
 			Value: serpent.StringOf(&c.GitHTTPProxyURL),
 			Description: `GitHTTPProxyURL is the url for the http proxy.
-			This is optional!`,
+			This is optional.`,
 		},
 		{
 			Name:  "Workspace Folder",
 			Env:   "WORKSPACE_FOLDER",
 			Value: serpent.StringOf(&c.WorkspaceFolder),
 			Description: `WorkspaceFolder is the path to the workspace folder
-			that will be built. This is optional!`,
+			that will be built. This is optional.`,
 		},
 		{
 			Name:  "SSL Cert Base64",
