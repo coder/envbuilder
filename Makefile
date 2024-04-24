@@ -21,7 +21,7 @@ test-registry: .registry-cache
 
 # Pulls images referenced in integration tests and pushes them to the local cache.
 .PHONY: test-images
-test-images: .registry-cache .registry-cache/docker/registry/v2/repositories/envbuilder-test-alpine .registry-cache/docker/registry/v2/repositories/envbuilder-test-ubuntu
+test-images: .registry-cache .registry-cache/docker/registry/v2/repositories/envbuilder-test-alpine .registry-cache/docker/registry/v2/repositories/envbuilder-test-ubuntu .registry-cache/docker/registry/v2/repositories/envbuilder-test-codercom-code-server
 
 .registry-cache:
 	mkdir -p .registry-cache && chmod -R ag+w .registry-cache
