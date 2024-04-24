@@ -224,3 +224,23 @@ docker run -it --rm \
 - [`SSL_CERT_FILE`](https://go.dev/src/crypto/x509/root_unix.go#L19): Specifies the path to an SSL certificate.
 - [`SSL_CERT_DIR`](https://go.dev/src/crypto/x509/root_unix.go#L25): Identifies which directory to check for SSL certificate files.
 - `SSL_CERT_BASE64`: Specifies a base64-encoded SSL certificate that will be added to the global certificate pool on start.
+
+
+# Local Development
+
+Building `envbuilder` currently **requires** a Linux system.
+
+On MacOS or Windows systems, we recommend either using a VM or the provided `.devcontainer` for development.
+
+**Additional Requirements:**
+
+- `go 1.21`
+- `make`
+- Docker daemon (for running tests)
+
+**Makefile targets:**
+
+- `build`: builds and tags `envbuilder:latest` for your current architecture.
+- `develop`: runs `envbuilder:latest` against a sample Git repository.
+- `test`: run tests.
+- `test-registry`: stands up a local registry for caching images used in tests.

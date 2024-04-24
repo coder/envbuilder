@@ -267,22 +267,11 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 	if options.GetString("DockerFilepath") == "" {
 		// Only look for a devcontainer if a Dockerfile wasn't specified.
 		// devcontainer is a standard, so it's reasonable to be the default.
-		devcontainerDir := options.GetString("DevcontainerDir")
-		if devcontainerDir == "" {
-			devcontainerDir = ".devcontainer"
-		}
-		if !filepath.IsAbs(devcontainerDir) {
-			devcontainerDir = filepath.Join(options.GetString("WorkspaceFolder"), devcontainerDir)
-		}
-		devcontainerPath := options.GetString("DevcontainerJSONPath")
-		if devcontainerPath == "" {
-			devcontainerPath = "devcontainer.json"
-		}
-		if !filepath.IsAbs(devcontainerPath) {
-			devcontainerPath = filepath.Join(devcontainerDir, devcontainerPath)
-		}
-		_, err := deps.Filesystem.Stat(devcontainerPath)
-		if err == nil {
+		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(&options, &deps)
+		if err != nil {
+			logf(codersdk.LogLevelError, "Failed to locate devcontainer.json: %s", err.Error())
+			logf(codersdk.LogLevelError, "Falling back to the default image...")
+		} else {
 			// We know a devcontainer exists.
 			// Let's parse it and use it!
 			file, err := deps.Filesystem.Open(devcontainerPath)
@@ -317,7 +306,16 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 		}
 	} else {
 		// If a Dockerfile was specified, we use that.
-		dockerfilePath := filepath.Join(options.GetString("WorkspaceFolder"), options.GetString("DockerFilepath"))
+		dockerfilePath := filepath.Join(options.GetString("WorkspaceFolder"), options.GetString("DockerfilePath"))
+
+		// If the dockerfilePath is specified and deeper than the base of WorkspaceFolder AND the BuildContextPath is
+		// not defined, show a warning
+		dockerfileDir := filepath.Dir(dockerfilePath)
+		if dockerfileDir != filepath.Clean(options.GetString("WorkspaceFolder")) && options.GetString("BuildContextPath") == "" {
+			logf(codersdk.LogLevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, options.GetString("WorkspaceFolder"))
+			logf(codersdk.LogLevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
+		}
+
 		dockerfile, err := deps.Filesystem.Open(dockerfilePath)
 		if err == nil {
 			content, err := io.ReadAll(dockerfile)
@@ -327,7 +325,7 @@ func Run(ctx context.Context, options OptionsMap, deps Dependencies) error {
 			buildParams = &devcontainer.Compiled{
 				DockerfilePath:    dockerfilePath,
 				DockerfileContent: string(content),
-				BuildContext:      options.GetString("WorkspaceFolder"),
+				BuildContext:      filepath.Join(options.GetString("WorkspaceFolder"), options.GetString("BuildContextPath")),
 			}
 		}
 	}
@@ -1001,4 +999,72 @@ type osfsWithChmod struct {
 
 func (fs *osfsWithChmod) Chmod(name string, mode os.FileMode) error {
 	return os.Chmod(name, mode)
+}
+
+func findDevcontainerJSON(options *OptionsMap, deps *Dependencies) (string, string, error) {
+	// 0. Check if custom devcontainer directory or path is provided.
+	if options.GetString("DevcontainerDir") != "" || options.GetString("DevcontainerJSONPath") != "" {
+		devcontainerDir := options.GetString("DevcontainerDir")
+		if devcontainerDir == "" {
+			devcontainerDir = ".devcontainer"
+		}
+
+		// If `devcontainerDir` is not an absolute path, assume it is relative to the workspace folder.
+		if !filepath.IsAbs(devcontainerDir) {
+			devcontainerDir = filepath.Join(options.GetString("WorkspaceFolder"), devcontainerDir)
+		}
+
+		// An absolute location always takes a precedence.
+		devcontainerPath := options.GetString("DevcontainerJSONPath")
+		if filepath.IsAbs(devcontainerPath) {
+			return options.GetString("DevcontainerJSONPath"), devcontainerDir, nil
+		}
+		// If an override is not provided, assume it is just `devcontainer.json`.
+		if devcontainerPath == "" {
+			devcontainerPath = "devcontainer.json"
+		}
+
+		if !filepath.IsAbs(devcontainerPath) {
+			devcontainerPath = filepath.Join(devcontainerDir, devcontainerPath)
+		}
+		return devcontainerPath, devcontainerDir, nil
+	}
+
+	// 1. Check `options.WorkspaceFolder`/.devcontainer/devcontainer.json.
+	location := filepath.Join(options.GetString("WorkspaceFolder"), ".devcontainer", "devcontainer.json")
+	if _, err := deps.Filesystem.Stat(location); err == nil {
+		return location, filepath.Dir(location), nil
+	}
+
+	// 2. Check `options.WorkspaceFolder`/devcontainer.json.
+	location = filepath.Join(options.GetString("WorkspaceFolder"), "devcontainer.json")
+	if _, err := deps.Filesystem.Stat(location); err == nil {
+		return location, filepath.Dir(location), nil
+	}
+
+	// 3. Check every folder: `options.WorkspaceFolder`/.devcontainer/<folder>/devcontainer.json.
+	devcontainerDir := filepath.Join(options.GetString("WorkspaceFolder"), ".devcontainer")
+
+	fileInfos, err := deps.Filesystem.ReadDir(devcontainerDir)
+	if err != nil {
+		return "", "", err
+	}
+
+	logf := deps.Logger
+	for _, fileInfo := range fileInfos {
+		if !fileInfo.IsDir() {
+			logf(codersdk.LogLevelDebug, `%s is a file`, fileInfo.Name())
+			continue
+		}
+
+		location := filepath.Join(devcontainerDir, fileInfo.Name(), "devcontainer.json")
+		if _, err := deps.Filesystem.Stat(location); err != nil {
+			logf(codersdk.LogLevelDebug, `stat %s failed: %s`, location, err.Error())
+			continue
+		}
+
+		return location, filepath.Dir(location), nil
+	}
+
+	return "", "", errors.New("can't find devcontainer.json, is it a correct spec?")
 }

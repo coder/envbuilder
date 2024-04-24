@@ -20,6 +20,7 @@ func TestOptionsFromEnv(t *testing.T) {
 		"DEVCONTAINER_DIR":        "/tmp/devcontainer",
 		"DEVCONTAINER_JSON_PATH":  "/tmp/devcontainer.json",
 		"DOCKERFILE_PATH":         "Dockerfile",
+		"BUILD_CONTEXT_PATH":      "/tmp/buildcontext",
 		"CACHE_TTL_DAYS":          "30",
 		"DOCKER_CONFIG_BASE64":    "dGVzdA==",
 		"FALLBACK_IMAGE":          "ubuntu:latest",
@@ -53,6 +54,7 @@ func TestOptionsFromEnv(t *testing.T) {
 	require.Equal(t, env["DEVCONTAINER_DIR"], options.GetString("DevcontainerDir"))
 	require.Equal(t, env["DEVCONTAINER_JSON_PATH"], options.GetString("DevcontainerJSONPath"))
 	require.Equal(t, env["DOCKERFILE_PATH"], options.GetString("DockerfilePath"))
+	require.Equal(t, env["BUILD_CONTEXT_PATH"], options.GetString("BuildContextPath"))
 	require.Equal(t, 30, options.GetInt("CacheTTLDays"))
 	require.Equal(t, env["DOCKER_CONFIG_BASE64"], options.GetString("DockerConfigBase64"))
 	require.Equal(t, env["FALLBACK_IMAGE"], options.GetString("FallbackImage"))
