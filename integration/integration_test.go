@@ -144,7 +144,7 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 					}
 				}
 			}`,
-			".devcontainer/Dockerfile":                         "FROM ubuntu",
+			".devcontainer/Dockerfile":                         "FROM " + testImageUbuntu,
 			".devcontainer/feature3/devcontainer-feature.json": string(feature3Spec),
 			".devcontainer/feature3/install.sh":                "echo $GRAPE > /test3output",
 		},
@@ -262,7 +262,7 @@ func TestBuildFromDevcontainerInCustomPath(t *testing.T) {
 					"dockerfile": "Dockerfile"
 				},
 			}`,
-			".devcontainer/custom/Dockerfile": "FROM ubuntu",
+			".devcontainer/custom/Dockerfile": "FROM " + testImageUbuntu,
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
@@ -287,7 +287,7 @@ func TestBuildFromDevcontainerInSubfolder(t *testing.T) {
 					"dockerfile": "Dockerfile"
 				},
 			}`,
-			".devcontainer/subfolder/Dockerfile": "FROM ubuntu",
+			".devcontainer/subfolder/Dockerfile": "FROM " + testImageUbuntu,
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
@@ -310,7 +310,7 @@ func TestBuildFromDevcontainerInRoot(t *testing.T) {
 					"dockerfile": "Dockerfile"
 				},
 			}`,
-			"Dockerfile": "FROM ubuntu",
+			"Dockerfile": "FROM " + testImageUbuntu,
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
@@ -409,7 +409,7 @@ func TestBuildFailsFallback(t *testing.T) {
 		// Ensures that a Git repository with a Dockerfile is cloned and built.
 		url := createGitServer(t, gitServerOptions{
 			files: map[string]string{
-				"Dockerfile": `FROM alpine
+				"Dockerfile": `FROM ` + testImageAlpine + `
 RUN exit 1`,
 			},
 		})
@@ -525,7 +525,7 @@ func TestLifecycleScripts(t *testing.T) {
 					"parallel2": ["sh", "-c", "echo parallel2 > /tmp/parallel2"]
 				}
 			}`,
-			".devcontainer/Dockerfile": "FROM alpine:latest\nUSER nobody",
+			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\nUSER nobody",
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
@@ -561,7 +561,7 @@ func TestPostStartScript(t *testing.T) {
 			".devcontainer/init.sh": `#!/bin/sh
 			/tmp/post-start.sh
 			sleep infinity`,
-			".devcontainer/Dockerfile": `FROM alpine:latest
+			".devcontainer/Dockerfile": `FROM ` + testImageAlpine + `
 COPY init.sh /bin
 RUN chmod +x /bin/init.sh
 USER nobody`,
