@@ -361,12 +361,12 @@ func Run(ctx context.Context, options Options) error {
 		}
 
 		if options.GitUsername != "" || options.GitPassword != "" {
-			gitURL, err := url.Parse(options.GitURL)
-			if err != nil {
-				return fmt.Errorf("parse git url: %w", err)
-			}
-			gitURL.User = url.UserPassword(options.GitUsername, options.GitPassword)
-			options.GitURL = gitURL.String()
+			// Previously, we had been placing credentials in the URL
+			// as well as setting githttp.BasicAuth.
+			// This was removed as it would leak the credentials used
+			// to clone the repo into the resulting workspace.
+			// Users may still hard-code credentials directly into the
+			// git URL themselves, if required.
 
 			cloneOpts.RepoAuth = &githttp.BasicAuth{
 				Username: options.GitUsername,
