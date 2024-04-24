@@ -758,7 +758,7 @@ COPY %s .`, testImageAlpine, inclFile)
 		},
 		{
 			// Dockerfile & build context are not in the same dir, but inclFile is in the default build context dir;
-			// this should allow inclFile to be copied.
+			// this should allow inclFile to be copied. This is probably not desirable though?
 			name: "different build context (default, different content roots)",
 			files: map[string]string{
 				"a/Dockerfile": dockerfile,

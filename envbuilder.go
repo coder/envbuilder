@@ -140,7 +140,7 @@ type Options struct {
 	DockerfilePath string `env:"DOCKERFILE_PATH"`
 
 	// BuildContextPath can be specified when a DockerfilePath is specified outside the base WorkspaceFolder.
-	// This path MUST be a relative path since it will be joined to the WorkspaceFolder path.
+	// This path MUST be relative to the WorkspaceFolder path into which the repo is cloned.
 	BuildContextPath string `env:"BUILD_CONTEXT_PATH"`
 
 	// CacheTTLDays is the number of days to use cached layers before
