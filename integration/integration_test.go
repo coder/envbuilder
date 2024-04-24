@@ -43,13 +43,15 @@ import (
 
 const (
 	testContainerLabel = "envbox-integration-test"
+	testImageAlpine    = "localhost:5000/envbuilder-test-alpine:latest"
+	testImageUbuntu    = "localhost:5000/envbuilder-test-ubuntu:latest"
 )
 
 func TestFailsGitAuth(t *testing.T) {
 	t.Parallel()
 	url := createGitServer(t, gitServerOptions{
 		files: map[string]string{
-			"Dockerfile": "FROM alpine:latest",
+			"Dockerfile": "FROM " + testImageAlpine,
 		},
 		username: "kyle",
 		password: "testing",
@@ -64,7 +66,7 @@ func TestSucceedsGitAuth(t *testing.T) {
 	t.Parallel()
 	url := createGitServer(t, gitServerOptions{
 		files: map[string]string{
-			"Dockerfile": "FROM alpine:latest",
+			"Dockerfile": "FROM " + testImageAlpine,
 		},
 		username: "kyle",
 		password: "testing",
@@ -166,7 +168,7 @@ func TestBuildFromDockerfile(t *testing.T) {
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	url := createGitServer(t, gitServerOptions{
 		files: map[string]string{
-			"Dockerfile": "FROM alpine:latest",
+			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
@@ -183,7 +185,7 @@ func TestBuildPrintBuildOutput(t *testing.T) {
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	url := createGitServer(t, gitServerOptions{
 		files: map[string]string{
-			"Dockerfile": "FROM alpine:latest\nRUN echo hello",
+			"Dockerfile": "FROM " + testImageAlpine + "\nRUN echo hello",
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
@@ -211,7 +213,7 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	url := createGitServer(t, gitServerOptions{
 		files: map[string]string{
-			"Dockerfile": "FROM alpine:latest",
+			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	})
 	dir := t.TempDir()
@@ -234,7 +236,7 @@ func TestBuildWithSetupScript(t *testing.T) {
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	url := createGitServer(t, gitServerOptions{
 		files: map[string]string{
-			"Dockerfile": "FROM alpine:latest",
+			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
@@ -323,7 +325,7 @@ func TestBuildFromDevcontainerInRoot(t *testing.T) {
 func TestBuildCustomCertificates(t *testing.T) {
 	srv := httptest.NewTLSServer(createGitHandler(t, gitServerOptions{
 		files: map[string]string{
-			"Dockerfile": "FROM alpine:latest",
+			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	}))
 	ctr, err := runEnvbuilder(t, options{env: []string{
@@ -344,7 +346,7 @@ func TestBuildStopStartCached(t *testing.T) {
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	url := createGitServer(t, gitServerOptions{
 		files: map[string]string{
-			"Dockerfile": "FROM alpine:latest",
+			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
@@ -439,7 +441,7 @@ RUN exit 1`,
 		})
 		ctr, err := runEnvbuilder(t, options{env: []string{
 			"GIT_URL=" + url,
-			"FALLBACK_IMAGE=alpine:latest",
+			"FALLBACK_IMAGE=" + testImageAlpine,
 		}})
 		require.NoError(t, err)
 
@@ -458,7 +460,7 @@ func TestExitBuildOnFailure(t *testing.T) {
 	_, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + url,
 		"DOCKERFILE_PATH=Dockerfile",
-		"FALLBACK_IMAGE=alpine",
+		"FALLBACK_IMAGE=" + testImageAlpine,
 		// Ensures that the fallback doesn't work when an image is specified.
 		"EXIT_ON_BUILD_FAILURE=true",
 	}})
@@ -486,7 +488,7 @@ func TestContainerEnv(t *testing.T) {
 					"REMOTE_BAR": "${FROM_CONTAINER_ENV}"
 				}
 			}`,
-			".devcontainer/Dockerfile": "FROM alpine:latest\nENV FROM_DOCKERFILE=foo",
+			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\nENV FROM_DOCKERFILE=foo",
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
@@ -586,7 +588,7 @@ func TestPrivateRegistry(t *testing.T) {
 	t.Parallel()
 	t.Run("NoAuth", func(t *testing.T) {
 		t.Parallel()
-		image := setupPassthroughRegistry(t, "library/alpine", &registryAuth{
+		image := setupPassthroughRegistry(t, "thisimagedoesnotexist", &registryAuth{
 			Username: "user",
 			Password: "test",
 		})
@@ -605,7 +607,7 @@ func TestPrivateRegistry(t *testing.T) {
 	})
 	t.Run("Auth", func(t *testing.T) {
 		t.Parallel()
-		image := setupPassthroughRegistry(t, "library/alpine", &registryAuth{
+		image := setupPassthroughRegistry(t, "envbuilder-test-alpine:latest", &registryAuth{
 			Username: "user",
 			Password: "test",
 		})
@@ -635,7 +637,7 @@ func TestPrivateRegistry(t *testing.T) {
 	})
 	t.Run("InvalidAuth", func(t *testing.T) {
 		t.Parallel()
-		image := setupPassthroughRegistry(t, "library/alpine", &registryAuth{
+		image := setupPassthroughRegistry(t, "thisimagedoesnotexist", &registryAuth{
 			Username: "user",
 			Password: "banana",
 		})
@@ -672,22 +674,22 @@ type registryAuth struct {
 
 func setupPassthroughRegistry(t *testing.T, image string, auth *registryAuth) string {
 	t.Helper()
-	dockerURL, err := url.Parse("https://registry-1.docker.io")
+	dockerURL, err := url.Parse("http://localhost:5000")
 	require.NoError(t, err)
 	proxy := httputil.NewSingleHostReverseProxy(dockerURL)
 
 	// The Docker registry uses short-lived JWTs to authenticate
 	// anonymously to pull images. To test our MITM auth, we need to
 	// generate a JWT for the proxy to use.
-	registry, err := name.NewRegistry("registry-1.docker.io")
+	registry, err := name.NewRegistry("localhost:5000")
 	require.NoError(t, err)
 	proxy.Transport, err = transport.NewWithContext(context.Background(), registry, authn.Anonymous, http.DefaultTransport, []string{})
 	require.NoError(t, err)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Host = "registry-1.docker.io"
-		r.URL.Host = "registry-1.docker.io"
-		r.URL.Scheme = "https"
+		r.Host = "localhost:5000"
+		r.URL.Host = "localhost:5000"
+		r.URL.Scheme = "http"
 
 		if auth != nil {
 			user, pass, ok := r.BasicAuth()
