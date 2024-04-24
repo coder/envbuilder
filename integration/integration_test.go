@@ -588,7 +588,9 @@ func TestPrivateRegistry(t *testing.T) {
 	t.Parallel()
 	t.Run("NoAuth", func(t *testing.T) {
 		t.Parallel()
-		image := setupPassthroughRegistry(t, "thisimagedoesnotexist", &registryAuth{
+		// Even if something goes wrong with auth,
+		// the pull will fail as "scratch" is a reserved name.
+		image := setupPassthroughRegistry(t, "scratch", &registryAuth{
 			Username: "user",
 			Password: "test",
 		})
@@ -637,7 +639,9 @@ func TestPrivateRegistry(t *testing.T) {
 	})
 	t.Run("InvalidAuth", func(t *testing.T) {
 		t.Parallel()
-		image := setupPassthroughRegistry(t, "thisimagedoesnotexist", &registryAuth{
+		// Even if something goes wrong with auth,
+		// the pull will fail as "scratch" is a reserved name.
+		image := setupPassthroughRegistry(t, "scratch", &registryAuth{
 			Username: "user",
 			Password: "banana",
 		})
