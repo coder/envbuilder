@@ -11,6 +11,9 @@ build: scripts/envbuilder-$(GOARCH)
 test: test-registry test-images
 	go test -count=1 ./...
 
+test-race:
+	go test -race -count=3 ./...
+
 # Starts a local Docker registry on port 5000 with a local disk cache.
 .PHONY: test-registry
 test-registry: .registry-cache
