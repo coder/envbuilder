@@ -723,8 +723,8 @@ func TestDockerfileBuildContext(t *testing.T) {
 	t.Parallel()
 
 	inclFile := "myfile"
-	dockerfile := fmt.Sprintf(`FROM scratch
-COPY %s .`, inclFile)
+	dockerfile := fmt.Sprintf(`FROM %s
+COPY %s .`, testImageAlpine, inclFile)
 
 	tests := []struct {
 		name             string
