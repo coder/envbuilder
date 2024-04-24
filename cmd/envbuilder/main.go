@@ -48,7 +48,7 @@ func main() {
 				client.SDK.HTTPClient = &http.Client{
 					Transport: &http.Transport{
 						TLSClientConfig: &tls.Config{
-							InsecureSkipVerify: options.Insecure,
+							InsecureSkipVerify: options.GetBool("Insecure"),
 						},
 					},
 				}
@@ -68,20 +68,23 @@ func main() {
 				os.Setenv("CODER_AGENT_SUBSYSTEM", subsystems)
 			}
 
-			options.Logger = func(level codersdk.LogLevel, format string, args ...interface{}) {
-				output := fmt.Sprintf(format, args...)
-				fmt.Fprintln(cmd.ErrOrStderr(), output)
-				if sendLogs != nil {
-					sendLogs(cmd.Context(), agentsdk.Log{
-						CreatedAt: time.Now(),
-						Output:    output,
-						Level:     level,
-					})
-				}
+			deps := envbuilder.Dependencies{
+				Logger: func(level codersdk.LogLevel, format string, args ...interface{}) {
+					output := fmt.Sprintf(format, args...)
+					fmt.Fprintln(cmd.ErrOrStderr(), output)
+					if sendLogs != nil {
+						sendLogs(cmd.Context(), agentsdk.Log{
+							CreatedAt: time.Now(),
+							Output:    output,
+							Level:     level,
+						})
+					}
+				},
 			}
-			err := envbuilder.Run(cmd.Context(), options)
+
+			err := envbuilder.Run(cmd.Context(), options, deps)
 			if err != nil {
-				options.Logger(codersdk.LogLevelError, "error: %s", err)
+				deps.Logger(codersdk.LogLevelError, "error: %s", err)
 			}
 			return err
 		},
