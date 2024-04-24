@@ -139,6 +139,10 @@ type Options struct {
 	// to using a devcontainer that some might find simpler.
 	DockerfilePath string `env:"DOCKERFILE_PATH"`
 
+	// BuildContextPath can be specified when a DockerfilePath is specified outside the base WorkspaceFolder.
+	// This path MUST be a relative path since it will be joined to the WorkspaceFolder path.
+	BuildContextPath string `env:"BUILD_CONTEXT_PATH"`
+
 	// CacheTTLDays is the number of days to use cached layers before
 	// expiring them. Defaults to 7 days.
 	CacheTTLDays int `env:"CACHE_TTL_DAYS"`
@@ -476,7 +480,7 @@ func Run(ctx context.Context, options Options) error {
 			buildParams = &devcontainer.Compiled{
 				DockerfilePath:    dockerfilePath,
 				DockerfileContent: string(content),
-				BuildContext:      options.WorkspaceFolder,
+				BuildContext:      filepath.Join(options.WorkspaceFolder, options.BuildContextPath),
 			}
 		}
 	}
