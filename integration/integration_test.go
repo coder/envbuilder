@@ -756,25 +756,10 @@ type gitServerOptions struct {
 func createGitServer(t *testing.T, opts gitServerOptions) string {
 	t.Helper()
 	if opts.authMW == nil {
-		opts.authMW = checkBasicAuth(opts.username, opts.password)
+		opts.authMW = gittest.BasicAuthMW(opts.username, opts.password)
 	}
 	srv := httptest.NewServer(opts.authMW(createGitHandler(t, opts)))
 	return srv.URL
-}
-
-func checkBasicAuth(username, password string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if username != "" && password != "" {
-				authUser, authPass, ok := r.BasicAuth()
-				if !ok || username != authUser || password != authPass {
-					w.WriteHeader(http.StatusUnauthorized)
-					return
-				}
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
 }
 
 func createGitHandler(t *testing.T, opts gitServerOptions) http.Handler {
