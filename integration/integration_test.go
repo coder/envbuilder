@@ -71,13 +71,37 @@ func TestSucceedsGitAuth(t *testing.T) {
 		username: "kyle",
 		password: "testing",
 	})
-	_, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + url,
 		"DOCKERFILE_PATH=Dockerfile",
 		"GIT_USERNAME=kyle",
 		"GIT_PASSWORD=testing",
 	}})
 	require.NoError(t, err)
+	gitConfig := execContainer(t, ctr, "cat /workspaces/.git/config")
+	require.Contains(t, gitConfig, url)
+}
+
+func TestSucceedsGitAuthInURL(t *testing.T) {
+	t.Parallel()
+	gitURL := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			"Dockerfile": "FROM " + testImageAlpine,
+		},
+		username: "kyle",
+		password: "testing",
+	})
+
+	u, err := url.Parse(gitURL)
+	require.NoError(t, err)
+	u.User = url.UserPassword("kyle", "testing")
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		"GIT_URL=" + u.String(),
+		"DOCKERFILE_PATH=Dockerfile",
+	}})
+	require.NoError(t, err)
+	gitConfig := execContainer(t, ctr, "cat /workspaces/.git/config")
+	require.Contains(t, gitConfig, u.String())
 }
 
 func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
