@@ -75,7 +75,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		// when
 		options := DefaultOptions()
 		options.SetString("WorkspaceFolder", "/workspace")
-		options.SetString("DevcontainerDir", "/experimental-devcontainer")
+		options.SetString("DevcontainerDir", "experimental-devcontainer")
 		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(&options, &Dependencies{Filesystem: fs})
 
 		// then
