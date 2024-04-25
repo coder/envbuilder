@@ -71,13 +71,37 @@ func TestSucceedsGitAuth(t *testing.T) {
 		username: "kyle",
 		password: "testing",
 	})
-	_, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + url,
 		"DOCKERFILE_PATH=Dockerfile",
 		"GIT_USERNAME=kyle",
 		"GIT_PASSWORD=testing",
 	}})
 	require.NoError(t, err)
+	gitConfig := execContainer(t, ctr, "cat /workspaces/.git/config")
+	require.Contains(t, gitConfig, url)
+}
+
+func TestSucceedsGitAuthInURL(t *testing.T) {
+	t.Parallel()
+	gitURL := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			"Dockerfile": "FROM " + testImageAlpine,
+		},
+		username: "kyle",
+		password: "testing",
+	})
+
+	u, err := url.Parse(gitURL)
+	require.NoError(t, err)
+	u.User = url.UserPassword("kyle", "testing")
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		"GIT_URL=" + u.String(),
+		"DOCKERFILE_PATH=Dockerfile",
+	}})
+	require.NoError(t, err)
+	gitConfig := execContainer(t, ctr, "cat /workspaces/.git/config")
+	require.Contains(t, gitConfig, u.String())
 }
 
 func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
@@ -841,25 +865,10 @@ type gitServerOptions struct {
 func createGitServer(t *testing.T, opts gitServerOptions) string {
 	t.Helper()
 	if opts.authMW == nil {
-		opts.authMW = checkBasicAuth(opts.username, opts.password)
+		opts.authMW = gittest.BasicAuthMW(opts.username, opts.password)
 	}
 	srv := httptest.NewServer(opts.authMW(createGitHandler(t, opts)))
 	return srv.URL
-}
-
-func checkBasicAuth(username, password string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if username != "" && password != "" {
-				authUser, authPass, ok := r.BasicAuth()
-				if !ok || username != authUser || password != authPass {
-					w.WriteHeader(http.StatusUnauthorized)
-					return
-				}
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
 }
 
 func createGitHandler(t *testing.T, opts gitServerOptions) http.Handler {
