@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/coder/envbuilder/devcontainer/features"
-	"github.com/coder/envbuilder/registrytest"
+	"github.com/coder/envbuilder/testutil/registrytest"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/stretchr/testify/require"
 )

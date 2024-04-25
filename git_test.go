@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/coder/envbuilder"
-	"github.com/coder/envbuilder/gittest"
+	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"

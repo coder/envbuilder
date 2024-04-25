@@ -23,8 +23,8 @@ import (
 
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer/features"
-	"github.com/coder/envbuilder/gittest"
-	"github.com/coder/envbuilder/registrytest"
+	"github.com/coder/envbuilder/testutil/gittest"
+	"github.com/coder/envbuilder/testutil/registrytest"
 	clitypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
