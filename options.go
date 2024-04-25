@@ -4,6 +4,7 @@ import (
 	"github.com/coder/serpent"
 )
 
+// Options contains the configuration for the envbuilder.
 type Options struct {
 	SetupScript          string
 	InitScript           string
@@ -36,6 +37,7 @@ type Options struct {
 	PostStartScriptPath  string
 }
 
+// Generate CLI options for the envbuilder command.
 func (o *Options) CLI() serpent.OptionSet {
 	return serpent.OptionSet{
 		{
