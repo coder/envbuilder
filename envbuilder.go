@@ -153,7 +153,7 @@ func Run(ctx context.Context, c *Config, fs billy.Filesystem, logger Logger) err
 		if err != nil {
 			return fmt.Errorf("parse docker config: %w", err)
 		}
-		err = os.WriteFile(filepath.Join(MagicDir, "c.json"), decoded, 0644)
+		err = os.WriteFile(filepath.Join(MagicDir, "config.json"), decoded, 0644)
 		if err != nil {
 			return fmt.Errorf("write docker config: %w", err)
 		}
