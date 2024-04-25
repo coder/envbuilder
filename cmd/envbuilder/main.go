@@ -27,9 +27,6 @@ func main() {
 	cmd := serpent.Command{
 		Use:     "envbuilder",
 		Options: options.CLI(),
-		// Hide usage because we don't want to show the
-		// "envbuilder [command] --help" output on error.
-		Hidden: true,
 		Handler: func(inv *serpent.Invocation) error {
 			var sendLogs func(ctx context.Context, log ...agentsdk.Log) error
 			agentURL := os.Getenv("CODER_AGENT_URL")
