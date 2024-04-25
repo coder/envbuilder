@@ -12,7 +12,7 @@ import (
 
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/coder/envbuilder/devcontainer/features"
-	"github.com/coder/envbuilder/registrytest"
+	"github.com/coder/envbuilder/testutil/registrytest"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
