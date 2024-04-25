@@ -361,13 +361,8 @@ func Run(ctx context.Context, options Options) error {
 		}
 
 		if options.GitUsername != "" || options.GitPassword != "" {
-			// Previously, we had been placing credentials in the URL
-			// as well as setting githttp.BasicAuth.
-			// This was removed as it would leak the credentials used
-			// to clone the repo into the resulting workspace.
-			// Users may still hard-code credentials directly into the
-			// git URL themselves, if required.
-
+			// NOTE: we previously inserted the credentials into the repo URL.
+			// This was removed in https://github.com/coder/envbuilder/pull/141
 			cloneOpts.RepoAuth = &githttp.BasicAuth{
 				Username: options.GitUsername,
 				Password: options.GitPassword,

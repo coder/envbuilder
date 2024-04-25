@@ -2,10 +2,12 @@ package envbuilder_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"regexp"
 	"testing"
 	"time"
 
@@ -45,44 +47,27 @@ func TestCloneRepo(t *testing.T) {
 			expectClone: true,
 		},
 		{
+			name:        "auth but no creds",
+			srvUsername: "user",
+			srvPassword: "password",
+			expectClone: false,
+			expectError: "authentication required",
+		},
+		{
 			name:        "invalid auth",
 			srvUsername: "user",
 			srvPassword: "password",
+			username:    "notuser",
+			password:    "notpassword",
 			expectClone: false,
 			expectError: "authentication required",
 		},
 		{
-			name:        "invalid auth password",
-			srvUsername: "user",
-			srvPassword: "password",
-			username:    "user",
-			password:    "",
-			expectClone: false,
-			expectError: "authentication required",
-		},
-		{
-			name:        "invalid auth user",
-			srvUsername: "user",
-			srvPassword: "password",
-			username:    "",
-			password:    "password",
-			expectClone: false,
-			expectError: "authentication required",
-		},
-		{
-			name:        "user only",
-			srvUsername: "user",
+			name:        "tokenish username",
+			srvUsername: "tokentokentoken",
 			srvPassword: "",
-			username:    "user",
+			username:    "tokentokentoken",
 			password:    "",
-			expectClone: true,
-		},
-		{
-			name:        "password only",
-			srvUsername: "",
-			srvPassword: "password",
-			username:    "",
-			password:    "password",
 			expectClone: true,
 		},
 	} {
@@ -131,7 +116,8 @@ func TestCloneRepo(t *testing.T) {
 				readme := mustRead(t, clientFS, "/workspace/README.md")
 				require.Equal(t, "Hello, world!", readme)
 				gitConfig := mustRead(t, clientFS, "/workspace/.git/config")
-				require.Contains(t, gitConfig, srvURL)
+				// Ensure we do not modify the git URL that folks pass in.
+				require.Regexp(t, fmt.Sprintf(`(?m)^\s+url\s+=\s+%s\s*$`, regexp.QuoteMeta(srvURL)), gitConfig)
 			})
 
 			// In-URL-style auth e.g. http://user:password@host:port
@@ -159,8 +145,8 @@ func TestCloneRepo(t *testing.T) {
 				readme := mustRead(t, clientFS, "/workspace/README.md")
 				require.Equal(t, "Hello, world!", readme)
 				gitConfig := mustRead(t, clientFS, "/workspace/.git/config")
-				// We do not modify the git URL that folks pass in.
-				require.Contains(t, gitConfig, authURL.String())
+				// Ensure we do not modify the git URL that folks pass in.
+				require.Regexp(t, fmt.Sprintf(`(?m)^\s+url\s+=\s+%s\s*$`, regexp.QuoteMeta(authURL.String())), gitConfig)
 			})
 		})
 	}
