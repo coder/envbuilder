@@ -23,10 +23,10 @@ import (
 )
 
 func main() {
-	config := envbuilder.Config{}
+	options := envbuilder.Options{}
 	cmd := serpent.Command{
 		Use:     "envbuilder",
-		Options: config.Options(),
+		Options: options.CLI(),
 		// Hide usage because we don't want to show the
 		// "envbuilder [command] --help" output on error.
 		Hidden: true,
@@ -47,7 +47,7 @@ func main() {
 				client.SDK.HTTPClient = &http.Client{
 					Transport: &http.Transport{
 						TLSClientConfig: &tls.Config{
-							InsecureSkipVerify: config.Insecure,
+							InsecureSkipVerify: options.Insecure,
 						},
 					},
 				}
@@ -79,7 +79,7 @@ func main() {
 				}
 			}
 
-			err := envbuilder.Run(inv.Context(), &config, nil, logger)
+			err := envbuilder.Run(inv.Context(), options, nil, logger)
 			if err != nil {
 				logger(codersdk.LogLevelError, "error: %s", err)
 			}
