@@ -5,12 +5,14 @@ import (
 	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/server"
@@ -95,8 +97,34 @@ func NewServer(fs billy.Filesystem) http.Handler {
 	return mux
 }
 
+// CommitFunc commits to a repo.
+type CommitFunc func(billy.Filesystem, *git.Repository)
+
+// Commit is a test helper for committing a single file to a repo.
+func Commit(t *testing.T, path, content, msg string) CommitFunc {
+	return func(fs billy.Filesystem, repo *git.Repository) {
+		t.Helper()
+		tree, err := repo.Worktree()
+		require.NoError(t, err)
+		WriteFile(t, fs, path, content)
+		_, err = tree.Add(path)
+		require.NoError(t, err)
+		commit, err := tree.Commit(msg, &git.CommitOptions{
+			Author: &object.Signature{
+				Name:  "Example",
+				Email: "test@example.com",
+				When:  time.Now(),
+			},
+		})
+		require.NoError(t, err)
+		_, err = repo.CommitObject(commit)
+		require.NoError(t, err)
+	}
+}
+
 // NewRepo returns a new Git repository.
-func NewRepo(t *testing.T, fs billy.Filesystem) *git.Repository {
+func NewRepo(t *testing.T, fs billy.Filesystem, commits ...CommitFunc) *git.Repository {
+	t.Helper()
 	storage := filesystem.NewStorage(fs, cache.NewObjectLRU(cache.DefaultMaxSize))
 	repo, err := git.Init(storage, fs)
 	require.NoError(t, err)
@@ -106,15 +134,34 @@ func NewRepo(t *testing.T, fs billy.Filesystem) *git.Repository {
 	err = storage.SetReference(h)
 	require.NoError(t, err)
 
+	for _, commit := range commits {
+		commit(fs, repo)
+	}
 	return repo
 }
 
 // WriteFile writes a file to the filesystem.
 func WriteFile(t *testing.T, fs billy.Filesystem, path, content string) {
+	t.Helper()
 	file, err := fs.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
 	require.NoError(t, err)
 	_, err = file.Write([]byte(content))
 	require.NoError(t, err)
 	err = file.Close()
 	require.NoError(t, err)
+}
+
+func BasicAuthMW(username, password string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if username != "" || password != "" {
+				authUser, authPass, ok := r.BasicAuth()
+				if !ok || username != authUser || password != authPass {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }

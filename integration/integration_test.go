@@ -19,12 +19,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer/features"
-	"github.com/coder/envbuilder/gittest"
-	"github.com/coder/envbuilder/registrytest"
+	"github.com/coder/envbuilder/testutil/gittest"
+	"github.com/coder/envbuilder/testutil/registrytest"
 	clitypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -32,8 +31,6 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
@@ -49,7 +46,7 @@ const (
 
 func TestFailsGitAuth(t *testing.T) {
 	t.Parallel()
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
@@ -57,27 +54,51 @@ func TestFailsGitAuth(t *testing.T) {
 		password: "testing",
 	})
 	_, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 	}})
 	require.ErrorContains(t, err, "authentication required")
 }
 
 func TestSucceedsGitAuth(t *testing.T) {
 	t.Parallel()
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
 		username: "kyle",
 		password: "testing",
 	})
-	_, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		"GIT_URL=" + srv.URL,
 		"DOCKERFILE_PATH=Dockerfile",
 		"GIT_USERNAME=kyle",
 		"GIT_PASSWORD=testing",
 	}})
 	require.NoError(t, err)
+	gitConfig := execContainer(t, ctr, "cat /workspaces/.git/config")
+	require.Contains(t, gitConfig, srv.URL)
+}
+
+func TestSucceedsGitAuthInURL(t *testing.T) {
+	t.Parallel()
+	srv := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			"Dockerfile": "FROM " + testImageAlpine,
+		},
+		username: "kyle",
+		password: "testing",
+	})
+
+	u, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	u.User = url.UserPassword("kyle", "testing")
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		"GIT_URL=" + u.String(),
+		"DOCKERFILE_PATH=Dockerfile",
+	}})
+	require.NoError(t, err)
+	gitConfig := execContainer(t, ctr, "cat /workspaces/.git/config")
+	require.Contains(t, gitConfig, u.String())
 }
 
 func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
@@ -125,7 +146,7 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 	require.NoError(t, err)
 
 	// Ensures that a Git repository with a devcontainer.json is cloned and built.
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			".devcontainer/devcontainer.json": `{
 				"name": "Test",
@@ -150,7 +171,7 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 	}})
 	require.NoError(t, err)
 
@@ -166,13 +187,13 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 
 func TestBuildFromDockerfile(t *testing.T) {
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 		"DOCKERFILE_PATH=Dockerfile",
 	}})
 	require.NoError(t, err)
@@ -183,13 +204,13 @@ func TestBuildFromDockerfile(t *testing.T) {
 
 func TestBuildPrintBuildOutput(t *testing.T) {
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			"Dockerfile": "FROM " + testImageAlpine + "\nRUN echo hello",
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 		"DOCKERFILE_PATH=Dockerfile",
 	}})
 	require.NoError(t, err)
@@ -211,7 +232,7 @@ func TestBuildPrintBuildOutput(t *testing.T) {
 
 func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
@@ -221,7 +242,7 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 	require.NoError(t, err)
 	ctr, err := runEnvbuilder(t, options{
 		env: []string{
-			"GIT_URL=" + url,
+			"GIT_URL=" + srv.URL,
 			"DOCKERFILE_PATH=Dockerfile",
 		},
 		binds: []string{fmt.Sprintf("%s:/var/run/secrets", dir)},
@@ -234,13 +255,13 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 
 func TestBuildWithSetupScript(t *testing.T) {
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 		"DOCKERFILE_PATH=Dockerfile",
 		"SETUP_SCRIPT=echo \"INIT_ARGS=-c 'echo hi > /wow && sleep infinity'\" >> $ENVBUILDER_ENV",
 	}})
@@ -254,7 +275,7 @@ func TestBuildFromDevcontainerInCustomPath(t *testing.T) {
 	t.Parallel()
 
 	// Ensures that a Git repository with a devcontainer.json is cloned and built.
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			".devcontainer/custom/devcontainer.json": `{
 				"name": "Test",
@@ -266,7 +287,7 @@ func TestBuildFromDevcontainerInCustomPath(t *testing.T) {
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 		"DEVCONTAINER_DIR=.devcontainer/custom",
 	}})
 	require.NoError(t, err)
@@ -279,7 +300,7 @@ func TestBuildFromDevcontainerInSubfolder(t *testing.T) {
 	t.Parallel()
 
 	// Ensures that a Git repository with a devcontainer.json is cloned and built.
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			".devcontainer/subfolder/devcontainer.json": `{
 				"name": "Test",
@@ -291,7 +312,7 @@ func TestBuildFromDevcontainerInSubfolder(t *testing.T) {
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 	}})
 	require.NoError(t, err)
 
@@ -302,7 +323,7 @@ func TestBuildFromDevcontainerInRoot(t *testing.T) {
 	t.Parallel()
 
 	// Ensures that a Git repository with a devcontainer.json is cloned and built.
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			"devcontainer.json": `{
 				"name": "Test",
@@ -314,7 +335,7 @@ func TestBuildFromDevcontainerInRoot(t *testing.T) {
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 	}})
 	require.NoError(t, err)
 
@@ -323,11 +344,12 @@ func TestBuildFromDevcontainerInRoot(t *testing.T) {
 }
 
 func TestBuildCustomCertificates(t *testing.T) {
-	srv := httptest.NewTLSServer(createGitHandler(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
-	}))
+		tls: true,
+	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + srv.URL,
 		"DOCKERFILE_PATH=Dockerfile",
@@ -344,13 +366,13 @@ func TestBuildCustomCertificates(t *testing.T) {
 
 func TestBuildStopStartCached(t *testing.T) {
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 		"DOCKERFILE_PATH=Dockerfile",
 		"SKIP_REBUILD=true",
 	}})
@@ -392,13 +414,13 @@ func TestBuildFailsFallback(t *testing.T) {
 	t.Run("BadDockerfile", func(t *testing.T) {
 		t.Parallel()
 		// Ensures that a Git repository with a Dockerfile is cloned and built.
-		url := createGitServer(t, gitServerOptions{
+		srv := createGitServer(t, gitServerOptions{
 			files: map[string]string{
 				"Dockerfile": "bad syntax",
 			},
 		})
 		_, err := runEnvbuilder(t, options{env: []string{
-			"GIT_URL=" + url,
+			"GIT_URL=" + srv.URL,
 			"DOCKERFILE_PATH=Dockerfile",
 		}})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
@@ -407,14 +429,14 @@ func TestBuildFailsFallback(t *testing.T) {
 	t.Run("FailsBuild", func(t *testing.T) {
 		t.Parallel()
 		// Ensures that a Git repository with a Dockerfile is cloned and built.
-		url := createGitServer(t, gitServerOptions{
+		srv := createGitServer(t, gitServerOptions{
 			files: map[string]string{
 				"Dockerfile": `FROM ` + testImageAlpine + `
 RUN exit 1`,
 			},
 		})
 		_, err := runEnvbuilder(t, options{env: []string{
-			"GIT_URL=" + url,
+			"GIT_URL=" + srv.URL,
 			"DOCKERFILE_PATH=Dockerfile",
 		}})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
@@ -422,25 +444,25 @@ RUN exit 1`,
 	t.Run("BadDevcontainer", func(t *testing.T) {
 		t.Parallel()
 		// Ensures that a Git repository with a Dockerfile is cloned and built.
-		url := createGitServer(t, gitServerOptions{
+		srv := createGitServer(t, gitServerOptions{
 			files: map[string]string{
 				".devcontainer/devcontainer.json": "not json",
 			},
 		})
 		_, err := runEnvbuilder(t, options{env: []string{
-			"GIT_URL=" + url,
+			"GIT_URL=" + srv.URL,
 		}})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 	})
 	t.Run("NoImageOrDockerfile", func(t *testing.T) {
 		t.Parallel()
-		url := createGitServer(t, gitServerOptions{
+		srv := createGitServer(t, gitServerOptions{
 			files: map[string]string{
 				".devcontainer/devcontainer.json": "{}",
 			},
 		})
 		ctr, err := runEnvbuilder(t, options{env: []string{
-			"GIT_URL=" + url,
+			"GIT_URL=" + srv.URL,
 			"FALLBACK_IMAGE=" + testImageAlpine,
 		}})
 		require.NoError(t, err)
@@ -452,13 +474,13 @@ RUN exit 1`,
 
 func TestExitBuildOnFailure(t *testing.T) {
 	t.Parallel()
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			"Dockerfile": "bad syntax",
 		},
 	})
 	_, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 		"DOCKERFILE_PATH=Dockerfile",
 		"FALLBACK_IMAGE=" + testImageAlpine,
 		// Ensures that the fallback doesn't work when an image is specified.
@@ -471,7 +493,7 @@ func TestContainerEnv(t *testing.T) {
 	t.Parallel()
 
 	// Ensures that a Git repository with a devcontainer.json is cloned and built.
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			".devcontainer/devcontainer.json": `{
 				"name": "Test",
@@ -492,7 +514,7 @@ func TestContainerEnv(t *testing.T) {
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 		"EXPORT_ENV_FILE=/env",
 	}})
 	require.NoError(t, err)
@@ -510,7 +532,7 @@ func TestLifecycleScripts(t *testing.T) {
 	t.Parallel()
 
 	// Ensures that a Git repository with a devcontainer.json is cloned and built.
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			".devcontainer/devcontainer.json": `{
 				"name": "Test",
@@ -529,7 +551,7 @@ func TestLifecycleScripts(t *testing.T) {
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 	}})
 	require.NoError(t, err)
 
@@ -546,7 +568,7 @@ func TestPostStartScript(t *testing.T) {
 	t.Parallel()
 
 	// Ensures that a Git repository with a devcontainer.json is cloned and built.
-	url := createGitServer(t, gitServerOptions{
+	srv := createGitServer(t, gitServerOptions{
 		files: map[string]string{
 			".devcontainer/devcontainer.json": `{
 				"name": "Test",
@@ -568,7 +590,7 @@ USER nobody`,
 		},
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
-		"GIT_URL=" + url,
+		"GIT_URL=" + srv.URL,
 		"POST_START_SCRIPT_PATH=/tmp/post-start.sh",
 		"INIT_COMMAND=/bin/init.sh",
 	}})
@@ -596,13 +618,13 @@ func TestPrivateRegistry(t *testing.T) {
 		})
 
 		// Ensures that a Git repository with a Dockerfile is cloned and built.
-		url := createGitServer(t, gitServerOptions{
+		srv := createGitServer(t, gitServerOptions{
 			files: map[string]string{
 				"Dockerfile": "FROM " + image,
 			},
 		})
 		_, err := runEnvbuilder(t, options{env: []string{
-			"GIT_URL=" + url,
+			"GIT_URL=" + srv.URL,
 			"DOCKERFILE_PATH=Dockerfile",
 		}})
 		require.ErrorContains(t, err, "Unauthorized")
@@ -615,7 +637,7 @@ func TestPrivateRegistry(t *testing.T) {
 		})
 
 		// Ensures that a Git repository with a Dockerfile is cloned and built.
-		url := createGitServer(t, gitServerOptions{
+		srv := createGitServer(t, gitServerOptions{
 			files: map[string]string{
 				"Dockerfile": "FROM " + image,
 			},
@@ -631,7 +653,7 @@ func TestPrivateRegistry(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = runEnvbuilder(t, options{env: []string{
-			"GIT_URL=" + url,
+			"GIT_URL=" + srv.URL,
 			"DOCKERFILE_PATH=Dockerfile",
 			"DOCKER_CONFIG_BASE64=" + base64.StdEncoding.EncodeToString(config),
 		}})
@@ -647,7 +669,7 @@ func TestPrivateRegistry(t *testing.T) {
 		})
 
 		// Ensures that a Git repository with a Dockerfile is cloned and built.
-		url := createGitServer(t, gitServerOptions{
+		srv := createGitServer(t, gitServerOptions{
 			files: map[string]string{
 				"Dockerfile": "FROM " + image,
 			},
@@ -663,7 +685,7 @@ func TestPrivateRegistry(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = runEnvbuilder(t, options{env: []string{
-			"GIT_URL=" + url,
+			"GIT_URL=" + srv.URL,
 			"DOCKERFILE_PATH=Dockerfile",
 			"DOCKER_CONFIG_BASE64=" + base64.StdEncoding.EncodeToString(config),
 		}})
@@ -786,11 +808,11 @@ COPY %s .`, testImageAlpine, inclFile)
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			url := createGitServer(t, gitServerOptions{
+			srv := createGitServer(t, gitServerOptions{
 				files: tc.files,
 			})
 			_, err := runEnvbuilder(t, options{env: []string{
-				"GIT_URL=" + url,
+				"GIT_URL=" + srv.URL,
 				"DOCKERFILE_PATH=" + tc.dockerfilePath,
 				"BUILD_CONTEXT_PATH=" + tc.buildContextPath,
 			}})
@@ -834,56 +856,26 @@ type gitServerOptions struct {
 	username string
 	password string
 	authMW   func(http.Handler) http.Handler
+	tls      bool
 }
 
 // createGitServer creates a git repository with an in-memory filesystem
 // and serves it over HTTP using a httptest.Server.
-func createGitServer(t *testing.T, opts gitServerOptions) string {
+func createGitServer(t *testing.T, opts gitServerOptions) *httptest.Server {
 	t.Helper()
 	if opts.authMW == nil {
-		opts.authMW = checkBasicAuth(opts.username, opts.password)
+		opts.authMW = gittest.BasicAuthMW(opts.username, opts.password)
 	}
-	srv := httptest.NewServer(opts.authMW(createGitHandler(t, opts)))
-	return srv.URL
-}
-
-func checkBasicAuth(username, password string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if username != "" && password != "" {
-				authUser, authPass, ok := r.BasicAuth()
-				if !ok || username != authUser || password != authPass {
-					w.WriteHeader(http.StatusUnauthorized)
-					return
-				}
-			}
-			next.ServeHTTP(w, r)
-		})
+	commits := make([]gittest.CommitFunc, 0)
+	for path, content := range opts.files {
+		commits = append(commits, gittest.Commit(t, path, content, "my test commit"))
 	}
-}
-
-func createGitHandler(t *testing.T, opts gitServerOptions) http.Handler {
-	t.Helper()
 	fs := memfs.New()
-	repo := gittest.NewRepo(t, fs)
-	w, err := repo.Worktree()
-	require.NoError(t, err)
-	for key, value := range opts.files {
-		gittest.WriteFile(t, fs, key, value)
-		_, err = w.Add(key)
-		require.NoError(t, err)
+	_ = gittest.NewRepo(t, fs, commits...)
+	if opts.tls {
+		return httptest.NewTLSServer(opts.authMW(gittest.NewServer(fs)))
 	}
-	commit, err := w.Commit("my test commit", &git.CommitOptions{
-		Author: &object.Signature{
-			Name:  "Example",
-			Email: "in@tests.com",
-			When:  time.Now(),
-		},
-	})
-	require.NoError(t, err)
-	_, err = repo.CommitObject(commit)
-	require.NoError(t, err)
-	return gittest.NewServer(fs)
+	return httptest.NewServer(opts.authMW(gittest.NewServer(fs)))
 }
 
 // cleanOldEnvbuilders removes any old envbuilder containers.

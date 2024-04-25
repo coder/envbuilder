@@ -198,13 +198,8 @@ func Run(ctx context.Context, c *Config, fs billy.Filesystem, logger Logger) err
 		}
 
 		if c.GitUsername != "" || c.GitPassword != "" {
-			gitURL, err := url.Parse(c.GitURL)
-			if err != nil {
-				return fmt.Errorf("parse git url: %w", err)
-			}
-			gitURL.User = url.UserPassword(c.GitUsername, c.GitPassword)
-			c.GitURL = gitURL.String()
-
+			// NOTE: we previously inserted the credentials into the repo URL.
+			// This was removed in https://github.com/coder/envbuilder/pull/141
 			cloneOpts.RepoAuth = &githttp.BasicAuth{
 				Username: c.GitUsername,
 				Password: c.GitPassword,
