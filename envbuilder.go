@@ -608,7 +608,7 @@ func Run(ctx context.Context, options Options, fs billy.Filesystem, logf Logger)
 
 	// Remove the Docker config secret file!
 	if options.DockerConfigBase64 != "" {
-		err = os.Remove(filepath.Join(MagicDir, "o.json"))
+		err = os.Remove(filepath.Join(MagicDir, "config.json"))
 		if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove docker config: %w", err)
 		}
