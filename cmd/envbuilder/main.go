@@ -31,6 +31,17 @@ func main() {
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options := envbuilder.OptionsFromEnv(os.LookupEnv)
+			if os.Getpid() != 1 {
+				// TODO: rebase once https://github.com/coder/envbuilder/pull/140 is in
+				if env, found := os.LookupEnv("DANGEROUS_BYPASS_PID_CHECK"); found && env == "1" {
+					_, _ = fmt.Fprintln(os.Stderr, `Bypassing PID check as DANGEROUS_BYPASS_PID_CHECK=1.`)
+				} else {
+					_, _ = fmt.Fprintln(os.Stderr, `WARNING: Not running as PID 1, so exiting IMMEDIATELY!`)
+					_, _ = fmt.Fprintln(os.Stderr, `This is a safety check to guard against accidental data loss when run outside of a container.`)
+					_, _ = fmt.Fprintln(os.Stderr, `To bypass this check, set DANGEROUS_BYPASS_PID_CHECK=1.`)
+					os.Exit(1)
+				}
+			}
 
 			var sendLogs func(ctx context.Context, log ...agentsdk.Log) error
 			agentURL := os.Getenv("CODER_AGENT_URL")
