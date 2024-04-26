@@ -350,9 +350,9 @@ func Run(ctx context.Context, options Options, fs billy.Filesystem, logf Logger)
 		}
 
 		// Disable all logging from the registry...
-		logrusLogger := logrus.New()
-		logrusLogger.SetOutput(io.Discard)
-		entry := logrus.NewEntry(logrusLogger)
+		l := logrus.New()
+		l.SetOutput(io.Discard)
+		entry := logrus.NewEntry(l)
 		dcontext.SetDefaultLogger(entry)
 		ctx = dcontext.WithLogger(ctx, entry)
 
