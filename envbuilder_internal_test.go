@@ -18,7 +18,10 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		fs := memfs.New()
 
 		// when
-		_, _, err := findDevcontainerJSON(Options{WorkspaceFolder: "/workspace"}, fs, nil)
+		_, _, err := findDevcontainerJSON(Options{
+			Filesystem:      fs,
+			WorkspaceFolder: "/workspace",
+		})
 
 		// then
 		require.Error(t, err)
@@ -33,7 +36,10 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		require.NoError(t, err)
 
 		// when
-		_, _, err = findDevcontainerJSON(Options{WorkspaceFolder: "/workspace"}, fs, nil)
+		_, _, err = findDevcontainerJSON(Options{
+			Filesystem:      fs,
+			WorkspaceFolder: "/workspace",
+		})
 
 		// then
 		require.Error(t, err)
@@ -49,7 +55,10 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		fs.Create("/workspace/.devcontainer/devcontainer.json")
 
 		// when
-		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{WorkspaceFolder: "/workspace"}, fs, nil)
+		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
+			Filesystem:      fs,
+			WorkspaceFolder: "/workspace",
+		})
 
 		// then
 		require.NoError(t, err)
@@ -67,11 +76,11 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		fs.Create("/workspace/experimental-devcontainer/devcontainer.json")
 
 		// when
-		options := Options{
+		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
+			Filesystem:      fs,
 			WorkspaceFolder: "/workspace",
 			DevcontainerDir: "experimental-devcontainer",
-		}
-		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(options, fs, nil)
+		})
 
 		// then
 		require.NoError(t, err)
@@ -89,11 +98,11 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		fs.Create("/workspace/.devcontainer/experimental.json")
 
 		// when
-		options := Options{
+		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
+			Filesystem:           fs,
 			WorkspaceFolder:      "/workspace",
 			DevcontainerJSONPath: "experimental.json",
-		}
-		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(options, fs, nil)
+		})
 
 		// then
 		require.NoError(t, err)
@@ -111,7 +120,10 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		fs.Create("/workspace/devcontainer.json")
 
 		// when
-		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{WorkspaceFolder: "/workspace"}, fs, nil)
+		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
+			Filesystem:      fs,
+			WorkspaceFolder: "/workspace",
+		})
 
 		// then
 		require.NoError(t, err)
@@ -129,7 +141,10 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		fs.Create("/workspace/.devcontainer/sample/devcontainer.json")
 
 		// when
-		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{WorkspaceFolder: "/workspace"}, fs, nil)
+		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
+			Filesystem:      fs,
+			WorkspaceFolder: "/workspace",
+		})
 
 		// then
 		require.NoError(t, err)

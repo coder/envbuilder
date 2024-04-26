@@ -1,7 +1,9 @@
 package envbuilder
 
 import (
+	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/serpent"
+	"github.com/go-git/go-billy/v5"
 )
 
 // Options contains the configuration for the envbuilder.
@@ -35,6 +37,11 @@ type Options struct {
 	SSLCertBase64        string
 	ExportEnvFile        string
 	PostStartScriptPath  string
+	// Logger is the logger to use for all operations.
+	Logger func(level codersdk.LogLevel, format string, args ...interface{})
+	// Filesystem is the filesystem to use for all operations.
+	// Defaults to the host filesystem.
+	Filesystem billy.Filesystem
 }
 
 // Generate CLI options for the envbuilder command.
