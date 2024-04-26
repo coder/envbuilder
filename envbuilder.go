@@ -98,12 +98,11 @@ func Run(ctx context.Context, options Options) error {
 		options.Filesystem = &osfsWithChmod{osfs.New("/")}
 	}
 	if options.WorkspaceFolder == "" {
-		var err error
-		folder, err := DefaultWorkspaceFolder(options.GitURL)
-		options.WorkspaceFolder = folder
+		f, err := DefaultWorkspaceFolder(options.GitURL)
 		if err != nil {
 			return err
 		}
+		options.WorkspaceFolder = f
 	}
 
 	stageNumber := 1
