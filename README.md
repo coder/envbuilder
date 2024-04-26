@@ -47,6 +47,11 @@ $ vim .devcontainer/Dockerfile
 
 Exit the container, and re-run the `docker run` command... after the build completes, `htop` should exist in the container! 🥳
 
+> **Note:** Envbuilder performs destructive filesystem operations! To guard against accidental data loss, it 
+> will refuse to run if it detects it is not running as PID 1.
+> If you need to bypass this behaviour for any reason, you can bypass this safety check by setting
+> `DANGEROUS_BYPASS_PID_CHECK=1`.
+
 ## Container Registry Authentication
 
 envbuilder uses Kaniko to build containers. You should [follow their instructions](https://github.com/GoogleContainerTools/kaniko#pushing-to-different-registries) to create an authentication configuration.
