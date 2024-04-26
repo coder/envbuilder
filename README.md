@@ -24,7 +24,7 @@ Build development environments from a Dockerfile on Docker, Kubernetes, and Open
 
 The easiest way to get started is to run the `envbuilder` Docker container that clones a repository, builds the image from a Dockerfile, and runs the `$INIT_SCRIPT` in the freshly built container.
 
-> `/tmp/envbuilder` is used to persist data between commands for the purpose of this demo. You can change it to any directory you want.
+> `/tmp/envbuilder` directory persists demo data between commands. You can choose a different directory.
 
 ```bash
 docker run -it --rm \
@@ -46,6 +46,14 @@ $ vim .devcontainer/Dockerfile
 ```
 
 Exit the container, and re-run the `docker run` command... after the build completes, `htop` should exist in the container! 🥳
+
+### Git Branch Selection
+
+Choose a branch using `GIT_URL` with a _ref/heads_ reference. For instance:
+
+```
+GIT_URL=https://github.com/coder/envbuilder-starter-devcontainer/#refs/heads/my-feature-branch
+```
 
 ## Container Registry Authentication
 
@@ -85,7 +93,7 @@ resource "kubernetes_deployment" "example" {
   }
   spec {
     spec {
-      container {  
+      container {
         # Define the volumeMount with the pull credentials
         volume_mount {
           name       = "docker-config-volume"
@@ -194,8 +202,7 @@ A sample script to pre-fetch a number of images can be viewed [here](./examples/
 
 The `SETUP_SCRIPT` environment variable dynamically configures the user and init command (PID 1) after the container build process.
 
-> **Note**
-> `TARGET_USER` is passed to the setup script to specify who will execute `INIT_COMMAND` (e.g., `code`).
+> **Note** > `TARGET_USER` is passed to the setup script to specify who will execute `INIT_COMMAND` (e.g., `code`).
 
 Write the following to `$ENVBUILDER_ENV` to shape the container's init process:
 
@@ -224,7 +231,6 @@ docker run -it --rm \
 - [`SSL_CERT_FILE`](https://go.dev/src/crypto/x509/root_unix.go#L19): Specifies the path to an SSL certificate.
 - [`SSL_CERT_DIR`](https://go.dev/src/crypto/x509/root_unix.go#L25): Identifies which directory to check for SSL certificate files.
 - `SSL_CERT_BASE64`: Specifies a base64-encoded SSL certificate that will be added to the global certificate pool on start.
-
 
 # Local Development
 
