@@ -23,7 +23,7 @@ import (
 )
 
 func main() {
-	options := envbuilder.Options{}
+	var options envbuilder.Options
 	cmd := serpent.Command{
 		Use:     "envbuilder",
 		Options: options.CLI(),
