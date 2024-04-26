@@ -44,6 +44,42 @@ const (
 	testImageUbuntu    = "localhost:5000/envbuilder-test-ubuntu:latest"
 )
 
+func TestForceSafe(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Safe", func(t *testing.T) {
+		t.Parallel()
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": "FROM " + testImageAlpine,
+			},
+		})
+		_, err := runEnvbuilder(t, options{env: []string{
+			"GIT_URL=" + srv.URL,
+			"KANIKO_DIR=/not/envbuilder",
+			"DOCKERFILE_PATH=Dockerfile",
+		}})
+		require.ErrorContains(t, err, "delete filesystem: safety check failed")
+	})
+
+	// Careful with this one!
+	t.Run("Unsafe", func(t *testing.T) {
+		t.Parallel()
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": "FROM " + testImageAlpine,
+			},
+		})
+		_, err := runEnvbuilder(t, options{env: []string{
+			"GIT_URL=" + srv.URL,
+			"KANIKO_DIR=/not/envbuilder",
+			"FORCE_SAFE=true",
+			"DOCKERFILE_PATH=Dockerfile",
+		}})
+		require.NoError(t, err)
+	})
+}
+
 func TestFailsGitAuth(t *testing.T) {
 	t.Parallel()
 	srv := createGitServer(t, gitServerOptions{
