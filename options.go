@@ -272,3 +272,15 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 	}
 }
+
+func (o *Options) Markdown() string {
+	cliOptions := o.CLI()
+	mkd := "| Environment variable | Default | Description |\n" +
+		"| - | - | - |\n"
+
+	for _, opt := range cliOptions {
+		mkd += "| " + opt.Env + " | " + opt.Default + " | " + opt.Description + " |\n"
+	}
+
+	return mkd
+}
