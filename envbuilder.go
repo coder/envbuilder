@@ -200,12 +200,12 @@ type Options struct {
 	// This is optional!
 	GitPassword string `env:"GIT_PASSWORD"`
 
-	// GitSsh will use private key to access Git.
-	GitSsh bool `env:"GIT_SSH"`
+	// GitSSH will use private key to access Git.
+	GitSSH bool `env:"GIT_SSH"`
 
-	// GitSshKey is the private key to use for Git authentication.
+	// GitSSHKey is the private key to use for Git authentication.
 	// This is optional! (default to $HOME/.ssh/id_rsa)
-	GitSshkey string `env:"GIT_SSHKEY"`
+	GitSSHKey string `env:"GIT_SSH_KEY"`
 
 	RepoAuth transport.AuthMethod
 
@@ -353,9 +353,9 @@ func Run(ctx context.Context, options Options) error {
 			}
 		}()
 
-		if options.GitSsh {
-			if options.GitSshkey != "" {
-				privateKey, err := LoadPrivateKey(options.GitUsername, options.GitSshkey)
+		if options.GitSSH {
+			if options.GitSSHKey != "" {
+				privateKey, err := LoadPrivateKey(options.GitUsername, options.GitSSHKey)
 				if err != nil {
 					logf(codersdk.LogLevelError, "Failed to load private ssh key for Git: %s", err)
 				} else {

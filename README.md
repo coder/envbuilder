@@ -169,7 +169,7 @@ docker run -it --rm \
     -e GIT_URL=git@github.com:<username>/<project_name>.git \
     -e INIT_SCRIPT=bash \
     -e GIT_SSH=true \
-    -e GIT_SSHKEY=/root/.ssh \
+    -e GIT_SSH_KEY=/root/.ssh \
     envbuilder:latest
 
 # for Gerrit (needs to specify ssh key user)
@@ -179,7 +179,7 @@ docker run -it --rm \
     -e INIT_SCRIPT=bash \
     -e GIT_SSH=true \
     -e GIT_USERNAME=<gerrit_user> \
-    -e GIT_SSHKEY=/root/.ssh \
+    -e GIT_SSH_KEY=/root/.ssh \
     envbuilder:latest
 ```
 
