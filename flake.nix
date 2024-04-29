@@ -12,14 +12,13 @@
         pkgs = import nixpkgs {
           inherit system;
         };
-        devShellPackages = with pkgs; [
-          go_1_21
-        ];
       in
       {
         devShell = pkgs.mkShell {
           name = "devShell";
-          buildInputs = devShellPackages;
+          buildInputs = with pkgs; [
+            go_1_21
+          ];
         };
       }
     );
