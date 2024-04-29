@@ -8,13 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type testEnvCase struct {
-	Env      string
-	EnvValue string
-	Expected interface{}
-	Actual   func() interface{}
-}
-
 // TestEnvOptionParsing tests that given environment variables of different types are handled as expected.
 func TestEnvOptionParsing(t *testing.T) {
 	t.Setenv("SETUP_SCRIPT", "setup.sh")
