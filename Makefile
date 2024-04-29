@@ -7,6 +7,9 @@ develop:
 build: scripts/envbuilder-$(GOARCH)
 	./scripts/build.sh
 
+docs: options.go
+	go run ./scripts/docsgen/main.go
+
 .PHONY: test
 test: test-registry test-images
 	go test -count=1 ./...

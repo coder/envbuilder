@@ -53,7 +53,7 @@ func (o *Options) CLI() serpent.OptionSet {
 			Value: serpent.StringOf(&o.SetupScript),
 			Description: "The script to run before the init script. It runs as " +
 				"the root user regardless of the user specified in the devcontainer.json " +
-				"file.\n\nSetupScript is ran as the root user prior to the init script. " +
+				"file. SetupScript is ran as the root user prior to the init script. " +
 				"It is used to configure envbuilder dynamically during the runtime. e.g. " +
 				"specifying whether to start systemd or tiny init for PID 1.",
 		},
@@ -271,4 +271,21 @@ func (o *Options) CLI() serpent.OptionSet {
 				"this script and execute it after successful startup.",
 		},
 	}
+}
+
+func (o *Options) Markdown() string {
+	cliOptions := o.CLI()
+	mkd := "| Environment variable | Default | Description |\n" +
+		"| - | - | - |\n"
+
+	for _, opt := range cliOptions {
+		d := opt.Default
+		if d != "" {
+
+			d = "`" + d + "`"
+		}
+		mkd += "| `" + opt.Env + "` | " + d + " | " + opt.Description + " |\n"
+	}
+
+	return mkd
 }
