@@ -427,8 +427,7 @@ func Run(ctx context.Context, options Options) error {
 
 		// It's possible that the container will already have files in it, and
 		// we don't want to merge a new container with the old one.
-		err = util.DeleteFilesystem()
-		if err != nil {
+		if err := maybeDeleteFilesystem(options.ForceSafe); err != nil {
 			return nil, fmt.Errorf("delete filesystem: %w", err)
 		}
 
@@ -1062,4 +1061,28 @@ func findDevcontainerJSON(options Options) (string, string, error) {
 	}
 
 	return "", "", errors.New("can't find devcontainer.json, is it a correct spec?")
+}
+
+// maybeDeleteFilesystem wraps util.DeleteFilesystem with a guard to hopefully stop
+// folks from unwittingly deleting their entire root directory.
+func maybeDeleteFilesystem(force bool) error {
+	kanikoDir, ok := os.LookupEnv("KANIKO_DIR")
+	if !ok || strings.TrimSpace(kanikoDir) != MagicDir {
+		if force {
+			bailoutSecs := 10
+			_, _ = fmt.Fprintln(os.Stderr, "WARNING! BYPASSING SAFETY CHECK! THIS WILL DELETE YOUR ROOT FILESYSTEM!")
+			_, _ = fmt.Fprintf(os.Stderr, "You have %d seconds to bail out", bailoutSecs)
+			for i := 0; i < bailoutSecs; i++ {
+				_, _ = fmt.Fprintf(os.Stderr, ".")
+				<-time.After(time.Second)
+			}
+			_, _ = fmt.Fprintf(os.Stderr, "\n")
+		} else {
+			_, _ = fmt.Fprintf(os.Stderr, "KANIKO_DIR is not set to %s. Bailing!\n", MagicDir)
+			_, _ = fmt.Fprintln(os.Stderr, "To bypass this check, set FORCE_SAFE=true.")
+			return errors.New("safety check failed")
+		}
+	}
+
+	return util.DeleteFilesystem()
 }

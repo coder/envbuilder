@@ -47,6 +47,12 @@ $ vim .devcontainer/Dockerfile
 
 Exit the container, and re-run the `docker run` command... after the build completes, `htop` should exist in the container! 🥳
 
+> [!NOTE]
+> Envbuilder performs destructive filesystem operations! To guard against accidental data
+> loss, it will refuse to run if it detects that KANIKO_DIR is not set to a specific value.
+> If you need to bypass this behavior for any reason, you can bypass this safety check by setting
+> `FORCE_SAFE=true`.
+
 ### Git Branch Selection
 
 Choose a branch using `GIT_URL` with a _ref/heads_ reference. For instance:
