@@ -77,184 +77,14 @@ var (
 	MagicFile = filepath.Join(MagicDir, "built")
 )
 
-type Options struct {
-	// SetupScript is the script to run before the init script.
-	// It runs as the root user regardless of the user specified
-	// in the devcontainer.json file.
-
-	// SetupScript is ran as the root user prior to the init script.
-	// It is used to configure envbuilder dynamically during the runtime.
-	// e.g. specifying whether to start `systemd` or `tiny init` for PID 1.
-	SetupScript string `env:"SETUP_SCRIPT"`
-
-	// InitScript is the script to run to initialize the workspace.
-	InitScript string `env:"INIT_SCRIPT"`
-
-	// InitCommand is the command to run to initialize the workspace.
-	InitCommand string `env:"INIT_COMMAND"`
-
-	// InitArgs are the arguments to pass to the init command.
-	// They are split according to `/bin/sh` rules with
-	// https://github.com/kballard/go-shellquote
-	InitArgs string `env:"INIT_ARGS"`
-
-	// CacheRepo is the name of the container registry
-	// to push the cache image to. If this is empty, the cache
-	// will not be pushed.
-	CacheRepo string `env:"CACHE_REPO"`
-
-	// BaseImageCacheDir is the path to a directory where the base
-	// image can be found. This should be a read-only directory
-	// solely mounted for the purpose of caching the base image.
-	BaseImageCacheDir string `env:"BASE_IMAGE_CACHE_DIR"`
-
-	// LayerCacheDir is the path to a directory where built layers
-	// will be stored. This spawns an in-memory registry to serve
-	// the layers from.
-	//
-	// It will override CacheRepo if both are specified.
-	LayerCacheDir string `env:"LAYER_CACHE_DIR"`
-
-	// DevcontainerDir is a path to the folder containing
-	// the devcontainer.json file that will be used to build the
-	// workspace and can either be an absolute path or a path
-	// relative to the workspace folder. If not provided, defaults to
-	// `.devcontainer`.
-	DevcontainerDir string `env:"DEVCONTAINER_DIR"`
-
-	// DevcontainerJSONPath is a path to a devcontainer.json file
-	// that is either an absolute path or a path relative to
-	// DevcontainerDir. This can be used in cases where one wants
-	// to substitute an edited devcontainer.json file for the one
-	// that exists in the repo.
-	// If neither `DevcontainerDir` nor `DevcontainerJSONPath` is provided,
-	// envbuilder will browse following directories to locate it:
-	// 1. `.devcontainer/devcontainer.json`
-	// 2. `.devcontainer.json`
-	// 3. `.devcontainer/<folder>/devcontainer.json`
-	DevcontainerJSONPath string `env:"DEVCONTAINER_JSON_PATH"`
-
-	// DockerfilePath is a relative path to the Dockerfile that
-	// will be used to build the workspace. This is an alternative
-	// to using a devcontainer that some might find simpler.
-	DockerfilePath string `env:"DOCKERFILE_PATH"`
-
-	// BuildContextPath can be specified when a DockerfilePath is specified outside the base WorkspaceFolder.
-	// This path MUST be relative to the WorkspaceFolder path into which the repo is cloned.
-	BuildContextPath string `env:"BUILD_CONTEXT_PATH"`
-
-	// CacheTTLDays is the number of days to use cached layers before
-	// expiring them. Defaults to 7 days.
-	CacheTTLDays int `env:"CACHE_TTL_DAYS"`
-
-	// DockerConfigBase64 is a base64 encoded Docker config
-	// file that will be used to pull images from private
-	// container registries.
-	DockerConfigBase64 string `env:"DOCKER_CONFIG_BASE64"`
-
-	// FallbackImage specifies an alternative image to use when neither
-	// an image is declared in the devcontainer.json file nor a Dockerfile is present.
-	// If there's a build failure (from a faulty Dockerfile) or a misconfiguration,
-	// this image will be the substitute.
-	// Set `ExitOnBuildFailure` to true to halt the container if the build faces an issue.
-	FallbackImage string `env:"FALLBACK_IMAGE"`
-
-	// ExitOnBuildFailure terminates the container upon a build failure.
-	// This is handy when preferring the `FALLBACK_IMAGE` in cases where
-	// no devcontainer.json or image is provided. However, it ensures
-	// that the container stops if the build process encounters an error.
-	ExitOnBuildFailure bool `env:"EXIT_ON_BUILD_FAILURE"`
-
-	// ForceSafe ignores any filesystem safety checks.
-	// This could cause serious harm to your system!
-	// This is used in cases where bypass is needed
-	// to unblock customers!
-	ForceSafe bool `env:"FORCE_SAFE"`
-
-	// Insecure bypasses TLS verification when cloning
-	// and pulling from container registries.
-	Insecure bool `env:"INSECURE"`
-
-	// IgnorePaths is a comma separated list of paths
-	// to ignore when building the workspace.
-	IgnorePaths []string `env:"IGNORE_PATHS"`
-
-	// SkipRebuild skips building if the MagicFile exists.
-	// This is used to skip building when a container is
-	// restarting. e.g. docker stop -> docker start
-	// This value can always be set to true - even if the
-	// container is being started for the first time.
-	SkipRebuild bool `env:"SKIP_REBUILD"`
-
-	// GitURL is the URL of the Git repository to clone.
-	// This is optional!
-	GitURL string `env:"GIT_URL"`
-
-	// GitCloneDepth is the depth to use when cloning
-	// the Git repository.
-	GitCloneDepth int `env:"GIT_CLONE_DEPTH"`
-
-	// GitCloneSingleBranch clones only a single branch
-	// of the Git repository.
-	GitCloneSingleBranch bool `env:"GIT_CLONE_SINGLE_BRANCH"`
-
-	// GitUsername is the username to use for Git authentication.
-	// This is optional!
-	GitUsername string `env:"GIT_USERNAME"`
-
-	// GitPassword is the password to use for Git authentication.
-	// This is optional!
-	GitPassword string `env:"GIT_PASSWORD"`
-
-	// GitHTTPProxyURL is the url for the http proxy.
-	// This is optional!
-	GitHTTPProxyURL string `env:"GIT_HTTP_PROXY_URL"`
-
-	// WorkspaceFolder is the path to the workspace folder
-	// that will be built. This is optional!
-	WorkspaceFolder string `env:"WORKSPACE_FOLDER"`
-
-	// SSLCertBase64 is the content of an SSL cert file.
-	// This is useful for self-signed certificates.
-	SSLCertBase64 string `env:"SSL_CERT_BASE64"`
-
-	// ExportEnvFile is an optional file path to a .env file where
-	// envbuilder will dump environment variables from devcontainer.json and
-	// the built container image.
-	ExportEnvFile string `env:"EXPORT_ENV_FILE"`
-
-	// PostStartScriptPath is the path to a script that will be created by
-	// envbuilder based on the `postStartCommand` in devcontainer.json, if any
-	// is specified (otherwise the script is not created). If this is set, the
-	// specified InitCommand should check for the presence of this script and
-	// execute it after successful startup.
-	PostStartScriptPath string `env:"POST_START_SCRIPT_PATH"`
-
-	// Logger is the logger to use for all operations.
-	Logger func(level codersdk.LogLevel, format string, args ...interface{})
-
-	// Filesystem is the filesystem to use for all operations.
-	// Defaults to the host filesystem.
-	Filesystem billy.Filesystem
-}
-
 // DockerConfig represents the Docker configuration file.
 type DockerConfig configfile.ConfigFile
 
 // Run runs the envbuilder.
+// Logger is the logf to use for all operations.
+// Filesystem is the filesystem to use for all operations.
+// Defaults to the host filesystem.
 func Run(ctx context.Context, options Options) error {
-	if options.InitScript == "" {
-		options.InitScript = "sleep infinity"
-	}
-	if options.InitCommand == "" {
-		options.InitCommand = "/bin/sh"
-	}
-	if options.IgnorePaths == nil {
-		// Kubernetes frequently stores secrets in /var/run/secrets, and
-		// other applications might as well. This seems to be a sensible
-		// default, but if that changes, it's simple to adjust.
-		options.IgnorePaths = []string{"/var/run"}
-	}
 	// Default to the shell!
 	initArgs := []string{"-c", options.InitScript}
 	if options.InitArgs != "" {
@@ -268,26 +98,26 @@ func Run(ctx context.Context, options Options) error {
 		options.Filesystem = &osfsWithChmod{osfs.New("/")}
 	}
 	if options.WorkspaceFolder == "" {
-		var err error
-		options.WorkspaceFolder, err = DefaultWorkspaceFolder(options.GitURL)
+		f, err := DefaultWorkspaceFolder(options.GitURL)
 		if err != nil {
 			return err
 		}
+		options.WorkspaceFolder = f
 	}
-	logf := options.Logger
+
 	stageNumber := 1
-	startStage := func(format string, args ...interface{}) func(format string, args ...interface{}) {
+	startStage := func(format string, args ...any) func(format string, args ...any) {
 		now := time.Now()
 		stageNum := stageNumber
 		stageNumber++
-		logf(codersdk.LogLevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
+		options.Logger(codersdk.LogLevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
 
-		return func(format string, args ...interface{}) {
-			logf(codersdk.LogLevelInfo, "#%d: %s [%s]", stageNum, fmt.Sprintf(format, args...), time.Since(now))
+		return func(format string, args ...any) {
+			options.Logger(codersdk.LogLevelInfo, "#%d: %s [%s]", stageNum, fmt.Sprintf(format, args...), time.Since(now))
 		}
 	}
 
-	logf(codersdk.LogLevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
+	options.Logger(codersdk.LogLevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
 
 	var caBundle []byte
 	if options.SSLCertBase64 != "" {
@@ -349,7 +179,7 @@ func Run(ctx context.Context, options Options) error {
 					if line == "" {
 						continue
 					}
-					logf(codersdk.LogLevelInfo, "#1: %s", strings.TrimSpace(line))
+					options.Logger(codersdk.LogLevelInfo, "#1: %s", strings.TrimSpace(line))
 				}
 			}
 		}()
@@ -360,7 +190,7 @@ func Run(ctx context.Context, options Options) error {
 			Insecure:     options.Insecure,
 			Progress:     writer,
 			SingleBranch: options.GitCloneSingleBranch,
-			Depth:        options.GitCloneDepth,
+			Depth:        int(options.GitCloneDepth),
 			CABundle:     caBundle,
 		}
 
@@ -387,8 +217,8 @@ func Run(ctx context.Context, options Options) error {
 				endStage("📦 The repository already exists!")
 			}
 		} else {
-			logf(codersdk.LogLevelError, "Failed to clone repository: %s", fallbackErr.Error())
-			logf(codersdk.LogLevelError, "Falling back to the default image...")
+			options.Logger(codersdk.LogLevelError, "Failed to clone repository: %s", fallbackErr.Error())
+			options.Logger(codersdk.LogLevelError, "Falling back to the default image...")
 		}
 	}
 
@@ -428,8 +258,8 @@ func Run(ctx context.Context, options Options) error {
 		// devcontainer is a standard, so it's reasonable to be the default.
 		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(options)
 		if err != nil {
-			logf(codersdk.LogLevelError, "Failed to locate devcontainer.json: %s", err.Error())
-			logf(codersdk.LogLevelError, "Falling back to the default image...")
+			options.Logger(codersdk.LogLevelError, "Failed to locate devcontainer.json: %s", err.Error())
+			options.Logger(codersdk.LogLevelError, "Falling back to the default image...")
 		} else {
 			// We know a devcontainer exists.
 			// Let's parse it and use it!
@@ -450,7 +280,7 @@ func Run(ctx context.Context, options Options) error {
 					if err != nil {
 						return fmt.Errorf("no Dockerfile or image found: %w", err)
 					}
-					logf(codersdk.LogLevelInfo, "No Dockerfile or image specified; falling back to the default image...")
+					options.Logger(codersdk.LogLevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
 				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir, fallbackDockerfile, options.WorkspaceFolder, false)
@@ -459,8 +289,8 @@ func Run(ctx context.Context, options Options) error {
 				}
 				scripts = devContainer.LifecycleScripts
 			} else {
-				logf(codersdk.LogLevelError, "Failed to parse devcontainer.json: %s", err.Error())
-				logf(codersdk.LogLevelError, "Falling back to the default image...")
+				options.Logger(codersdk.LogLevelError, "Failed to parse devcontainer.json: %s", err.Error())
+				options.Logger(codersdk.LogLevelError, "Falling back to the default image...")
 			}
 		}
 	} else {
@@ -471,8 +301,8 @@ func Run(ctx context.Context, options Options) error {
 		// not defined, show a warning
 		dockerfileDir := filepath.Dir(dockerfilePath)
 		if dockerfileDir != filepath.Clean(options.WorkspaceFolder) && options.BuildContextPath == "" {
-			logf(codersdk.LogLevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, options.WorkspaceFolder)
-			logf(codersdk.LogLevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
+			options.Logger(codersdk.LogLevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, options.WorkspaceFolder)
+			options.Logger(codersdk.LogLevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
 		}
 
 		dockerfile, err := options.Filesystem.Open(dockerfilePath)
@@ -501,7 +331,7 @@ func Run(ctx context.Context, options Options) error {
 
 	HijackLogrus(func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
-			logf(codersdk.LogLevelInfo, "#2: %s", color.HiBlackString(line))
+			options.Logger(codersdk.LogLevelInfo, "#2: %s", color.HiBlackString(line))
 		}
 	})
 
@@ -517,9 +347,9 @@ func Run(ctx context.Context, options Options) error {
 		}
 
 		// Disable all logging from the registry...
-		logger := logrus.New()
-		logger.SetOutput(io.Discard)
-		entry := logrus.NewEntry(logger)
+		l := logrus.New()
+		l.SetOutput(io.Discard)
+		entry := logrus.NewEntry(l)
 		dcontext.SetDefaultLogger(entry)
 		ctx = dcontext.WithLogger(ctx, entry)
 
@@ -540,7 +370,7 @@ func Run(ctx context.Context, options Options) error {
 		go func() {
 			err := srv.Serve(listener)
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				logf(codersdk.LogLevelError, "Failed to serve registry: %s", err.Error())
+				options.Logger(codersdk.LogLevelError, "Failed to serve registry: %s", err.Error())
 			}
 		}()
 		closeAfterBuild = func() {
@@ -548,7 +378,7 @@ func Run(ctx context.Context, options Options) error {
 			_ = listener.Close()
 		}
 		if options.CacheRepo != "" {
-			logf(codersdk.LogLevelWarn, "Overriding cache repo with local registry...")
+			options.Logger(codersdk.LogLevelWarn, "Overriding cache repo with local registry...")
 		}
 		options.CacheRepo = fmt.Sprintf("localhost:%d/local/cache", tcpAddr.Port)
 	}
@@ -611,13 +441,13 @@ func Run(ctx context.Context, options Options) error {
 		go func() {
 			scanner := bufio.NewScanner(stdoutReader)
 			for scanner.Scan() {
-				logf(codersdk.LogLevelInfo, "%s", scanner.Text())
+				options.Logger(codersdk.LogLevelInfo, "%s", scanner.Text())
 			}
 		}()
 		go func() {
 			scanner := bufio.NewScanner(stderrReader)
 			for scanner.Scan() {
-				logf(codersdk.LogLevelInfo, "%s", scanner.Text())
+				options.Logger(codersdk.LogLevelInfo, "%s", scanner.Text())
 			}
 		}()
 		cacheTTL := time.Hour * 24 * 7
@@ -697,13 +527,13 @@ func Run(ctx context.Context, options Options) error {
 			fallback = true
 			fallbackErr = err
 		case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
-			logf(codersdk.LogLevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
+			options.Logger(codersdk.LogLevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
 		}
 		if !fallback || options.ExitOnBuildFailure {
 			return err
 		}
-		logf(codersdk.LogLevelError, "Failed to build: %s", err)
-		logf(codersdk.LogLevelError, "Falling back to the default image...")
+		options.Logger(codersdk.LogLevelError, "Failed to build: %s", err)
+		options.Logger(codersdk.LogLevelError, "Falling back to the default image...")
 		buildParams, err = defaultBuildParams()
 		if err != nil {
 			return err
@@ -746,10 +576,10 @@ func Run(ctx context.Context, options Options) error {
 		if err != nil {
 			return fmt.Errorf("unmarshal metadata: %w", err)
 		}
-		logf(codersdk.LogLevelInfo, "#3: 👀 Found devcontainer.json label metadata in image...")
+		options.Logger(codersdk.LogLevelInfo, "#3: 👀 Found devcontainer.json label metadata in image...")
 		for _, container := range devContainer {
 			if container.RemoteUser != "" {
-				logf(codersdk.LogLevelInfo, "#3: 🧑 Updating the user to %q!", container.RemoteUser)
+				options.Logger(codersdk.LogLevelInfo, "#3: 🧑 Updating the user to %q!", container.RemoteUser)
 
 				configFile.Config.User = container.RemoteUser
 			}
@@ -844,7 +674,7 @@ func Run(ctx context.Context, options Options) error {
 		username = buildParams.User
 	}
 	if username == "" {
-		logf(codersdk.LogLevelWarn, "#3: no user specified, using root")
+		options.Logger(codersdk.LogLevelWarn, "#3: no user specified, using root")
 	}
 
 	userInfo, err := getUser(username)
@@ -899,7 +729,7 @@ func Run(ctx context.Context, options Options) error {
 		// We execute the initialize script as the root user!
 		os.Setenv("HOME", "/root")
 
-		logf(codersdk.LogLevelInfo, "=== Running the setup command %q as the root user...", options.SetupScript)
+		options.Logger(codersdk.LogLevelInfo, "=== Running the setup command %q as the root user...", options.SetupScript)
 
 		envKey := "ENVBUILDER_ENV"
 		envFile := filepath.Join("/", MagicDir, "environ")
@@ -926,7 +756,7 @@ func Run(ctx context.Context, options Options) error {
 			go func() {
 				scanner := bufio.NewScanner(&buf)
 				for scanner.Scan() {
-					logf(codersdk.LogLevelInfo, "%s", scanner.Text())
+					options.Logger(codersdk.LogLevelInfo, "%s", scanner.Text())
 				}
 			}()
 
@@ -992,7 +822,7 @@ func Run(ctx context.Context, options Options) error {
 		return fmt.Errorf("set uid: %w", err)
 	}
 
-	logf(codersdk.LogLevelInfo, "=== Running the init command %s %+v as the %q user...", options.InitCommand, initArgs, userInfo.user.Username)
+	options.Logger(codersdk.LogLevelInfo, "=== Running the init command %s %+v as the %q user...", options.InitCommand, initArgs, userInfo.user.Username)
 
 	err = syscall.Exec(options.InitCommand, append([]string{options.InitCommand}, initArgs...), os.Environ())
 	if err != nil {
@@ -1065,7 +895,7 @@ func findUser(nameOrID string) (*user.User, error) {
 
 func execOneLifecycleScript(
 	ctx context.Context,
-	logf func(level codersdk.LogLevel, format string, args ...interface{}),
+	logf func(level codersdk.LogLevel, format string, args ...any),
 	s devcontainer.LifecycleScript,
 	scriptName string,
 	userInfo userInfo,
@@ -1137,43 +967,6 @@ func createPostStartScript(path string, postStartCommand devcontainer.LifecycleS
 	return nil
 }
 
-// OptionsFromEnv returns a set of options from environment variables.
-func OptionsFromEnv(getEnv func(string) (string, bool)) Options {
-	options := Options{}
-
-	val := reflect.ValueOf(&options).Elem()
-	typ := val.Type()
-
-	for i := 0; i < val.NumField(); i++ {
-		field := val.Field(i)
-		fieldTyp := typ.Field(i)
-		env := fieldTyp.Tag.Get("env")
-		if env == "" {
-			continue
-		}
-		e, ok := getEnv(env)
-		if !ok {
-			continue
-		}
-		switch fieldTyp.Type.Kind() {
-		case reflect.String:
-			field.SetString(e)
-		case reflect.Bool:
-			v, _ := strconv.ParseBool(e)
-			field.SetBool(v)
-		case reflect.Int:
-			v, _ := strconv.ParseInt(e, 10, 64)
-			field.SetInt(v)
-		case reflect.Slice:
-			field.Set(reflect.ValueOf(strings.Split(e, ",")))
-		default:
-			panic(fmt.Sprintf("unsupported type %s in OptionsFromEnv", fieldTyp.Type.String()))
-		}
-	}
-
-	return options
-}
-
 // unsetOptionsEnv unsets all environment variables that are used
 // to configure the options.
 func unsetOptionsEnv() {
@@ -1211,6 +1004,7 @@ func findDevcontainerJSON(options Options) (string, string, error) {
 		if devcontainerDir == "" {
 			devcontainerDir = ".devcontainer"
 		}
+
 		// If `devcontainerDir` is not an absolute path, assume it is relative to the workspace folder.
 		if !filepath.IsAbs(devcontainerDir) {
 			devcontainerDir = filepath.Join(options.WorkspaceFolder, devcontainerDir)
@@ -1252,16 +1046,15 @@ func findDevcontainerJSON(options Options) (string, string, error) {
 		return "", "", err
 	}
 
-	logf := options.Logger
 	for _, fileInfo := range fileInfos {
 		if !fileInfo.IsDir() {
-			logf(codersdk.LogLevelDebug, `%s is a file`, fileInfo.Name())
+			options.Logger(codersdk.LogLevelDebug, `%s is a file`, fileInfo.Name())
 			continue
 		}
 
 		location := filepath.Join(devcontainerDir, fileInfo.Name(), "devcontainer.json")
 		if _, err := options.Filesystem.Stat(location); err != nil {
-			logf(codersdk.LogLevelDebug, `stat %s failed: %s`, location, err.Error())
+			options.Logger(codersdk.LogLevelDebug, `stat %s failed: %s`, location, err.Error())
 			continue
 		}
 

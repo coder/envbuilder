@@ -14,7 +14,7 @@ import (
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/coder/v2/codersdk/agentsdk"
 	"github.com/coder/envbuilder"
-	"github.com/spf13/cobra"
+	"github.com/coder/serpent"
 
 	// *Never* remove this. Certificates are not bundled as part
 	// of the container, so this is necessary for all connections
@@ -23,15 +23,11 @@ import (
 )
 
 func main() {
-	root := &cobra.Command{
-		Use: "envbuilder",
-		// Hide usage because we don't want to show the
-		// "envbuilder [command] --help" output on error.
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			options := envbuilder.OptionsFromEnv(os.LookupEnv)
-
+	var options envbuilder.Options
+	cmd := serpent.Command{
+		Use:     "envbuilder",
+		Options: options.CLI(),
+		Handler: func(inv *serpent.Invocation) error {
 			var sendLogs func(ctx context.Context, log ...agentsdk.Log) error
 			agentURL := os.Getenv("CODER_AGENT_URL")
 			agentToken := os.Getenv("CODER_AGENT_TOKEN")
@@ -54,7 +50,7 @@ func main() {
 				}
 				var flushAndClose func(ctx context.Context) error
 				sendLogs, flushAndClose = agentsdk.LogsSender(agentsdk.ExternalLogSourceID, client.PatchLogs, slog.Logger{})
-				defer flushAndClose(cmd.Context())
+				defer flushAndClose(inv.Context())
 
 				// This adds the envbuilder subsystem.
 				// If telemetry is enabled in a Coder deployment,
@@ -70,23 +66,24 @@ func main() {
 
 			options.Logger = func(level codersdk.LogLevel, format string, args ...interface{}) {
 				output := fmt.Sprintf(format, args...)
-				fmt.Fprintln(cmd.ErrOrStderr(), output)
+				fmt.Fprintln(inv.Stderr, output)
 				if sendLogs != nil {
-					sendLogs(cmd.Context(), agentsdk.Log{
+					sendLogs(inv.Context(), agentsdk.Log{
 						CreatedAt: time.Now(),
 						Output:    output,
 						Level:     level,
 					})
 				}
 			}
-			err := envbuilder.Run(cmd.Context(), options)
+
+			err := envbuilder.Run(inv.Context(), options)
 			if err != nil {
 				options.Logger(codersdk.LogLevelError, "error: %s", err)
 			}
 			return err
 		},
 	}
-	err := root.Execute()
+	err := cmd.Invoke().WithOS().Run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v", err)
 		os.Exit(1)
