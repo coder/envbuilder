@@ -1,6 +1,7 @@
 package envbuilder_test
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/coder/envbuilder"
@@ -8,58 +9,57 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestStrEnvOptions tests that string env variables can be handled as expected.
-func TestStrEnvOptions(t *testing.T) {
-	t.Setenv("SETUP_SCRIPT", "setup.sh")
-	t.Setenv("INIT_COMMAND", "sleep infinity")
+// TestEnvOptionParsing tests that given environment variables of different types are handled as expected.
+func TestTestEnvOptionParsing(t *testing.T) {
+	t.Run("string", func(t *testing.T) {
+		t.Setenv("SETUP_SCRIPT", "setup.sh")
+		t.Setenv("INIT_COMMAND", "sleep infinity")
 
-	var o envbuilder.Options
-	err := runCLI(&o)
-	require.NoError(t, err)
+		var o envbuilder.Options
+		err := runCLI(&o)
+		require.NoError(t, err)
 
-	require.Equal(t, o.SetupScript, "setup.sh")
-	require.Equal(t, o.InitCommand, "sleep infinity")
-}
+		require.Equal(t, o.SetupScript, "setup.sh")
+		require.Equal(t, o.InitCommand, "sleep infinity")
+	})
 
-// TestIntEnvOptions tests that numeric env variables can be handled as expected.
-func TestIntEnvOptions(t *testing.T) {
-	t.Setenv("CACHE_TTL_DAYS", "7")
+	t.Run("int", func(t *testing.T) {
+		t.Setenv("CACHE_TTL_DAYS", "7")
 
-	var o envbuilder.Options
-	err := runCLI(&o)
-	require.NoError(t, err)
+		var o envbuilder.Options
+		err := runCLI(&o)
+		require.NoError(t, err)
 
-	require.Equal(t, o.CacheTTLDays, 7)
-}
+		require.Equal(t, o.CacheTTLDays, int64(7))
+	})
 
-// TestMultipleStrEnvOptions tests that numeric env variables can be handled as expected.
-func TestMultipleStrEnvOptions(t *testing.T) {
-	t.Setenv("CACHE_TTL_DAYS", "7")
+	t.Run("string array", func(t *testing.T) {
+		t.Setenv("IGNORE_PATHS", "/var,/temp")
 
-	var o envbuilder.Options
-	err := runCLI(&o)
-	require.NoError(t, err)
+		var o envbuilder.Options
+		err := runCLI(&o)
+		require.NoError(t, err)
 
-	require.Equal(t, o.CacheTTLDays, 7)
-}
+		require.Equal(t, o.IgnorePaths, []string{"/var", "/temp"})
+	})
 
-// TestBoolEnvOptions tests that boolean env variables can be handled as expected.
-func TestBoolEnvOptions(t *testing.T) {
-	t.Setenv("SKIP_REBUILD", "true")
-	t.Setenv("GIT_CLONE_SINGLE_BRANCH", "")
-	t.Setenv("EXIT_ON_BUILD_FAILURE", "false")
-	t.Setenv("FORCE_SAFE", "TRUE")
-	t.Setenv("INSECURE", "FALSE")
+	t.Run("bool", func(t *testing.T) {
+		t.Setenv("SKIP_REBUILD", "true")
+		t.Setenv("GIT_CLONE_SINGLE_BRANCH", "false")
+		t.Setenv("EXIT_ON_BUILD_FAILURE", "true")
+		t.Setenv("FORCE_SAFE", "false")
+		t.Setenv("INSECURE", "true")
 
-	var o envbuilder.Options
-	err := runCLI(&o)
-	require.NoError(t, err)
+		var o envbuilder.Options
+		err := runCLI(&o)
+		require.NoError(t, err)
 
-	require.True(t, o.SkipRebuild)
-	require.False(t, o.GitCloneSingleBranch)
-	require.False(t, o.ExitOnBuildFailure)
-	require.True(t, o.ForceSafe)
-	require.False(t, o.Insecure)
+		require.True(t, o.SkipRebuild)
+		require.False(t, o.GitCloneSingleBranch)
+		require.True(t, o.ExitOnBuildFailure)
+		require.False(t, o.ForceSafe)
+		require.True(t, o.Insecure)
+	})
 }
 
 func runCLI(o *envbuilder.Options) error {
@@ -69,6 +69,22 @@ func runCLI(o *envbuilder.Options) error {
 			return nil
 		},
 	}
-	err := cmd.Invoke().WithOS().Run()
+	i := cmd.Invoke().WithOS()
+	fakeIO(i)
+	err := i.Run()
 	return err
+}
+
+type ioBufs struct {
+	Stdin  bytes.Buffer
+	Stdout bytes.Buffer
+	Stderr bytes.Buffer
+}
+
+func fakeIO(i *serpent.Invocation) *ioBufs {
+	var b ioBufs
+	i.Stdout = &b.Stdout
+	i.Stderr = &b.Stderr
+	i.Stdin = &b.Stdin
+	return &b
 }
