@@ -244,6 +244,8 @@ On MacOS or Windows systems, we recommend either using a VM or the provided `.de
 - `make`
 - Docker daemon (for running tests)
 
+Or alternativly use `nix develop`
+
 **Makefile targets:**
 
 - `build`: builds and tags `envbuilder:latest` for your current architecture.
