@@ -1069,7 +1069,14 @@ func maybeDeleteFilesystem(force bool) error {
 	kanikoDir, ok := os.LookupEnv("KANIKO_DIR")
 	if !ok || strings.TrimSpace(kanikoDir) != MagicDir {
 		if force {
-			_, _ = fmt.Fprintf(os.Stderr, "WARNING! BYPASSING SAFETY CHECK! THIS WILL DELETE %s!\n", kanikoDir)
+			bailoutSecs := 10
+			_, _ = fmt.Fprintln(os.Stderr, "WARNING! BYPASSING SAFETY CHECK! THIS WILL DELETE YOUR ROOT FILESYSTEM!")
+			_, _ = fmt.Fprintf(os.Stderr, "You have %d seconds to bail out", bailoutSecs)
+			for i := 0; i < bailoutSecs; i++ {
+				_, _ = fmt.Fprintf(os.Stderr, ".")
+				<-time.After(time.Second)
+			}
+			_, _ = fmt.Fprintf(os.Stderr, "\n")
 		} else {
 			_, _ = fmt.Fprintf(os.Stderr, "KANIKO_DIR is not set to %s. Bailing!\n", MagicDir)
 			_, _ = fmt.Fprintln(os.Stderr, "To bypass this check, set FORCE_SAFE=true.")
