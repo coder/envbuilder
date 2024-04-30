@@ -1,6 +1,11 @@
 package envbuilder
 
 import (
+	"fmt"
+	"go/doc"
+	"go/parser"
+	"go/token"
+
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/serpent"
 	"github.com/go-git/go-billy/v5"
@@ -46,6 +51,39 @@ type Options struct {
 
 // Generate CLI options for the envbuilder command.
 func (o *Options) CLI() serpent.OptionSet {
+	fset := token.NewFileSet()
+	d, err := parser.ParseDir(fset, "./", nil, parser.ParseComments)
+	if err != nil {
+		panic(fmt.Sprintf("error parsing options.go: %v", err))
+	}
+	for k, f := range d {
+		if k != "envbuilder" {
+			continue
+		}
+		p := doc.New(f, "./", 2)
+
+		for _, t := range p.Types {
+			if t.Name != "Options" {
+				continue
+			}
+			// Not sure what to do here
+		}
+
+		// for _, v := range p.Vars {
+		// 	fmt.Println("type", v.Names)
+		// 	fmt.Println("docs:", v.Doc)
+		// }
+
+		// for _, f := range p.Funcs {
+		// 	fmt.Println("type", f.Name)
+		// 	fmt.Println("docs:", f.Doc)
+		// }
+
+		// for _, n := range p.Notes {
+		// 	fmt.Println("body", n[0].Body)
+		// }
+	}
+
 	return serpent.OptionSet{
 		{
 			Flag:  "setup-script",
