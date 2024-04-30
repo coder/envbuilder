@@ -23,7 +23,7 @@ require (
 	github.com/coder/serpent v0.7.0
 	github.com/containerd/containerd v1.7.11
 	github.com/distribution/distribution/v3 v3.0.0-20230629214736-bac7f02e02a1
-	github.com/docker/cli v23.0.5+incompatible
+	github.com/docker/cli v26.1.0+incompatible
 	github.com/docker/docker v23.0.8+incompatible
 	github.com/fatih/color v1.16.0
 	github.com/go-git/go-billy/v5 v5.5.0
