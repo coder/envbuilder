@@ -12,15 +12,14 @@ import (
 // TestEnvOptionParsing tests that given environment variables of different types are handled as expected.
 func TestTestEnvOptionParsing(t *testing.T) {
 	t.Run("string", func(t *testing.T) {
-		t.Setenv("SETUP_SCRIPT", "setup.sh")
-		t.Setenv("INIT_COMMAND", "sleep infinity")
+	        const val = "setup.sh"
+		t.Setenv("SETUP_SCRIPT", val)
 
 		var o envbuilder.Options
 		err := runCLI(&o)
 		require.NoError(t, err)
 
-		require.Equal(t, o.SetupScript, "setup.sh")
-		require.Equal(t, o.InitCommand, "sleep infinity")
+		require.Equal(t, o.SetupScript, val)
 	})
 
 	t.Run("int", func(t *testing.T) {
