@@ -2,6 +2,8 @@ package envbuilder_test
 
 import (
 	"bytes"
+	"flag"
+	"os"
 	"testing"
 
 	"github.com/coder/envbuilder"
@@ -61,6 +63,40 @@ func TestEnvOptionParsing(t *testing.T) {
 			require.False(t, o.GitCloneSingleBranch)
 		})
 	})
+}
+
+// UpdateGoldenFiles indicates golden files should be updated.
+var updateCLIOutputGoldenFiles = flag.Bool("update", false, "update options CLI output .golden files")
+
+// TestCLIOutput tests that the default CLI output is as expected.
+func TestCLIOutput(t *testing.T) {
+	var o envbuilder.Options
+	cmd := serpent.Command{
+		Use:     "envbuilder",
+		Options: o.CLI(),
+		Handler: func(inv *serpent.Invocation) error {
+			return nil
+		},
+	}
+
+	var b ioBufs
+	i := cmd.Invoke("--help")
+	i.Stdout = &b.Stdout
+	i.Stderr = &b.Stderr
+	i.Stdin = &b.Stdin
+
+	err := i.Run()
+	require.NoError(t, err)
+
+	if *updateCLIOutputGoldenFiles {
+		err = os.WriteFile("testdata/options.golden", b.Stdout.Bytes(), 0644)
+		require.NoError(t, err)
+		t.Logf("updated golden file: testdata/options.golden")
+	} else {
+		golden, err := os.ReadFile("testdata/options.golden")
+		require.NoError(t, err)
+		require.Equal(t, string(golden), b.Stdout.String())
+	}
 }
 
 func runCLI() envbuilder.Options {
