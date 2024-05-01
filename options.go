@@ -2,6 +2,7 @@ package envbuilder
 
 import (
 	"net/url"
+	"strings"
 
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/serpent"
@@ -306,17 +307,25 @@ func (o *Options) CLI() serpent.OptionSet {
 
 func (o *Options) Markdown() string {
 	cliOptions := o.CLI()
-	mkd := "| Environment variable | Default | Description |\n" +
-		"| - | - | - |\n"
+	var sb strings.Builder
+	_, _ = sb.WriteString("| Flag | Environment variable | Default | Description |\n")
+	_, _ = sb.WriteString("| - | - | - | - |\n")
 
 	for _, opt := range cliOptions {
 		d := opt.Default
 		if d != "" {
-
 			d = "`" + d + "`"
 		}
-		mkd += "| `" + opt.Env + "` | " + d + " | " + opt.Description + " |\n"
+		_, _ = sb.WriteString("| `--")
+		_, _ = sb.WriteString(opt.Flag)
+		_, _ = sb.WriteString("` | `")
+		_, _ = sb.WriteString(opt.Env)
+		_, _ = sb.WriteString("` | ")
+		_, _ = sb.WriteString(d)
+		_, _ = sb.WriteString(" | ")
+		_, _ = sb.WriteString(opt.Description)
+		_, _ = sb.WriteString(" |\n")
 	}
 
-	return mkd
+	return sb.String()
 }
