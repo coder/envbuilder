@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"net"
 	"net/http"
@@ -604,9 +605,14 @@ func Run(ctx context.Context, options Options) error {
 
 	// Remove the Docker config secret file!
 	if options.DockerConfigBase64 != "" {
-		err = os.Remove(filepath.Join(MagicDir, "config.json"))
-		if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove docker config: %w", err)
+		c := filepath.Join(MagicDir, "config.json")
+		err = os.Remove(c)
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("remove docker config: %w", err)
+			} else {
+				fmt.Fprintln(os.Stderr, "failed to remove the Docker config secret file: %w", c)
+			}
 		}
 	}
 
