@@ -293,4 +293,7 @@ On MacOS or Windows systems, we recommend either using a VM or the provided `.de
 | `SSL_CERT_BASE64` |  | The content of an SSL cert file. This is useful for self-signed certificates. |
 | `EXPORT_ENV_FILE` |  | Optional file path to a .env file where envbuilder will dump environment variables from devcontainer.json and the built container image. |
 | `POST_START_SCRIPT_PATH` |  | The path to a script that will be created by envbuilder based on the postStartCommand in devcontainer.json, if any is specified (otherwise the script is not created). If this is set, the specified InitCommand should check for the presence of this script and execute it after successful startup. |
+| `CODER_AGENT_URL` |  | URL of the Coder deployment. If CODER_AGENT_TOKEN is also set, logs from envbuilder will be forwarded here and will be visible in the workspace build logs. |
+| `CODER_AGENT_TOKEN` |  | Authentication token for a Coder agent. If this is set, then CODER_AGENT_URL must also be set. |
+| `CODER_AGENT_SUBSYSTEM` |  | Coder agent subsystems to report when forwarding logs. The envbuilder subsystem is always included. |
 <!--- END docsgen --->

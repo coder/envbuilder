@@ -6,8 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
+	"slices"
+	"strings"
 	"time"
 
 	"cdr.dev/slog"
@@ -29,18 +30,12 @@ func main() {
 		Options: options.CLI(),
 		Handler: func(inv *serpent.Invocation) error {
 			var sendLogs func(ctx context.Context, log ...agentsdk.Log) error
-			agentURL := os.Getenv("CODER_AGENT_URL")
-			agentToken := os.Getenv("CODER_AGENT_TOKEN")
-			if agentToken != "" {
-				if agentURL == "" {
+			if options.CoderAgentToken != "" {
+				if options.CoderAgentURL == nil {
 					return errors.New("CODER_AGENT_URL must be set if CODER_AGENT_TOKEN is set")
 				}
-				parsed, err := url.Parse(agentURL)
-				if err != nil {
-					return err
-				}
-				client := agentsdk.New(parsed)
-				client.SetSessionToken(agentToken)
+				client := agentsdk.New(options.CoderAgentURL)
+				client.SetSessionToken(options.CoderAgentToken)
 				client.SDK.HTTPClient = &http.Client{
 					Transport: &http.Transport{
 						TLSClientConfig: &tls.Config{
@@ -56,12 +51,10 @@ func main() {
 				// If telemetry is enabled in a Coder deployment,
 				// this will be reported and help us understand
 				// envbuilder usage.
-				subsystems := os.Getenv("CODER_AGENT_SUBSYSTEM")
-				if subsystems != "" {
-					subsystems += ","
+				if !slices.Contains(options.CoderAgentSubsystem, string(codersdk.AgentSubsystemEnvbuilder)) {
+					options.CoderAgentSubsystem = append(options.CoderAgentSubsystem, string(codersdk.AgentSubsystemEnvbuilder))
+					os.Setenv("CODER_AGENT_SUBSYSTEM", strings.Join(options.CoderAgentSubsystem, ","))
 				}
-				subsystems += string(codersdk.AgentSubsystemEnvbuilder)
-				os.Setenv("CODER_AGENT_SUBSYSTEM", subsystems)
 			}
 
 			options.Logger = func(level codersdk.LogLevel, format string, args ...interface{}) {

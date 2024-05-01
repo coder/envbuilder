@@ -20,6 +20,19 @@ OPTIONS:
           The number of days to use cached layers before expiring them. Defaults
           to 7 days.
 
+      --coder-agent-subsystem string-array, $CODER_AGENT_SUBSYSTEM
+          Coder agent subsystems to report when forwarding logs. The envbuilder
+          subsystem is always included.
+
+      --coder-agent-token string, $CODER_AGENT_TOKEN
+          Authentication token for a Coder agent. If this is set, then
+          CODER_AGENT_URL must also be set.
+
+      --coder-agent-url url, $CODER_AGENT_URL
+          URL of the Coder deployment. If CODER_AGENT_TOKEN is also set, logs
+          from envbuilder will be forwarded here and will be visible in the
+          workspace build logs.
+
       --devcontainer-dir string, $DEVCONTAINER_DIR
           The path to the folder containing the devcontainer.json file that will
           be used to build the workspace and can either be an absolute path or a
