@@ -6,6 +6,8 @@ import (
 	"github.com/go-git/go-billy/v5"
 )
 
+type LoggerFunc func(level codersdk.LogLevel, format string, args ...interface{})
+
 // Options contains the configuration for the envbuilder.
 type Options struct {
 	SetupScript          string
@@ -38,7 +40,7 @@ type Options struct {
 	ExportEnvFile        string
 	PostStartScriptPath  string
 	// Logger is the logger to use for all operations.
-	Logger func(level codersdk.LogLevel, format string, args ...interface{})
+	Logger LoggerFunc
 	// Filesystem is the filesystem to use for all operations.
 	// Defaults to the host filesystem.
 	Filesystem billy.Filesystem
