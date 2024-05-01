@@ -1,6 +1,8 @@
 package envbuilder
 
 import (
+	"net/url"
+
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/serpent"
 	"github.com/go-git/go-billy/v5"
@@ -44,6 +46,11 @@ type Options struct {
 	// Filesystem is the filesystem to use for all operations.
 	// Defaults to the host filesystem.
 	Filesystem billy.Filesystem
+	// These options are specifically used when envbuilder
+	// is invoked as part of a Coder workspace.
+	CoderAgentURL       *url.URL
+	CoderAgentToken     string
+	CoderAgentSubsystem []string
 }
 
 // Generate CLI options for the envbuilder command.
@@ -271,6 +278,28 @@ func (o *Options) CLI() serpent.OptionSet {
 				"if any is specified (otherwise the script is not created). If this " +
 				"is set, the specified InitCommand should check for the presence of " +
 				"this script and execute it after successful startup.",
+		},
+		{
+			Flag:  "coder-agent-url",
+			Env:   "CODER_AGENT_URL",
+			Value: serpent.URLOf(o.CoderAgentURL),
+			Description: "URL of the Coder deployment. If CODER_AGENT_TOKEN is also " +
+				"set, logs from envbuilder will be forwarded here and will be " +
+				"visible in the workspace build logs.",
+		},
+		{
+			Flag:  "coder-agent-token",
+			Env:   "CODER_AGENT_TOKEN",
+			Value: serpent.StringOf(&o.CoderAgentToken),
+			Description: "Authentication token for a Coder agent. If this is set, " +
+				"then CODER_AGENT_URL must also be set.",
+		},
+		{
+			Flag:  "coder-agent-subsystem",
+			Env:   "CODER_AGENT_SUBSYSTEM",
+			Value: serpent.StringArrayOf(&o.CoderAgentSubsystem),
+			Description: "Coder agent subsystems to report when forwarding logs. " +
+				"The envbuilder subsystem is always included.",
 		},
 	}
 }
