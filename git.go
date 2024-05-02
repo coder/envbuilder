@@ -141,17 +141,21 @@ func ReadPrivateKey(path string) (gossh.Signer, error) {
 	return k, nil
 }
 
-// GenerateKnownHosts dials the server located at gitURL and fetches the SSH
+// KeyScan dials the server located at gitURL and fetches the SSH
 // public keys returned in a format accepted by known_hosts.
-func GenerateKnownHosts(log LoggerFunc, gitURL *url.URL) ([]byte, error) {
+// If no host keys found, returns an error.
+func KeyScan(log LoggerFunc, gitURL *url.URL) ([]byte, error) {
 	var buf bytes.Buffer
 	conf := &gossh.ClientConfig{
 		// Accept and record all host keys
-		HostKeyCallback: func(dialAddr string, addr net.Addr, key gossh.PublicKey) error {
-			h := strings.Split(dialAddr, ":")[0]
-			k64 := base64.StdEncoding.EncodeToString(key.Marshal())
-			log(codersdk.LogLevelInfo, "ssh keyscan: %s %s %s", h, key.Type(), k64)
-			buf.WriteString(fmt.Sprintf("%s %s %s\n", h, key.Type(), k64))
+		HostKeyCallback: func(dialAddr string, _ net.Addr, key gossh.PublicKey) error {
+			kh, err := KnownHostsLine(dialAddr, key)
+			if err != nil {
+				return fmt.Errorf("ssh keyscan: generate known hosts line: %w", err)
+			}
+			log(codersdk.LogLevelInfo, "ssh keyscan: %s", kh)
+			buf.WriteString(kh)
+			buf.WriteString("\n")
 			return nil
 		},
 	}
@@ -160,13 +164,32 @@ func GenerateKnownHosts(log LoggerFunc, gitURL *url.URL) ([]byte, error) {
 	if err != nil {
 		// The dial may fail due to no authentication methods, but this is fine.
 		if netErr, ok := err.(net.Error); ok {
-			return nil, fmt.Errorf("keyscan %s: %w", dialAddr, netErr)
+			return nil, fmt.Errorf("ssh keyscan: dial %s: %w", dialAddr, netErr)
 		}
-		// If it's not a net.Error then we will assume we were successful.
-	} else {
-		_ = client.Close()
+		// Otherwise, assume success.
+	}
+	defer func() {
+		if client != nil {
+			_ = client.Close()
+		}
+	}()
+
+	bs := buf.Bytes()
+	if len(bs) == 0 {
+		return nil, fmt.Errorf("ssh keyscan: found no host keys")
 	}
 	return buf.Bytes(), nil
+}
+
+// KnownHostsLine generates a corresponding line for known_hosts
+// given a dial address in the format host:port and a public key.
+func KnownHostsLine(dialAddr string, key gossh.PublicKey) (string, error) {
+	if !strings.Contains(dialAddr, ":") {
+		return "", fmt.Errorf("invalid dialAddr, expected host:port")
+	}
+	h := strings.Split(dialAddr, ":")[0]
+	k64 := base64.StdEncoding.EncodeToString(key.Marshal())
+	return fmt.Sprintf("%s %s %s", h, key.Type(), k64), nil
 }
 
 func hostPort(u *url.URL) string {

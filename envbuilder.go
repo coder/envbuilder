@@ -171,7 +171,7 @@ func Run(ctx context.Context, options Options) error {
 				knownHostsContent = kh
 			}
 		} else {
-			kh, err := GenerateKnownHosts(options.Logger, gitURLParsed)
+			kh, err := KeyScan(options.Logger, gitURLParsed)
 			if err != nil {
 				return fmt.Errorf("invalid known_hosts content: %w", err)
 			} else {
