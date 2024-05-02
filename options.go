@@ -37,6 +37,7 @@ type Options struct {
 	GitCloneSingleBranch bool
 	GitUsername          string
 	GitPassword          string
+	GitSSHPrivateKeyPath string
 	GitHTTPProxyURL      string
 	WorkspaceFolder      string
 	SSLCertBase64        string
@@ -241,6 +242,12 @@ func (o *Options) CLI() serpent.OptionSet {
 			Env:         "GIT_PASSWORD",
 			Value:       serpent.StringOf(&o.GitPassword),
 			Description: "The password to use for Git authentication. This is optional.",
+		},
+		{
+			Flag:        "git-ssh-private-key-path",
+			Env:         "GIT_SSH_PRIVATE_KEY_PATH",
+			Value:       serpent.StringOf(&o.GitSSHPrivateKeyPath),
+			Description: "Path to a SSH private key to be used for Git authentication.",
 		},
 		{
 			Flag:        "git-http-proxy-url",

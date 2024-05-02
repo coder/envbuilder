@@ -2,6 +2,7 @@ package envbuilder_test
 
 import (
 	"context"
+	"crypto/ed25519"
 	"fmt"
 	"io"
 	"net/http/httptest"
@@ -14,8 +15,11 @@ import (
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/go-git/go-billy/v5/osfs"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/stretchr/testify/require"
+	gossh "golang.org/x/crypto/ssh"
 )
 
 func TestCloneRepo(t *testing.T) {
@@ -159,6 +163,78 @@ func TestCloneRepo(t *testing.T) {
 	}
 }
 
+func TestCloneRepoSSH(t *testing.T) {
+	t.Parallel()
+
+	t.Run("PrivateKeyOK", func(t *testing.T) {
+		t.Parallel()
+		t.Skip("TODO: need to figure out how to properly add advertised refs")
+		// TODO: Can't we use a memfs here?
+		tmpDir := t.TempDir()
+		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
+
+		signer := randKeygen(t)
+		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
+		gitURL := tr.String()
+		clientFS := memfs.New()
+
+		cloned, err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
+			Path:    "/workspace",
+			RepoURL: gitURL,
+			Storage: clientFS,
+			RepoAuth: &gitssh.PublicKeys{
+				User:   "",
+				Signer: signer,
+				HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
+					HostKeyCallback: gossh.InsecureIgnoreHostKey(), // TODO: known_hosts
+				},
+			},
+		})
+		require.NoError(t, err) // TODO: error: repository not found
+		require.True(t, cloned)
+
+		readme := mustRead(t, clientFS, "/workspace/README.md")
+		require.Equal(t, "Hello, world!", readme)
+		gitConfig := mustRead(t, clientFS, "/workspace/.git/config")
+		// Ensure we do not modify the git URL that folks pass in.
+		require.Regexp(t, fmt.Sprintf(`(?m)^\s+url\s+=\s+%s\s*$`, regexp.QuoteMeta(gitURL)), gitConfig)
+	})
+
+	t.Run("PrivateKeyError", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
+
+		signer := randKeygen(t)
+		anotherSigner := randKeygen(t)
+		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
+		gitURL := tr.String()
+		clientFS := memfs.New()
+
+		cloned, err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
+			Path:    "/workspace",
+			RepoURL: gitURL,
+			Storage: clientFS,
+			RepoAuth: &gitssh.PublicKeys{
+				User:   "",
+				Signer: anotherSigner,
+				HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
+					HostKeyCallback: gossh.InsecureIgnoreHostKey(), // TODO: known_hosts
+				},
+			},
+		})
+		require.ErrorContains(t, err, "handshake failed")
+		require.False(t, cloned)
+	})
+
+	t.Run("PrivateKeyUnknownHost", func(t *testing.T) {
+		t.Parallel()
+		t.Skip("TODO: add host key checking")
+	})
+}
+
 func mustRead(t *testing.T, fs billy.Filesystem, path string) string {
 	t.Helper()
 	f, err := fs.OpenFile(path, os.O_RDONLY, 0644)
@@ -166,4 +242,14 @@ func mustRead(t *testing.T, fs billy.Filesystem, path string) string {
 	content, err := io.ReadAll(f)
 	require.NoError(t, err)
 	return string(content)
+}
+
+// generates a random ed25519 private key
+func randKeygen(t *testing.T) gossh.Signer {
+	t.Helper()
+	_, key, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	signer, err := gossh.NewSignerFromKey(key)
+	require.NoError(t, err)
+	return signer
 }
