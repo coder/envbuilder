@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"testing"
 
@@ -165,17 +164,18 @@ func TestCloneRepo(t *testing.T) {
 }
 
 func TestCloneRepoSSH(t *testing.T) {
+	t.Parallel()
 
-	// nolint: paralleltest // t.Setenv
-	t.Run("PrivateKeyOK", func(t *testing.T) {
-		t.Skip("TODO: need to figure out how to properly add advertised refs")
-		// TODO: Can't we use a memfs here?
+	t.Run("AuthSuccess", func(t *testing.T) {
+		t.Parallel()
+
+		// TODO: test the rest of the cloning flow. This just tests successful auth.
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
-		signer := randKeygen(t)
 		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
-		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
+		key := randKeygen(t)
+		tr := gittest.NewServerSSH(t, srvFS, key.PublicKey())
 		gitURL := tr.String()
 		clientFS := memfs.New()
 
@@ -185,43 +185,42 @@ func TestCloneRepoSSH(t *testing.T) {
 			Storage: clientFS,
 			RepoAuth: &gitssh.PublicKeys{
 				User:   "",
-				Signer: signer,
+				Signer: key,
 				HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
-					HostKeyCallback: gossh.InsecureIgnoreHostKey(), // TODO: known_hosts
+					// Not testing host keys here.
+					HostKeyCallback: gossh.InsecureIgnoreHostKey(),
 				},
 			},
 		})
-		require.NoError(t, err) // TODO: error: repository not found
-		require.True(t, cloned)
-
-		readme := mustRead(t, clientFS, "/workspace/README.md")
-		require.Equal(t, "Hello, world!", readme)
-		gitConfig := mustRead(t, clientFS, "/workspace/.git/config")
-		// Ensure we do not modify the git URL that folks pass in.
-		require.Regexp(t, fmt.Sprintf(`(?m)^\s+url\s+=\s+%s\s*$`, regexp.QuoteMeta(gitURL)), gitConfig)
+		// TODO: ideally, we want to test the entire cloning flow.
+		// For now, this indicates successful ssh key auth.
+		require.ErrorContains(t, err, "repository not found")
+		require.False(t, cloned)
 	})
 
-	// nolint: paralleltest // t.Setenv
-	t.Run("PrivateKeyError", func(t *testing.T) {
+	t.Run("AuthFailure", func(t *testing.T) {
+		t.Parallel()
+
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
-		signer := randKeygen(t)
-		anotherSigner := randKeygen(t)
 		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
-		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
+		key := randKeygen(t)
+		tr := gittest.NewServerSSH(t, srvFS, key.PublicKey())
 		gitURL := tr.String()
 		clientFS := memfs.New()
 
+		anotherKey := randKeygen(t)
 		cloned, err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
 			Path:    "/workspace",
 			RepoURL: gitURL,
 			Storage: clientFS,
 			RepoAuth: &gitssh.PublicKeys{
 				User:   "",
-				Signer: anotherSigner,
+				Signer: anotherKey,
 				HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
-					HostKeyCallback: gossh.InsecureIgnoreHostKey(), // TODO: known_hosts
+					// Not testing host keys here.
+					HostKeyCallback: gossh.InsecureIgnoreHostKey(),
 				},
 			},
 		})
@@ -230,18 +229,15 @@ func TestCloneRepoSSH(t *testing.T) {
 	})
 
 	// nolint: paralleltest // t.Setenv
-	t.Run("PrivateKeyHostKeyUnknown", func(t *testing.T) {
+	t.Run("PrivateKeyHostKeyMismatch", func(t *testing.T) {
+		t.Parallel()
+
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
-		knownHostsPath := filepath.Join(tmpDir, "known_hosts")
-		require.NoError(t, os.WriteFile(knownHostsPath, []byte{}, 0o600))
-		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
-
-		signer := randKeygen(t)
-		anotherSigner := randKeygen(t)
 		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
-		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
+		key := randKeygen(t)
+		tr := gittest.NewServerSSH(t, srvFS, key.PublicKey())
 		gitURL := tr.String()
 		clientFS := memfs.New()
 
@@ -251,10 +247,13 @@ func TestCloneRepoSSH(t *testing.T) {
 			Storage: clientFS,
 			RepoAuth: &gitssh.PublicKeys{
 				User:   "",
-				Signer: anotherSigner,
+				Signer: key,
+				HostKeyCallbackHelper: gitssh.HostKeyCallbackHelper{
+					HostKeyCallback: gossh.FixedHostKey(randKeygen(t).PublicKey()),
+				},
 			},
 		})
-		require.ErrorContains(t, err, "key is unknown")
+		require.ErrorContains(t, err, "ssh: host key mismatch")
 		require.False(t, cloned)
 	})
 }
