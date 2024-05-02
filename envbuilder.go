@@ -157,7 +157,7 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
-	gitURLParsed, err := url.Parse(options.GitURL)
+	gitURLParsed, err := ParseGitURL(options.GitURL)
 	if err != nil {
 		return fmt.Errorf("invalid git URL: %w", err)
 	}
@@ -182,6 +182,7 @@ func Run(ctx context.Context, options Options) error {
 		if err := os.WriteFile(knownHostsPath, knownHostsContent, 0644); err != nil {
 			return fmt.Errorf("write known_hosts file: %w", err)
 		}
+		// go-git will read this file to validate the server host keys.
 		_ = os.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 	}
 

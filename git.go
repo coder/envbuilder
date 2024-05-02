@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -198,4 +199,16 @@ func hostPort(u *url.URL) string {
 		p = _p
 	}
 	return fmt.Sprintf("%s:%d", u.Host, p)
+}
+
+var schemaRe = regexp.MustCompile(`^[a-zA-Z]+://`)
+
+// ParseGitURL will normalize a git URL without a leading schema.
+// If no schema is provided, we will default to ssh://.
+func ParseGitURL(gitURL string) (*url.URL, error) {
+	if !schemaRe.MatchString(gitURL) {
+		gitURL = "ssh://" + gitURL
+
+	}
+	return url.Parse(gitURL)
 }

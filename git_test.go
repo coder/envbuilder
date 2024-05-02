@@ -18,6 +18,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -256,6 +257,41 @@ func TestCloneRepoSSH(t *testing.T) {
 		require.ErrorContains(t, err, "ssh: host key mismatch")
 		require.False(t, cloned)
 	})
+}
+
+func TestParseGitURL(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		url           string
+		expected      string
+		expectedError string
+	}{
+		{
+			url:      "https://user:pass@example.com/repo",
+			expected: "https://user:pass@example.com/repo",
+		},
+		{
+			url:      "http://user:pass@example.com/repo",
+			expected: "http://user:pass@example.com/repo",
+		},
+		{
+			url:      "ssh://git@example.com/repo",
+			expected: "ssh://git@example.com/repo",
+		},
+		{
+			url:      "git@example.com/repo",
+			expected: "ssh://git@example.com/repo",
+		},
+	} {
+		actual, err := envbuilder.ParseGitURL(tc.url)
+		if tc.expectedError == "" {
+			assert.NoError(t, err)
+			assert.Equal(t, tc.expected, actual.String())
+			continue
+		}
+		assert.ErrorContains(t, err, tc.expectedError)
+	}
 }
 
 func mustRead(t *testing.T, fs billy.Filesystem, path string) string {
