@@ -123,6 +123,8 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
 	return true, nil
 }
 
+// ReadPrivateKey attempts to read an SSH private key from path
+// and returns an ssh.Signer.
 func ReadPrivateKey(path string) (gossh.Signer, error) {
 	f, err := os.Open(path)
 	if err != nil {
