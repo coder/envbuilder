@@ -131,11 +131,11 @@ func ReadPrivateKey(path string) (gossh.Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open private key file: %w", err)
 	}
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, f); err != nil {
+	bs, err := io.ReadAll(f)
+	if err != nil {
 		return nil, fmt.Errorf("read private key file: %w", err)
 	}
-	k, err := gossh.ParsePrivateKey(buf.Bytes())
+	k, err := gossh.ParsePrivateKey(bs)
 	if err != nil {
 		return nil, fmt.Errorf("parse private key file: %w", err)
 	}
