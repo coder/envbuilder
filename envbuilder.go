@@ -157,33 +157,34 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
-	gitURLParsed, err := ParseGitURL(options.GitURL)
-	if err != nil {
-		return fmt.Errorf("invalid git URL: %w", err)
-	}
-	// If we're cloning over SSH, we need a known_hosts file.
-	if gitURLParsed.Scheme == "ssh" {
-		var knownHostsContent []byte
-		if options.GitSSHKnownHostsBase64 != "" {
-			if kh, err := base64.StdEncoding.DecodeString(options.GitSSHKnownHostsBase64); err != nil {
-				return fmt.Errorf("invalid known_hosts content: %w", err)
-			} else {
-				knownHostsContent = kh
-			}
-		} else {
-			kh, err := KeyScan(options.Logger, gitURLParsed)
-			if err != nil {
-				return fmt.Errorf("invalid known_hosts content: %w", err)
-			} else {
-				knownHostsContent = kh
-			}
+	if options.GitURL != "" {
+		gitURLParsed, err := ParseGitURL(options.GitURL)
+		if err != nil {
+			return fmt.Errorf("invalid git URL: %w", err)
 		}
-		knownHostsPath := filepath.Join(MagicDir, "known_hosts")
-		if err := os.WriteFile(knownHostsPath, knownHostsContent, 0644); err != nil {
-			return fmt.Errorf("write known_hosts file: %w", err)
+		// If we're cloning over SSH, we need a known_hosts file.
+		if gitURLParsed.Scheme == "ssh" {
+			var knownHostsContent []byte
+			if options.GitSSHKnownHostsBase64 != "" {
+				if kh, err := base64.StdEncoding.DecodeString(options.GitSSHKnownHostsBase64); err != nil {
+					return fmt.Errorf("invalid known_hosts content: %w", err)
+				} else {
+					knownHostsContent = kh
+				}
+			} else {
+				// This is a best-effort.
+				kh, err := KeyScan(options.Logger, gitURLParsed)
+				if err == nil {
+					knownHostsContent = kh
+				}
+			}
+			knownHostsPath := filepath.Join(MagicDir, "known_hosts")
+			if err := os.WriteFile(knownHostsPath, knownHostsContent, 0644); err != nil {
+				return fmt.Errorf("write known_hosts file: %w", err)
+			}
+			// go-git will read this file to validate the server host keys.
+			_ = os.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 		}
-		// go-git will read this file to validate the server host keys.
-		_ = os.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
 	}
 
 	var fallbackErr error
