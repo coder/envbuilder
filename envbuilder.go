@@ -45,6 +45,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/sirupsen/logrus"
@@ -156,6 +157,34 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
+	gitURLParsed, err := url.Parse(options.GitURL)
+	if err != nil {
+		return fmt.Errorf("invalid git URL: %w", err)
+	}
+	// If we're cloning over SSH, we need a known_hosts file.
+	if gitURLParsed.Scheme == "ssh" {
+		var knownHostsContent []byte
+		if options.GitSSHKnownHostsBase64 != "" {
+			if kh, err := base64.StdEncoding.DecodeString(options.GitSSHKnownHostsBase64); err != nil {
+				return fmt.Errorf("invalid known_hosts content: %w", err)
+			} else {
+				knownHostsContent = kh
+			}
+		} else {
+			kh, err := GenerateKnownHosts(options.Logger, gitURLParsed)
+			if err != nil {
+				return fmt.Errorf("invalid known_hosts content: %w", err)
+			} else {
+				knownHostsContent = kh
+			}
+		}
+		knownHostsPath := filepath.Join(MagicDir, "known_hosts")
+		if err := os.WriteFile(knownHostsPath, knownHostsContent, 0644); err != nil {
+			return fmt.Errorf("write known_hosts file: %w", err)
+		}
+		_ = os.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
+	}
+
 	var fallbackErr error
 	var cloned bool
 	if options.GitURL != "" {
@@ -200,6 +229,15 @@ func Run(ctx context.Context, options Options) error {
 			cloneOpts.RepoAuth = &githttp.BasicAuth{
 				Username: options.GitUsername,
 				Password: options.GitPassword,
+			}
+		} else if options.GitSSHPrivateKeyPath != "" {
+			signer, err := ReadPrivateKey(options.GitSSHPrivateKeyPath)
+			if err != nil {
+				return xerrors.Errorf("read private key: %w", err)
+			}
+			cloneOpts.RepoAuth = &gitssh.PublicKeys{
+				User:   "git",
+				Signer: signer,
 			}
 		}
 		if options.GitHTTPProxyURL != "" {

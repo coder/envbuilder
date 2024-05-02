@@ -1,11 +1,19 @@
 package envbuilder
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/url"
+	"os"
+	"strconv"
+	"strings"
 
+	"github.com/coder/coder/v2/codersdk"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -14,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	gossh "golang.org/x/crypto/ssh"
 )
 
 type CloneRepoOptions struct {
@@ -112,4 +121,56 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
 		return false, fmt.Errorf("clone %q: %w", opts.RepoURL, err)
 	}
 	return true, nil
+}
+
+func ReadPrivateKey(path string) (gossh.Signer, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open private key file: %w", err)
+	}
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, f); err != nil {
+		return nil, fmt.Errorf("read private key file: %w", err)
+	}
+	k, err := gossh.ParsePrivateKey(buf.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("parse private key file: %w", err)
+	}
+	return k, nil
+}
+
+// GenerateKnownHosts dials the server located at gitURL and fetches the SSH
+// public keys returned in a format accepted by known_hosts.
+func GenerateKnownHosts(log LoggerFunc, gitURL *url.URL) ([]byte, error) {
+	var buf bytes.Buffer
+	conf := &gossh.ClientConfig{
+		// Accept and record all host keys
+		HostKeyCallback: func(dialAddr string, addr net.Addr, key gossh.PublicKey) error {
+			h := strings.Split(dialAddr, ":")[0]
+			k64 := base64.StdEncoding.EncodeToString(key.Marshal())
+			log(codersdk.LogLevelInfo, "ssh keyscan: %s %s %s", h, key.Type(), k64)
+			buf.WriteString(fmt.Sprintf("%s %s %s\n", h, key.Type(), k64))
+			return nil
+		},
+	}
+	dialAddr := hostPort(gitURL)
+	client, err := gossh.Dial("tcp", dialAddr, conf)
+	if err != nil {
+		// The dial may fail due to no authentication methods, but this is fine.
+		if netErr, ok := err.(net.Error); ok {
+			return nil, fmt.Errorf("keyscan %s: %w", dialAddr, netErr)
+		}
+		// If it's not a net.Error then we will assume we were successful.
+	} else {
+		_ = client.Close()
+	}
+	return buf.Bytes(), nil
+}
+
+func hostPort(u *url.URL) string {
+	p := 22 // assume default SSH port
+	if _p, err := strconv.Atoi(u.Port()); err == nil {
+		p = _p
+	}
+	return fmt.Sprintf("%s:%d", u.Host, p)
 }
