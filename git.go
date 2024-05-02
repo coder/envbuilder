@@ -195,8 +195,8 @@ func KnownHostsLine(dialAddr string, key gossh.PublicKey) (string, error) {
 
 func hostPort(u *url.URL) string {
 	p := 22 // assume default SSH port
-	if _p, err := strconv.Atoi(u.Port()); err == nil {
-		p = _p
+	if tmp, err := strconv.Atoi(u.Port()); err == nil {
+		p = tmp
 	}
 	return fmt.Sprintf("%s:%d", u.Host, p)
 }
