@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
 
@@ -164,10 +165,9 @@ func TestCloneRepo(t *testing.T) {
 }
 
 func TestCloneRepoSSH(t *testing.T) {
-	t.Parallel()
 
+	// nolint: paralleltest // t.Setenv
 	t.Run("PrivateKeyOK", func(t *testing.T) {
-		t.Parallel()
 		t.Skip("TODO: need to figure out how to properly add advertised refs")
 		// TODO: Can't we use a memfs here?
 		tmpDir := t.TempDir()
@@ -201,8 +201,8 @@ func TestCloneRepoSSH(t *testing.T) {
 		require.Regexp(t, fmt.Sprintf(`(?m)^\s+url\s+=\s+%s\s*$`, regexp.QuoteMeta(gitURL)), gitConfig)
 	})
 
+	// nolint: paralleltest // t.Setenv
 	t.Run("PrivateKeyError", func(t *testing.T) {
-		t.Parallel()
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
@@ -229,9 +229,33 @@ func TestCloneRepoSSH(t *testing.T) {
 		require.False(t, cloned)
 	})
 
-	t.Run("PrivateKeyUnknownHost", func(t *testing.T) {
-		t.Parallel()
-		t.Skip("TODO: add host key checking")
+	// nolint: paralleltest // t.Setenv
+	t.Run("PrivateKeyHostKeyUnknown", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
+
+		knownHostsPath := filepath.Join(tmpDir, "known_hosts")
+		require.NoError(t, os.WriteFile(knownHostsPath, []byte{}, 0o600))
+		t.Setenv("SSH_KNOWN_HOSTS", knownHostsPath)
+
+		signer := randKeygen(t)
+		anotherSigner := randKeygen(t)
+		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
+		gitURL := tr.String()
+		clientFS := memfs.New()
+
+		cloned, err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
+			Path:    "/workspace",
+			RepoURL: gitURL,
+			Storage: clientFS,
+			RepoAuth: &gitssh.PublicKeys{
+				User:   "",
+				Signer: anotherSigner,
+			},
+		})
+		require.ErrorContains(t, err, "key is unknown")
+		require.False(t, cloned)
 	})
 }
 
