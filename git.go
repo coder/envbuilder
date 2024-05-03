@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/filesystem"
+	"github.com/skeema/knownhosts"
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -149,14 +150,11 @@ func KeyScan(log LoggerFunc, gitURL *url.URL) ([]byte, error) {
 	var buf bytes.Buffer
 	conf := &gossh.ClientConfig{
 		// Accept and record all host keys
-		HostKeyCallback: func(dialAddr string, _ net.Addr, key gossh.PublicKey) error {
-			kh, err := KnownHostsLine(dialAddr, key)
-			if err != nil {
+		HostKeyCallback: func(dialAddr string, remote net.Addr, key gossh.PublicKey) error {
+			if err := knownhosts.WriteKnownHost(&buf, dialAddr, remote, key); err != nil {
 				return fmt.Errorf("ssh keyscan: generate known hosts line: %w", err)
 			}
-			log(codersdk.LogLevelInfo, "ssh keyscan: %s", kh)
-			buf.WriteString(kh)
-			buf.WriteString("\n")
+			log(codersdk.LogLevelInfo, "ssh keyscan: %s", strings.TrimSpace(buf.String()))
 			return nil
 		},
 	}
