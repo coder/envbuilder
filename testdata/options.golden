@@ -28,7 +28,7 @@ OPTIONS:
           Authentication token for a Coder agent. If this is set, then
           CODER_AGENT_URL must also be set.
 
-      --coder-agent-url url, $CODER_AGENT_URL
+      --coder-agent-url string, $CODER_AGENT_URL
           URL of the Coder deployment. If CODER_AGENT_TOKEN is also set, logs
           from envbuilder will be forwarded here and will be visible in the
           workspace build logs.

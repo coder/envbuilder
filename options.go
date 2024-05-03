@@ -1,7 +1,6 @@
 package envbuilder
 
 import (
-	"net/url"
 	"strings"
 
 	"github.com/coder/coder/v2/codersdk"
@@ -132,7 +131,8 @@ type Options struct {
 	Filesystem billy.Filesystem
 	// These options are specifically used when envbuilder is invoked as part of a
 	// Coder workspace.
-	CoderAgentURL *url.URL
+	// Revert to `*url.URL` once https://github.com/coder/serpent/issues/14 is fixed.
+	CoderAgentURL string
 	// CoderAgentToken is the authentication token for a Coder agent.
 	CoderAgentToken string
 	// CoderAgentSubsystem is the Coder agent subsystems to report when forwarding
@@ -375,7 +375,7 @@ func (o *Options) CLI() serpent.OptionSet {
 		{
 			Flag:  "coder-agent-url",
 			Env:   "CODER_AGENT_URL",
-			Value: serpent.URLOf(o.CoderAgentURL),
+			Value: serpent.StringOf(&o.CoderAgentURL),
 			Description: "URL of the Coder deployment. If CODER_AGENT_TOKEN is also " +
 				"set, logs from envbuilder will be forwarded here and will be " +
 				"visible in the workspace build logs.",
