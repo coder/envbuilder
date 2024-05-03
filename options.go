@@ -41,10 +41,16 @@ type Options struct {
 	// path or a path relative to the workspace folder. If not provided, defaults
 	// to `.devcontainer`.
 	DevcontainerDir string
-	// DevcontainerJSONPath is the path to a devcontainer.json file that is either
-	// an absolute path or a path relative to DevcontainerDir. This can be used in
-	// cases where one wants to substitute an edited devcontainer.json file for
-	// the one that exists in the repo.
+	// DevcontainerJSONPath is a path to a devcontainer.json file
+	// that is either an absolute path or a path relative to
+	// DevcontainerDir. This can be used in cases where one wants
+	// to substitute an edited devcontainer.json file for the one
+	// that exists in the repo.
+	// If neither `DevcontainerDir` nor `DevcontainerJSONPath` is provided,
+	// envbuilder will browse following directories to locate it:
+	// 1. `.devcontainer/devcontainer.json`
+	// 2. `.devcontainer.json`
+	// 3. `.devcontainer/<folder>/devcontainer.json`
 	DevcontainerJSONPath string
 	// DockerfilePath is the relative path to the Dockerfile that will be used to
 	// build the workspace. This is an alternative to using a devcontainer that
