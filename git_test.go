@@ -3,8 +3,10 @@ package envbuilder_test
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/coder/coder/v2/codersdk"
+	"github.com/coder/coder/v2/codersdk/agentsdk"
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/go-git/go-billy/v5"
@@ -20,6 +23,8 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -382,6 +387,60 @@ func TestSetupRepoAuth(t *testing.T) {
 		auth := envbuilder.SetupRepoAuth(opts)
 		require.Nil(t, auth) // TODO: actually test SSH_AUTH_SOCK
 	})
+
+	t.Run("SSH/Coder", func(t *testing.T) {
+		token := uuid.NewString()
+		actualSigner, err := gossh.ParsePrivateKey([]byte(testKey))
+		require.NoError(t, err)
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			hdr := r.Header.Get("Coder-Session-Token")
+			if !assert.Equal(t, hdr, token) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			switch r.URL.Path {
+			case "/api/v2/workspaceagents/me/gitsshkey":
+				_ = json.NewEncoder(w).Encode(&agentsdk.GitSSHKey{
+					PublicKey:  string(actualSigner.PublicKey().Marshal()),
+					PrivateKey: string(testKey),
+				})
+			default:
+				assert.Fail(t, "unknown path: %q", r.URL.Path)
+			}
+		}
+		srv := httptest.NewServer(http.HandlerFunc(handler))
+		u, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+		opts := &envbuilder.Options{
+			CoderAgentURL:   u,
+			CoderAgentToken: token,
+			GitURL:          "ssh://git@host.tld:repo/path",
+			Logger:          testLog(t),
+		}
+		auth := envbuilder.SetupRepoAuth(opts)
+		pk, ok := auth.(*gitssh.PublicKeys)
+		require.True(t, ok)
+		require.NotNil(t, pk.Signer)
+		require.Equal(t, actualSigner, pk.Signer)
+	})
+
+	t.Run("SSH/CoderForbidden", func(t *testing.T) {
+		token := uuid.NewString()
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+		}
+		srv := httptest.NewServer(http.HandlerFunc(handler))
+		u, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+		opts := &envbuilder.Options{
+			CoderAgentURL:   u,
+			CoderAgentToken: token,
+			GitURL:          "ssh://git@host.tld:repo/path",
+			Logger:          testLog(t),
+		}
+		auth := envbuilder.SetupRepoAuth(opts)
+		require.Nil(t, auth)
+	})
 }
 
 func mustRead(t *testing.T, fs billy.Filesystem, path string) string {
@@ -405,6 +464,7 @@ func randKeygen(t *testing.T) gossh.Signer {
 
 func testLog(t *testing.T) envbuilder.LoggerFunc {
 	return func(_ codersdk.LogLevel, format string, args ...interface{}) {
+		t.Helper()
 		t.Logf(format, args...)
 	}
 }

@@ -2,6 +2,7 @@ package envbuilder
 
 import (
 	"context"
+	"crypto/md5"
 	"errors"
 	"fmt"
 	"io"
@@ -9,8 +10,10 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/coder/coder/v2/codersdk"
+	"github.com/coder/coder/v2/codersdk/agentsdk"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -22,7 +25,6 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/skeema/knownhosts"
-	"golang.org/x/crypto/ssh"
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -207,14 +209,29 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 	// Assume SSH auth for all other formats.
 	options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Using SSH authentication!")
 
-	var signer ssh.Signer
+	var signer gossh.Signer
 	if options.GitSSHPrivateKeyPath != "" {
 		s, err := ReadPrivateKey(options.GitSSHPrivateKeyPath)
 		if err != nil {
 			options.Logger(codersdk.LogLevelError, "#1: ❌ Failed to read private key from %s: %s", options.GitSSHPrivateKeyPath, err.Error())
 		} else {
-			options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Using %s key!", s.PublicKey().Type())
 			signer = s
+			options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Using %s key %s!", s.PublicKey().Type(), keyFingerprint(signer)[:8])
+		}
+	}
+
+	// If we have no signer but we have a Coder URL and agent token, try to fetch
+	// an SSH key from Coder!
+	if signer == nil && options.CoderAgentURL != nil && options.CoderAgentToken != "" {
+		options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Fetching key from %s!", options.CoderAgentURL.String())
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		s, err := FetchCoderSSHKey(ctx, options.CoderAgentURL, options.CoderAgentToken)
+		if err == nil {
+			signer = s
+			options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Fetched %s key %s !", signer.PublicKey().Type(), keyFingerprint(signer)[:8])
+		} else {
+			options.Logger(codersdk.LogLevelInfo, "#1: ❌ Failed to fetch SSH key: %w", options.CoderAgentURL.String(), err)
 		}
 	}
 
@@ -250,4 +267,27 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 		auth.HostKeyCallback = LogHostKeyCallback(options.Logger)
 	}
 	return auth
+}
+
+// FetchCoderSSHKey fetches the user's Git SSH key from Coder using the supplied
+// Coder URL and agent token.
+func FetchCoderSSHKey(ctx context.Context, coderURL url.URL, agentToken string) (gossh.Signer, error) {
+	client := agentsdk.New(&coderURL)
+	client.SetSessionToken(agentToken)
+	key, err := client.GitSSHKey(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get coder ssh key: %w", err)
+	}
+	signer, err := gossh.ParsePrivateKey([]byte(key.PrivateKey))
+	if err != nil {
+		return nil, fmt.Errorf("parse coder ssh key: %w", err)
+	}
+	return signer, nil
+}
+
+// keyFingerprint returns the md5 checksum of the public key of signer.
+func keyFingerprint(s gossh.Signer) string {
+	h := md5.New()
+	h.Write(s.PublicKey().Marshal())
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
