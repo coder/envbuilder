@@ -1,17 +1,13 @@
 package envbuilder
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/url"
 	"os"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/coder/coder/v2/codersdk"
@@ -22,6 +18,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/sideband"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/skeema/knownhosts"
 	gossh "golang.org/x/crypto/ssh"
@@ -143,70 +141,85 @@ func ReadPrivateKey(path string) (gossh.Signer, error) {
 	return k, nil
 }
 
-// KeyScan dials the server located at gitURL and fetches the SSH
-// public keys returned in a format accepted by known_hosts.
-// If no host keys found, returns an error.
-func KeyScan(log LoggerFunc, gitURL *url.URL) ([]byte, error) {
-	var buf bytes.Buffer
-	conf := &gossh.ClientConfig{
-		// Accept and record all host keys
-		HostKeyCallback: func(dialAddr string, remote net.Addr, key gossh.PublicKey) error {
-			if err := knownhosts.WriteKnownHost(&buf, dialAddr, remote, key); err != nil {
-				return fmt.Errorf("ssh keyscan: generate known hosts line: %w", err)
-			}
-			log(codersdk.LogLevelInfo, "ssh keyscan: %s", strings.TrimSpace(buf.String()))
+// LogHostKeyCallback is a HostKeyCallback that just logs host keys
+// and does nothing else.
+func LogHostKeyCallback(log LoggerFunc) gossh.HostKeyCallback {
+	return func(hostname string, remote net.Addr, key gossh.PublicKey) error {
+		var sb strings.Builder
+		_ = knownhosts.WriteKnownHost(&sb, hostname, remote, key)
+		// skeema/knownhosts uses a fake public key to determine the host key
+		// algorithms. Ignore this one.
+		if s := sb.String(); !strings.Contains(s, "fake-public-key ZmFrZSBwdWJsaWMga2V5") {
+			log(codersdk.LogLevelInfo, "#1: 🔑 Got host key: %s", strings.TrimSpace(s))
+		}
+		return nil
+	}
+}
+
+// SetupRepoAuth determines the desired AuthMethod based on options.GitURL:
+//
+// | Git URL format          | GIT_USERNAME | GIT_PASSWORD | Auth Method |
+// | ------------------------|--------------|--------------|-------------|
+// | https?://host.tld/repo  | Not Set      | Not Set      | None        |
+// | https?://host.tld/repo  | Not Set      | Set          | HTTP Basic  |
+// | https?://host.tld/repo  | Set          | Not Set      | HTTP Basic  |
+// | https?://host.tld/repo  | Set          | Set          | HTTP Basic  |
+// | All other formats       | -            | -            | SSH         |
+//
+// For SSH authentication, the default username is "git" but will honour
+// GIT_USERNAME if set.
+//
+// If SSH_PRIVATE_KEY_PATH is set, an SSH private key will be read from
+// that path and the SSH auth method will be configured with that key.
+//
+// If SSH_KNOWN_HOSTS is not set, the SSH auth method will be configured
+// to accept and log all host keys. Otherwise, host key checking will be
+// performed as usual.
+func SetupRepoAuth(options *Options) transport.AuthMethod {
+	if options.GitURL == "" {
+		options.Logger(codersdk.LogLevelInfo, "#1: ❔ No Git URL supplied!")
+		return nil
+	}
+	if strings.HasPrefix(options.GitURL, "http://") || strings.HasPrefix(options.GitURL, "https://") {
+		// Special case: no auth
+		if options.GitUsername == "" && options.GitPassword == "" {
+			options.Logger(codersdk.LogLevelInfo, "#1: 👤 Using no authentication!")
 			return nil
-		},
-	}
-	dialAddr := hostPort(gitURL)
-	client, err := gossh.Dial("tcp", dialAddr, conf)
-	if err != nil {
-		// The dial may fail due to no authentication methods, but this is fine.
-		if netErr, ok := err.(net.Error); ok {
-			return nil, fmt.Errorf("ssh keyscan: dial %s: %w", dialAddr, netErr)
 		}
-		// Otherwise, assume success.
-	}
-	defer func() {
-		if client != nil {
-			_ = client.Close()
+		// Basic Auth
+		// NOTE: we previously inserted the credentials into the repo URL.
+		// This was removed in https://github.com/coder/envbuilder/pull/141
+		options.Logger(codersdk.LogLevelInfo, "#1: 🔒 Using HTTP basic authentication!")
+		return &githttp.BasicAuth{
+			Username: options.GitUsername,
+			Password: options.GitPassword,
 		}
-	}()
-
-	bs := buf.Bytes()
-	if len(bs) == 0 {
-		return nil, fmt.Errorf("ssh keyscan: found no host keys")
 	}
-	return buf.Bytes(), nil
-}
-
-// KnownHostsLine generates a corresponding line for known_hosts
-// given a dial address in the format host:port and a public key.
-func KnownHostsLine(dialAddr string, key gossh.PublicKey) (string, error) {
-	if !strings.Contains(dialAddr, ":") {
-		return "", fmt.Errorf("invalid dialAddr, expected host:port")
+	// Assume SSH auth for all other formats.
+	auth := &gitssh.PublicKeys{}
+	options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Using SSH authentication!")
+	// Generally git clones over SSH use the 'git' user, but respect
+	// GIT_USERNAME if set.
+	auth.User = options.GitUsername
+	if auth.User == "" {
+		auth.User = "git"
 	}
-	h := strings.Split(dialAddr, ":")[0]
-	k64 := base64.StdEncoding.EncodeToString(key.Marshal())
-	return fmt.Sprintf("%s %s %s", h, key.Type(), k64), nil
-}
-
-func hostPort(u *url.URL) string {
-	p := 22 // assume default SSH port
-	if tmp, err := strconv.Atoi(u.Port()); err == nil {
-		p = tmp
+	// If we are told about an SSH private key, attempt to read it.
+	if options.GitSSHPrivateKeyPath != "" {
+		signer, err := ReadPrivateKey(options.GitSSHPrivateKeyPath)
+		if err != nil {
+			options.Logger(codersdk.LogLevelError, "#1: ❌ Failed to read private key from %s: %s", options.GitSSHPrivateKeyPath, err.Error())
+			// go-git will still attempt to fall back to other auth methods from the
+			// environment. This enables usage of SSH_AUTH_SOCK, for example.
+			return auth
+		}
+		options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Using %s key!", signer.PublicKey().Type())
+		auth.Signer = signer
 	}
-	return fmt.Sprintf("%s:%d", u.Host, p)
-}
 
-var schemaRe = regexp.MustCompile(`^[a-zA-Z]+://`)
-
-// ParseGitURL will normalize a git URL without a leading schema.
-// If no schema is provided, we will default to ssh://.
-func ParseGitURL(gitURL string) (*url.URL, error) {
-	if !schemaRe.MatchString(gitURL) {
-		gitURL = "ssh://" + gitURL
-
+	if os.Getenv("SSH_KNOWN_HOSTS") == "" {
+		options.Logger(codersdk.LogLevelWarn, "#1: 🔓 SSH_KNOWN_HOSTS not set, accepting all host keys!")
+		auth.HostKeyCallback = LogHostKeyCallback(options.Logger)
 	}
-	return url.Parse(gitURL)
+	return auth
 }

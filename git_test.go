@@ -8,9 +8,11 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
 
+	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/go-git/go-billy/v5"
@@ -18,7 +20,6 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -259,39 +260,141 @@ func TestCloneRepoSSH(t *testing.T) {
 	})
 }
 
-func TestParseGitURL(t *testing.T) {
+func TestSetupRepoAuth(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range []struct {
-		url           string
-		expected      string
-		expectedError string
-	}{
-		{
-			url:      "https://user:pass@example.com/repo",
-			expected: "https://user:pass@example.com/repo",
-		},
-		{
-			url:      "http://user:pass@example.com/repo",
-			expected: "http://user:pass@example.com/repo",
-		},
-		{
-			url:      "ssh://git@example.com/repo",
-			expected: "ssh://git@example.com/repo",
-		},
-		{
-			url:      "git@example.com/repo",
-			expected: "ssh://git@example.com/repo",
-		},
-	} {
-		actual, err := envbuilder.ParseGitURL(tc.url)
-		if tc.expectedError == "" {
-			assert.NoError(t, err)
-			assert.Equal(t, tc.expected, actual.String())
-			continue
+	t.Run("Empty", func(t *testing.T) {
+		t.Parallel()
+
+		opts := &envbuilder.Options{
+			Logger: testLog(t),
 		}
-		assert.ErrorContains(t, err, tc.expectedError)
-	}
+		auth := envbuilder.SetupRepoAuth(opts)
+		require.Nil(t, auth)
+	})
+
+	t.Run("HTTP/NoAuth", func(t *testing.T) {
+		t.Parallel()
+		opts := &envbuilder.Options{
+			GitURL: "http://host.tld/repo",
+			Logger: testLog(t),
+		}
+		auth := envbuilder.SetupRepoAuth(opts)
+		require.Nil(t, auth)
+	})
+
+	t.Run("HTTP/BasicAuth", func(t *testing.T) {
+		t.Parallel()
+		opts := &envbuilder.Options{
+			GitURL:      "http://host.tld/repo",
+			GitUsername: "user",
+			GitPassword: "pass",
+			Logger:      testLog(t),
+		}
+		auth := envbuilder.SetupRepoAuth(opts)
+		ba, ok := auth.(*githttp.BasicAuth)
+		require.True(t, ok)
+		require.Equal(t, opts.GitUsername, ba.Username)
+		require.Equal(t, opts.GitPassword, ba.Password)
+	})
+
+	t.Run("HTTPS/BasicAuth", func(t *testing.T) {
+		t.Parallel()
+		opts := &envbuilder.Options{
+			GitURL:      "https://host.tld/repo",
+			GitUsername: "user",
+			GitPassword: "pass",
+			Logger:      testLog(t),
+		}
+		auth := envbuilder.SetupRepoAuth(opts)
+		ba, ok := auth.(*githttp.BasicAuth)
+		require.True(t, ok)
+		require.Equal(t, opts.GitUsername, ba.Username)
+		require.Equal(t, opts.GitPassword, ba.Password)
+	})
+
+	t.Run("SSH/WithScheme", func(t *testing.T) {
+		t.Parallel()
+		opts := &envbuilder.Options{
+			GitURL: "ssh://host.tld/repo",
+			Logger: testLog(t),
+		}
+		auth := envbuilder.SetupRepoAuth(opts)
+		pk, ok := auth.(*gitssh.PublicKeys)
+		require.True(t, ok)
+		require.Equal(t, "git", pk.User)
+	})
+
+	t.Run("SSH/NoScheme", func(t *testing.T) {
+		t.Parallel()
+		opts := &envbuilder.Options{
+			GitURL: "git@host.tld:repo/path",
+			Logger: testLog(t),
+		}
+		auth := envbuilder.SetupRepoAuth(opts)
+		pk, ok := auth.(*gitssh.PublicKeys)
+		require.True(t, ok)
+		require.Equal(t, "git", pk.User)
+	})
+
+	t.Run("SSH/GitUsername", func(t *testing.T) {
+		t.Parallel()
+		opts := &envbuilder.Options{
+			GitURL:      "host.tld:12345/repo/path",
+			GitUsername: "user",
+			Logger:      testLog(t),
+		}
+		auth := envbuilder.SetupRepoAuth(opts)
+		pk, ok := auth.(*gitssh.PublicKeys)
+		require.True(t, ok)
+		require.Equal(t, "user", pk.User)
+	})
+
+	t.Run("SSH/PrivateKey", func(t *testing.T) {
+		t.Parallel()
+
+		// nolint:gosec // Throw-away key for testing. DO NOT REUSE.
+		testKey := `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACBXOGgAge/EbcejqASqZa6s8PFXZle56DiGEt0VYnljuwAAAKgM05mUDNOZ
+lAAAAAtzc2gtZWQyNTUxOQAAACBXOGgAge/EbcejqASqZa6s8PFXZle56DiGEt0VYnljuw
+AAAEDCawwtjrM4AGYXD1G6uallnbsgMed4cfkFsQ+mLZtOkFc4aACB78Rtx6OoBKplrqzw
+8VdmV7noOIYS3RVieWO7AAAAHmNpYW5AY2RyLW1icC1mdmZmdzBuOHEwNXAuaG9tZQECAw
+QFBgc=
+-----END OPENSSH PRIVATE KEY-----`
+		tmpDir := t.TempDir()
+		kPath := filepath.Join(tmpDir, "test.key")
+		require.NoError(t, os.WriteFile(kPath, []byte(testKey), 0o600))
+		opts := &envbuilder.Options{
+			GitURL:               "ssh://git@host.tld:repo/path",
+			GitSSHPrivateKeyPath: kPath,
+			Logger:               testLog(t),
+		}
+		auth := envbuilder.SetupRepoAuth(opts)
+		pk, ok := auth.(*gitssh.PublicKeys)
+		require.True(t, ok)
+		require.NotNil(t, pk.Signer)
+		actualSigner, err := gossh.ParsePrivateKey([]byte(testKey))
+		require.NoError(t, err)
+		require.Equal(t, actualSigner, pk.Signer)
+	})
+
+	t.Run("SSH/MissingPrivateKey", func(t *testing.T) {
+		t.Parallel()
+
+		tmpDir := t.TempDir()
+		kPath := filepath.Join(tmpDir, "test.key")
+		require.NoError(t, os.WriteFile(kPath, []byte(`invalid`), 0o600))
+		opts := &envbuilder.Options{
+			GitURL:               "ssh://git@host.tld:repo/path",
+			GitSSHPrivateKeyPath: kPath,
+			Logger:               testLog(t),
+		}
+		auth := envbuilder.SetupRepoAuth(opts)
+		pk, ok := auth.(*gitssh.PublicKeys)
+		require.True(t, ok)
+		require.Nil(t, pk.Signer)
+	})
 }
 
 func mustRead(t *testing.T, fs billy.Filesystem, path string) string {
@@ -311,4 +414,10 @@ func randKeygen(t *testing.T) gossh.Signer {
 	signer, err := gossh.NewSignerFromKey(key)
 	require.NoError(t, err)
 	return signer
+}
+
+func testLog(t *testing.T) envbuilder.LoggerFunc {
+	return func(_ codersdk.LogLevel, format string, args ...interface{}) {
+		t.Logf(format, args...)
+	}
 }

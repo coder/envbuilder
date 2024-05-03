@@ -13,37 +13,36 @@ type LoggerFunc func(level codersdk.LogLevel, format string, args ...interface{}
 
 // Options contains the configuration for the envbuilder.
 type Options struct {
-	SetupScript            string
-	InitScript             string
-	InitCommand            string
-	InitArgs               string
-	CacheRepo              string
-	BaseImageCacheDir      string
-	LayerCacheDir          string
-	DevcontainerDir        string
-	DevcontainerJSONPath   string
-	DockerfilePath         string
-	BuildContextPath       string
-	CacheTTLDays           int64
-	DockerConfigBase64     string
-	FallbackImage          string
-	ExitOnBuildFailure     bool
-	ForceSafe              bool
-	Insecure               bool
-	IgnorePaths            []string
-	SkipRebuild            bool
-	GitURL                 string
-	GitCloneDepth          int64
-	GitCloneSingleBranch   bool
-	GitUsername            string
-	GitPassword            string
-	GitSSHPrivateKeyPath   string
-	GitSSHKnownHostsBase64 string
-	GitHTTPProxyURL        string
-	WorkspaceFolder        string
-	SSLCertBase64          string
-	ExportEnvFile          string
-	PostStartScriptPath    string
+	SetupScript          string
+	InitScript           string
+	InitCommand          string
+	InitArgs             string
+	CacheRepo            string
+	BaseImageCacheDir    string
+	LayerCacheDir        string
+	DevcontainerDir      string
+	DevcontainerJSONPath string
+	DockerfilePath       string
+	BuildContextPath     string
+	CacheTTLDays         int64
+	DockerConfigBase64   string
+	FallbackImage        string
+	ExitOnBuildFailure   bool
+	ForceSafe            bool
+	Insecure             bool
+	IgnorePaths          []string
+	SkipRebuild          bool
+	GitURL               string
+	GitCloneDepth        int64
+	GitCloneSingleBranch bool
+	GitUsername          string
+	GitPassword          string
+	GitSSHPrivateKeyPath string
+	GitHTTPProxyURL      string
+	WorkspaceFolder      string
+	SSLCertBase64        string
+	ExportEnvFile        string
+	PostStartScriptPath  string
 	// Logger is the logger to use for all operations.
 	Logger LoggerFunc
 	// Filesystem is the filesystem to use for all operations.
@@ -249,13 +248,6 @@ func (o *Options) CLI() serpent.OptionSet {
 			Env:         "GIT_SSH_PRIVATE_KEY_PATH",
 			Value:       serpent.StringOf(&o.GitSSHPrivateKeyPath),
 			Description: "Path to a SSH private key to be used for Git authentication.",
-		},
-		{
-			Flag:  "git-ssh-known-hosts-base64",
-			Env:   "GIT_SSH_KNOWN_HOSTS_BASE64",
-			Value: serpent.StringOf(&o.GitSSHKnownHostsBase64),
-			Description: "Base64-encoded content of a known hosts file. If not specified, " +
-				"host keys will be scanned and logged, but not checked.",
 		},
 		{
 			Flag:        "git-http-proxy-url",
