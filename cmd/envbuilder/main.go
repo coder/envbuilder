@@ -37,7 +37,7 @@ func main() {
 				}
 				u, err := url.Parse(options.CoderAgentURL)
 				if err != nil {
-					return fmt.Errorf("invalid value for CODER_AGENT_URL: %w", err)
+					return fmt.Errorf("unable to parse CODER_AGENT_URL as URL: %w", err)
 				}
 				client := agentsdk.New(u)
 				client.SetSessionToken(options.CoderAgentToken)

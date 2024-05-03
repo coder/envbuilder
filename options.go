@@ -131,6 +131,7 @@ type Options struct {
 	Filesystem billy.Filesystem
 	// These options are specifically used when envbuilder is invoked as part of a
 	// Coder workspace.
+	// Revert to `*url.URL` once https://github.com/coder/serpent/issues/14 is fixed.
 	CoderAgentURL string
 	// CoderAgentToken is the authentication token for a Coder agent.
 	CoderAgentToken string
