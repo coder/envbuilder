@@ -91,7 +91,7 @@ OPTIONS:
           The password to use for Git authentication. This is optional.
 
       --git-ssh-private-key-path string, $GIT_SSH_PRIVATE_KEY_PATH
-          Path to a SSH private key to be used for Git authentication.
+          Path to an SSH private key to be used for Git authentication.
 
       --git-url string, $GIT_URL
           The URL of the Git repository to clone. This is optional.

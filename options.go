@@ -247,7 +247,7 @@ func (o *Options) CLI() serpent.OptionSet {
 			Flag:        "git-ssh-private-key-path",
 			Env:         "GIT_SSH_PRIVATE_KEY_PATH",
 			Value:       serpent.StringOf(&o.GitSSHPrivateKeyPath),
-			Description: "Path to a SSH private key to be used for Git authentication.",
+			Description: "Path to an SSH private key to be used for Git authentication.",
 		},
 		{
 			Flag:        "git-http-proxy-url",
