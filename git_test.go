@@ -260,12 +260,10 @@ func TestCloneRepoSSH(t *testing.T) {
 	})
 }
 
+// nolint:paralleltest // t.Setenv for SSH_AUTH_SOCK
 func TestSetupRepoAuth(t *testing.T) {
-	t.Parallel()
-
+	t.Setenv("SSH_AUTH_SOCK", "")
 	t.Run("Empty", func(t *testing.T) {
-		t.Parallel()
-
 		opts := &envbuilder.Options{
 			Logger: testLog(t),
 		}
@@ -274,7 +272,6 @@ func TestSetupRepoAuth(t *testing.T) {
 	})
 
 	t.Run("HTTP/NoAuth", func(t *testing.T) {
-		t.Parallel()
 		opts := &envbuilder.Options{
 			GitURL: "http://host.tld/repo",
 			Logger: testLog(t),
@@ -284,7 +281,6 @@ func TestSetupRepoAuth(t *testing.T) {
 	})
 
 	t.Run("HTTP/BasicAuth", func(t *testing.T) {
-		t.Parallel()
 		opts := &envbuilder.Options{
 			GitURL:      "http://host.tld/repo",
 			GitUsername: "user",
@@ -299,7 +295,6 @@ func TestSetupRepoAuth(t *testing.T) {
 	})
 
 	t.Run("HTTPS/BasicAuth", func(t *testing.T) {
-		t.Parallel()
 		opts := &envbuilder.Options{
 			GitURL:      "https://host.tld/repo",
 			GitUsername: "user",
@@ -314,54 +309,44 @@ func TestSetupRepoAuth(t *testing.T) {
 	})
 
 	t.Run("SSH/WithScheme", func(t *testing.T) {
-		t.Parallel()
+		kPath := writeTestPrivateKey(t)
 		opts := &envbuilder.Options{
-			GitURL: "ssh://host.tld/repo",
-			Logger: testLog(t),
+			GitURL:               "ssh://host.tld/repo",
+			GitSSHPrivateKeyPath: kPath,
+			Logger:               testLog(t),
 		}
 		auth := envbuilder.SetupRepoAuth(opts)
-		_, ok := auth.(*gitssh.PublicKeysCallback)
+		_, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 	})
 
 	t.Run("SSH/NoScheme", func(t *testing.T) {
-		t.Parallel()
+		kPath := writeTestPrivateKey(t)
 		opts := &envbuilder.Options{
-			GitURL: "git@host.tld:repo/path",
-			Logger: testLog(t),
+			GitURL:               "git@host.tld:repo/path",
+			GitSSHPrivateKeyPath: kPath,
+			Logger:               testLog(t),
 		}
 		auth := envbuilder.SetupRepoAuth(opts)
-		_, ok := auth.(*gitssh.PublicKeysCallback)
+		_, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 	})
 
 	t.Run("SSH/GitUsername", func(t *testing.T) {
-		t.Parallel()
+		kPath := writeTestPrivateKey(t)
 		opts := &envbuilder.Options{
-			GitURL:      "host.tld:12345/repo/path",
-			GitUsername: "user",
-			Logger:      testLog(t),
+			GitURL:               "host.tld:12345/repo/path",
+			GitSSHPrivateKeyPath: kPath,
+			GitUsername:          "user",
+			Logger:               testLog(t),
 		}
 		auth := envbuilder.SetupRepoAuth(opts)
-		_, ok := auth.(*gitssh.PublicKeysCallback)
+		_, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 	})
 
 	t.Run("SSH/PrivateKey", func(t *testing.T) {
-		t.Parallel()
-
-		// nolint:gosec // Throw-away key for testing. DO NOT REUSE.
-		testKey := `-----BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
-QyNTUxOQAAACBXOGgAge/EbcejqASqZa6s8PFXZle56DiGEt0VYnljuwAAAKgM05mUDNOZ
-lAAAAAtzc2gtZWQyNTUxOQAAACBXOGgAge/EbcejqASqZa6s8PFXZle56DiGEt0VYnljuw
-AAAEDCawwtjrM4AGYXD1G6uallnbsgMed4cfkFsQ+mLZtOkFc4aACB78Rtx6OoBKplrqzw
-8VdmV7noOIYS3RVieWO7AAAAHmNpYW5AY2RyLW1icC1mdmZmdzBuOHEwNXAuaG9tZQECAw
-QFBgc=
------END OPENSSH PRIVATE KEY-----`
-		tmpDir := t.TempDir()
-		kPath := filepath.Join(tmpDir, "test.key")
-		require.NoError(t, os.WriteFile(kPath, []byte(testKey), 0o600))
+		kPath := writeTestPrivateKey(t)
 		opts := &envbuilder.Options{
 			GitURL:               "ssh://git@host.tld:repo/path",
 			GitSSHPrivateKeyPath: kPath,
@@ -376,20 +361,13 @@ QFBgc=
 		require.Equal(t, actualSigner, pk.Signer)
 	})
 
-	t.Run("SSH/MissingPrivateKey", func(t *testing.T) {
-		t.Parallel()
-
-		tmpDir := t.TempDir()
-		kPath := filepath.Join(tmpDir, "test.key")
-		require.NoError(t, os.WriteFile(kPath, []byte(`invalid`), 0o600))
+	t.Run("SSH/NoAuthMethods", func(t *testing.T) {
 		opts := &envbuilder.Options{
-			GitURL:               "ssh://git@host.tld:repo/path",
-			GitSSHPrivateKeyPath: kPath,
-			Logger:               testLog(t),
+			GitURL: "ssh://git@host.tld:repo/path",
+			Logger: testLog(t),
 		}
 		auth := envbuilder.SetupRepoAuth(opts)
-		_, ok := auth.(*gitssh.PublicKeysCallback)
-		require.True(t, ok)
+		require.Nil(t, auth) // TODO: actually test SSH_AUTH_SOCK
 	})
 }
 
@@ -416,4 +394,22 @@ func testLog(t *testing.T) envbuilder.LoggerFunc {
 	return func(_ codersdk.LogLevel, format string, args ...interface{}) {
 		t.Logf(format, args...)
 	}
+}
+
+// nolint:gosec // Throw-away key for testing. DO NOT REUSE.
+var testKey = `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACBXOGgAge/EbcejqASqZa6s8PFXZle56DiGEt0VYnljuwAAAKgM05mUDNOZ
+lAAAAAtzc2gtZWQyNTUxOQAAACBXOGgAge/EbcejqASqZa6s8PFXZle56DiGEt0VYnljuw
+AAAEDCawwtjrM4AGYXD1G6uallnbsgMed4cfkFsQ+mLZtOkFc4aACB78Rtx6OoBKplrqzw
+8VdmV7noOIYS3RVieWO7AAAAHmNpYW5AY2RyLW1icC1mdmZmdzBuOHEwNXAuaG9tZQECAw
+QFBgc=
+-----END OPENSSH PRIVATE KEY-----`
+
+func writeTestPrivateKey(t *testing.T) string {
+	t.Helper()
+	tmpDir := t.TempDir()
+	kPath := filepath.Join(tmpDir, "test.key")
+	require.NoError(t, os.WriteFile(kPath, []byte(testKey), 0o600))
+	return kPath
 }
