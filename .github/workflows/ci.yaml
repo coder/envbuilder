@@ -102,4 +102,4 @@ jobs:
           go-version: "~1.21"
 
       - name: Check format
-        run: test -z $(go run mvdan.cc/gofumpt -l .)
+        run: bash ./scripts/check_fmt.sh
