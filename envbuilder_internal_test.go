@@ -32,7 +32,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 
 		// given
 		fs := memfs.New()
-		err := fs.MkdirAll("/workspace/.devcontainer", 0600)
+		err := fs.MkdirAll("/workspace/.devcontainer", 0o600)
 		require.NoError(t, err)
 
 		// when
@@ -50,7 +50,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 
 		// given
 		fs := memfs.New()
-		err := fs.MkdirAll("/workspace/.devcontainer", 0600)
+		err := fs.MkdirAll("/workspace/.devcontainer", 0o600)
 		require.NoError(t, err)
 		fs.Create("/workspace/.devcontainer/devcontainer.json")
 
@@ -71,7 +71,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 
 		// given
 		fs := memfs.New()
-		err := fs.MkdirAll("/workspace/experimental-devcontainer", 0600)
+		err := fs.MkdirAll("/workspace/experimental-devcontainer", 0o600)
 		require.NoError(t, err)
 		fs.Create("/workspace/experimental-devcontainer/devcontainer.json")
 
@@ -93,7 +93,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 
 		// given
 		fs := memfs.New()
-		err := fs.MkdirAll("/workspace/.devcontainer", 0600)
+		err := fs.MkdirAll("/workspace/.devcontainer", 0o600)
 		require.NoError(t, err)
 		fs.Create("/workspace/.devcontainer/experimental.json")
 
@@ -115,7 +115,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 
 		// given
 		fs := memfs.New()
-		err := fs.MkdirAll("/workspace", 0600)
+		err := fs.MkdirAll("/workspace", 0o600)
 		require.NoError(t, err)
 		fs.Create("/workspace/devcontainer.json")
 
@@ -136,7 +136,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 
 		// given
 		fs := memfs.New()
-		err := fs.MkdirAll("/workspace/.devcontainer/sample", 0600)
+		err := fs.MkdirAll("/workspace/.devcontainer/sample", 0o600)
 		require.NoError(t, err)
 		fs.Create("/workspace/.devcontainer/sample/devcontainer.json")
 

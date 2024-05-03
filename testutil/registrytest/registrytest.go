@@ -74,7 +74,7 @@ func WriteContainer(t *testing.T, serverURL, containerRef, mediaType string, fil
 			require.NoError(t, err)
 		}
 		err := wtr.WriteHeader(&tar.Header{
-			Mode:     0777,
+			Mode:     0o777,
 			Name:     name,
 			Typeflag: tar.TypeReg,
 			Size:     int64(len(data)),

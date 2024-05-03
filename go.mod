@@ -285,6 +285,7 @@ require (
 	gvisor.dev/gvisor v0.0.0-20240301031223-3172bc04679b // indirect
 	inet.af/netaddr v0.0.0-20230525184311-b8eac61e914a // indirect
 	inet.af/peercred v0.0.0-20210906144145-0893ea02156a // indirect
+	mvdan.cc/gofumpt v0.6.0 // indirect
 	nhooyr.io/websocket v1.8.7 // indirect
 	storj.io/drpc v0.0.33-0.20230420154621-9716137f6037 // indirect
 	tailscale.com v1.46.1 // indirect

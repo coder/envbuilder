@@ -161,7 +161,7 @@ func TestCloneRepo(t *testing.T) {
 
 func mustRead(t *testing.T, fs billy.Filesystem, path string) string {
 	t.Helper()
-	f, err := fs.OpenFile(path, os.O_RDONLY, 0644)
+	f, err := fs.OpenFile(path, os.O_RDONLY, 0o644)
 	require.NoError(t, err)
 	content, err := io.ReadAll(f)
 	require.NoError(t, err)

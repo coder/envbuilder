@@ -143,7 +143,7 @@ func NewRepo(t *testing.T, fs billy.Filesystem, commits ...CommitFunc) *git.Repo
 // WriteFile writes a file to the filesystem.
 func WriteFile(t *testing.T, fs billy.Filesystem, path, content string) {
 	t.Helper()
-	file, err := fs.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	file, err := fs.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	require.NoError(t, err)
 	_, err = file.Write([]byte(content))
 	require.NoError(t, err)

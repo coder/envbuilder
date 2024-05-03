@@ -89,7 +89,7 @@ func TestCLIOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	if *updateCLIOutputGoldenFiles {
-		err = os.WriteFile("testdata/options.golden", b.Stdout.Bytes(), 0644)
+		err = os.WriteFile("testdata/options.golden", b.Stdout.Bytes(), 0o644)
 		require.NoError(t, err)
 		t.Logf("updated golden file: testdata/options.golden")
 	} else {
@@ -111,7 +111,6 @@ func runCLI() envbuilder.Options {
 	i := cmd.Invoke().WithOS()
 	fakeIO(i)
 	err := i.Run()
-
 	if err != nil {
 		panic("failed to run CLI: " + err.Error())
 	}
