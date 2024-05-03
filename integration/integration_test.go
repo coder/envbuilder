@@ -231,11 +231,16 @@ func TestBuildFromDockerfile(t *testing.T) {
 	ctr, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + srv.URL,
 		"DOCKERFILE_PATH=Dockerfile",
+		"DOCKER_CONFIG_BASE64=" + base64.StdEncoding.EncodeToString([]byte(`{"experimental": "enabled"}`)),
 	}})
 	require.NoError(t, err)
 
 	output := execContainer(t, ctr, "echo hello")
 	require.Equal(t, "hello", strings.TrimSpace(output))
+
+	// Verify that the Docker configuration secret file is removed
+	output = execContainer(t, ctr, "stat "+filepath.Join(envbuilder.MagicDir, "config.json"))
+	require.Contains(t, output, "No such file or directory")
 }
 
 func TestBuildPrintBuildOutput(t *testing.T) {
