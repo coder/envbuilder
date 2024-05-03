@@ -194,7 +194,7 @@ func Run(ctx context.Context, options Options) error {
 			CABundle:     caBundle,
 		}
 
-		cloneOpts.RepoAuth = SetupRepoAuth(&options)
+		cloneOpts.RepoAuth = SetupRepoAuth(ctx, &options)
 		if options.GitHTTPProxyURL != "" {
 			cloneOpts.ProxyOptions = transport.ProxyOptions{
 				URL: options.GitHTTPProxyURL,

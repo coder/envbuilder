@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sync/atomic"
 	"testing"
 
 	"github.com/coder/coder/v2/codersdk"
@@ -268,11 +269,12 @@ func TestCloneRepoSSH(t *testing.T) {
 // nolint:paralleltest // t.Setenv for SSH_AUTH_SOCK
 func TestSetupRepoAuth(t *testing.T) {
 	t.Setenv("SSH_AUTH_SOCK", "")
+	ctx := context.Background()
 	t.Run("Empty", func(t *testing.T) {
 		opts := &envbuilder.Options{
 			Logger: testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
 		require.Nil(t, auth)
 	})
 
@@ -281,7 +283,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitURL: "http://host.tld/repo",
 			Logger: testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
 		require.Nil(t, auth)
 	})
 
@@ -292,7 +294,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitPassword: "pass",
 			Logger:      testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
 		ba, ok := auth.(*githttp.BasicAuth)
 		require.True(t, ok)
 		require.Equal(t, opts.GitUsername, ba.Username)
@@ -306,7 +308,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitPassword: "pass",
 			Logger:      testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
 		ba, ok := auth.(*githttp.BasicAuth)
 		require.True(t, ok)
 		require.Equal(t, opts.GitUsername, ba.Username)
@@ -320,7 +322,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitSSHPrivateKeyPath: kPath,
 			Logger:               testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
 		_, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 	})
@@ -332,7 +334,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitSSHPrivateKeyPath: kPath,
 			Logger:               testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
 		_, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 	})
@@ -345,7 +347,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitSSHPrivateKeyPath: kPath,
 			Logger:               testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
 		_, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 	})
@@ -358,7 +360,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitUsername:          "user",
 			Logger:               testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
 		_, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 	})
@@ -370,7 +372,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitSSHPrivateKeyPath: kPath,
 			Logger:               testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
 		pk, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 		require.NotNil(t, pk.Signer)
@@ -384,7 +386,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitURL: "ssh://git@host.tld:repo/path",
 			Logger: testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
 		require.Nil(t, auth) // TODO: actually test SSH_AUTH_SOCK
 	})
 
@@ -415,19 +417,31 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitURL:          "ssh://git@host.tld:repo/path",
 			Logger:          testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
 		pk, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 		require.NotNil(t, pk.Signer)
 		require.Equal(t, actualSigner, pk.Signer)
 	})
 
-	t.Run("SSH/CoderForbidden", func(t *testing.T) {
+	t.Run("SSH/CoderRetry", func(t *testing.T) {
 		token := uuid.NewString()
+		actualSigner, err := gossh.ParsePrivateKey([]byte(testKey))
+		require.NoError(t, err)
+		var count atomic.Int64
+		// Return 401 initially, but eventually 200.
 		handler := func(w http.ResponseWriter, r *http.Request) {
-			hdr := r.Header.Get(codersdk.SessionTokenHeader)
-			assert.Equal(t, hdr, token)
-			w.WriteHeader(http.StatusForbidden)
+			c := count.Add(1)
+			if c < 3 {
+				hdr := r.Header.Get(codersdk.SessionTokenHeader)
+				assert.Equal(t, hdr, token)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(&agentsdk.GitSSHKey{
+				PublicKey:  string(actualSigner.PublicKey().Marshal()),
+				PrivateKey: string(testKey),
+			})
 		}
 		srv := httptest.NewServer(http.HandlerFunc(handler))
 		opts := &envbuilder.Options{
@@ -436,7 +450,27 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitURL:          "ssh://git@host.tld:repo/path",
 			Logger:          testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
+		pk, ok := auth.(*gitssh.PublicKeys)
+		require.True(t, ok)
+		require.NotNil(t, pk.Signer)
+		require.Equal(t, actualSigner, pk.Signer)
+	})
+
+	t.Run("SSH/NotCoder", func(t *testing.T) {
+		token := uuid.NewString()
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusTeapot)
+			_, _ = w.Write([]byte("I'm a teapot!"))
+		}
+		srv := httptest.NewServer(http.HandlerFunc(handler))
+		opts := &envbuilder.Options{
+			CoderAgentURL:   srv.URL,
+			CoderAgentToken: token,
+			GitURL:          "ssh://git@host.tld:repo/path",
+			Logger:          testLog(t),
+		}
+		auth := envbuilder.SetupRepoAuth(ctx, opts)
 		require.Nil(t, auth)
 	})
 }

@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/coder/v2/codersdk/agentsdk"
 	"github.com/go-git/go-billy/v5"
@@ -186,7 +188,7 @@ func LogHostKeyCallback(log LoggerFunc) gossh.HostKeyCallback {
 // If SSH_KNOWN_HOSTS is not set, the SSH auth method will be configured
 // to accept and log all host keys. Otherwise, host key checking will be
 // performed as usual.
-func SetupRepoAuth(options *Options) transport.AuthMethod {
+func SetupRepoAuth(ctx context.Context, options *Options) transport.AuthMethod {
 	if options.GitURL == "" {
 		options.Logger(codersdk.LogLevelInfo, "#1: ❔ No Git URL supplied!")
 		return nil
@@ -231,14 +233,14 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 	// an SSH key from Coder!
 	if signer == nil && options.CoderAgentURL != "" && options.CoderAgentToken != "" {
 		options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Fetching key from %s!", options.CoderAgentURL)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		fetchCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
-		s, err := FetchCoderSSHKey(ctx, options.CoderAgentURL, options.CoderAgentToken)
+		s, err := FetchCoderSSHKeyRetry(fetchCtx, options.Logger, options.CoderAgentURL, options.CoderAgentToken)
 		if err == nil {
 			signer = s
 			options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Fetched %s key %s !", signer.PublicKey().Type(), keyFingerprint(signer)[:8])
 		} else {
-			options.Logger(codersdk.LogLevelInfo, "#1: ❌ Failed to fetch SSH key: %w", options.CoderAgentURL, err)
+			options.Logger(codersdk.LogLevelInfo, "#1: ❌ Failed to fetch SSH key from %s: %w", options.CoderAgentURL, err)
 		}
 	}
 
@@ -274,6 +276,39 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 		auth.HostKeyCallback = LogHostKeyCallback(options.Logger)
 	}
 	return auth
+}
+
+// FetchCoderSSHKeyRetry wraps FetchCoderSSHKey in backoff.Retry.
+// Retries are attempted if Coder responds with a 401 Unauthorized.
+// This indicates that the workspace build has not yet completed.
+// It will retry for up to 1 minute with exponential backoff.
+// Any other error is considered a permanent failure.
+func FetchCoderSSHKeyRetry(ctx context.Context, log LoggerFunc, coderURL, agentToken string) (gossh.Signer, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	signerChan := make(chan gossh.Signer, 1)
+	eb := backoff.NewExponentialBackOff()
+	eb.MaxElapsedTime = 0
+	eb.MaxInterval = time.Minute
+	bkoff := backoff.WithContext(eb, ctx)
+	err := backoff.Retry(func() error {
+		s, err := FetchCoderSSHKey(ctx, coderURL, agentToken)
+		if err != nil {
+			var sdkErr *codersdk.Error
+			if errors.As(err, &sdkErr) && sdkErr.StatusCode() == http.StatusUnauthorized {
+				// Retry, as this may just mean that the workspace build has not yet
+				// completed.
+				log(codersdk.LogLevelInfo, "#1: 🕐 Backing off as the workspace build has not yet completed...")
+				return err
+			}
+			close(signerChan)
+			return backoff.Permanent(err)
+		}
+		signerChan <- s
+		return nil
+	}, bkoff)
+	return <-signerChan, err
 }
 
 // FetchCoderSSHKey fetches the user's Git SSH key from Coder using the supplied
