@@ -288,8 +288,7 @@ On MacOS or Windows systems, we recommend either using a VM or the provided `.de
 | `--git-clone-single-branch` | `GIT_CLONE_SINGLE_BRANCH` |  | Clone only a single branch of the Git repository. |
 | `--git-username` | `GIT_USERNAME` |  | The username to use for Git authentication. This is optional. |
 | `--git-password` | `GIT_PASSWORD` |  | The password to use for Git authentication. This is optional. |
-| `--git-ssh-private-key-path` | `GIT_SSH_PRIVATE_KEY_PATH` |  | Path to a SSH private key to be used for Git authentication. |
-| `--git-ssh-known-hosts-base64` | `GIT_SSH_KNOWN_HOSTS_BASE64` |  | Base64-encoded content of a known hosts file. If not specified, host keys will be scanned and logged, but not checked. |
+| `--git-ssh-private-key-path` | `GIT_SSH_PRIVATE_KEY_PATH` |  | Path to an SSH private key to be used for Git authentication. |
 | `--git-http-proxy-url` | `GIT_HTTP_PROXY_URL` |  | The URL for the HTTP proxy. This is optional. |
 | `--workspace-folder` | `WORKSPACE_FOLDER` |  | The path to the workspace folder that will be built. This is optional. |
 | `--ssl-cert-base64` | `SSL_CERT_BASE64` |  | The content of an SSL cert file. This is useful for self-signed certificates. |
