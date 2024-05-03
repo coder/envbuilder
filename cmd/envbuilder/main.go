@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -31,10 +32,14 @@ func main() {
 		Handler: func(inv *serpent.Invocation) error {
 			var sendLogs func(ctx context.Context, log ...agentsdk.Log) error
 			if options.CoderAgentToken != "" {
-				if options.CoderAgentURL == nil {
+				if options.CoderAgentURL == "" {
 					return errors.New("CODER_AGENT_URL must be set if CODER_AGENT_TOKEN is set")
 				}
-				client := agentsdk.New(options.CoderAgentURL)
+				u, err := url.Parse(options.CoderAgentURL)
+				if err != nil {
+					return fmt.Errorf("invalid value for CODER_AGENT_URL: %w", err)
+				}
+				client := agentsdk.New(u)
 				client.SetSessionToken(options.CoderAgentToken)
 				client.SDK.HTTPClient = &http.Client{
 					Transport: &http.Transport{
