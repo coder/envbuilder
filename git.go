@@ -22,6 +22,7 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/skeema/knownhosts"
+	"golang.org/x/crypto/ssh"
 	gossh "golang.org/x/crypto/ssh"
 )
 
@@ -195,28 +196,55 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 			Password: options.GitPassword,
 		}
 	}
-	// Assume SSH auth for all other formats.
-	auth := &gitssh.PublicKeys{}
-	options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Using SSH authentication!")
+
 	// Generally git clones over SSH use the 'git' user, but respect
 	// GIT_USERNAME if set.
-	auth.User = options.GitUsername
+	authUser := options.GitUsername
+	if authUser == "" {
+		authUser = "git"
+	}
+
+	// Assume SSH auth for all other formats.
+	options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Using SSH authentication!")
+
+	var signer ssh.Signer
+	if options.GitSSHPrivateKeyPath != "" {
+		s, err := ReadPrivateKey(options.GitSSHPrivateKeyPath)
+		if err != nil {
+			options.Logger(codersdk.LogLevelError, "#1: ❌ Failed to read private key from %s: %s", options.GitSSHPrivateKeyPath, err.Error())
+		} else {
+			options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Using %s key!", s.PublicKey().Type())
+			signer = s
+		}
+	}
+
+	// If no SSH key set, fall back to agent auth.
+	if signer == nil {
+		options.Logger(codersdk.LogLevelError, "#1: 🔑 No SSH key found, falling back to agent!")
+		auth, err := gitssh.NewSSHAgentAuth(authUser)
+		if err != nil {
+			options.Logger(codersdk.LogLevelError, "#1: ❌ Failed to connect to SSH agent: %s", err.Error())
+			return nil // nothing else we can do
+		}
+		if os.Getenv("SSH_KNOWN_HOSTS") == "" {
+			options.Logger(codersdk.LogLevelWarn, "#1: 🔓 SSH_KNOWN_HOSTS not set, accepting all host keys!")
+			auth.HostKeyCallback = LogHostKeyCallback(options.Logger)
+		}
+		return auth
+	}
+
+	auth := &gitssh.PublicKeys{
+		User:   options.GitUsername,
+		Signer: signer,
+	}
+
+	// Generally git clones over SSH use the 'git' user, but respect
+	// GIT_USERNAME if set.
 	if auth.User == "" {
 		auth.User = "git"
 	}
-	// If we are told about an SSH private key, attempt to read it.
-	if options.GitSSHPrivateKeyPath != "" {
-		signer, err := ReadPrivateKey(options.GitSSHPrivateKeyPath)
-		if err != nil {
-			options.Logger(codersdk.LogLevelError, "#1: ❌ Failed to read private key from %s: %s", options.GitSSHPrivateKeyPath, err.Error())
-			// go-git will still attempt to fall back to other auth methods from the
-			// environment. This enables usage of SSH_AUTH_SOCK, for example.
-			return auth
-		}
-		options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Using %s key!", signer.PublicKey().Type())
-		auth.Signer = signer
-	}
 
+	// Duplicated code due to Go's type system.
 	if os.Getenv("SSH_KNOWN_HOSTS") == "" {
 		options.Logger(codersdk.LogLevelWarn, "#1: 🔓 SSH_KNOWN_HOSTS not set, accepting all host keys!")
 		auth.HostKeyCallback = LogHostKeyCallback(options.Logger)

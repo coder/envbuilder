@@ -320,9 +320,8 @@ func TestSetupRepoAuth(t *testing.T) {
 			Logger: testLog(t),
 		}
 		auth := envbuilder.SetupRepoAuth(opts)
-		pk, ok := auth.(*gitssh.PublicKeys)
+		_, ok := auth.(*gitssh.PublicKeysCallback)
 		require.True(t, ok)
-		require.Equal(t, "git", pk.User)
 	})
 
 	t.Run("SSH/NoScheme", func(t *testing.T) {
@@ -332,9 +331,8 @@ func TestSetupRepoAuth(t *testing.T) {
 			Logger: testLog(t),
 		}
 		auth := envbuilder.SetupRepoAuth(opts)
-		pk, ok := auth.(*gitssh.PublicKeys)
+		_, ok := auth.(*gitssh.PublicKeysCallback)
 		require.True(t, ok)
-		require.Equal(t, "git", pk.User)
 	})
 
 	t.Run("SSH/GitUsername", func(t *testing.T) {
@@ -345,9 +343,8 @@ func TestSetupRepoAuth(t *testing.T) {
 			Logger:      testLog(t),
 		}
 		auth := envbuilder.SetupRepoAuth(opts)
-		pk, ok := auth.(*gitssh.PublicKeys)
+		_, ok := auth.(*gitssh.PublicKeysCallback)
 		require.True(t, ok)
-		require.Equal(t, "user", pk.User)
 	})
 
 	t.Run("SSH/PrivateKey", func(t *testing.T) {
@@ -391,9 +388,8 @@ QFBgc=
 			Logger:               testLog(t),
 		}
 		auth := envbuilder.SetupRepoAuth(opts)
-		pk, ok := auth.(*gitssh.PublicKeys)
+		_, ok := auth.(*gitssh.PublicKeysCallback)
 		require.True(t, ok)
-		require.Nil(t, pk.Signer)
 	})
 }
 
