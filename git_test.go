@@ -393,7 +393,7 @@ func TestSetupRepoAuth(t *testing.T) {
 		actualSigner, err := gossh.ParsePrivateKey([]byte(testKey))
 		require.NoError(t, err)
 		handler := func(w http.ResponseWriter, r *http.Request) {
-			hdr := r.Header.Get("Coder-Session-Token")
+			hdr := r.Header.Get(codersdk.SessionTokenHeader)
 			if !assert.Equal(t, hdr, token) {
 				w.WriteHeader(http.StatusForbidden)
 				return
@@ -409,10 +409,8 @@ func TestSetupRepoAuth(t *testing.T) {
 			}
 		}
 		srv := httptest.NewServer(http.HandlerFunc(handler))
-		u, err := url.Parse(srv.URL)
-		require.NoError(t, err)
 		opts := &envbuilder.Options{
-			CoderAgentURL:   u,
+			CoderAgentURL:   srv.URL,
 			CoderAgentToken: token,
 			GitURL:          "ssh://git@host.tld:repo/path",
 			Logger:          testLog(t),
@@ -427,13 +425,13 @@ func TestSetupRepoAuth(t *testing.T) {
 	t.Run("SSH/CoderForbidden", func(t *testing.T) {
 		token := uuid.NewString()
 		handler := func(w http.ResponseWriter, r *http.Request) {
+			hdr := r.Header.Get(codersdk.SessionTokenHeader)
+			assert.Equal(t, hdr, token)
 			w.WriteHeader(http.StatusForbidden)
 		}
 		srv := httptest.NewServer(http.HandlerFunc(handler))
-		u, err := url.Parse(srv.URL)
-		require.NoError(t, err)
 		opts := &envbuilder.Options{
-			CoderAgentURL:   u,
+			CoderAgentURL:   srv.URL,
 			CoderAgentToken: token,
 			GitURL:          "ssh://git@host.tld:repo/path",
 			Logger:          testLog(t),

@@ -222,8 +222,8 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 
 	// If we have no signer but we have a Coder URL and agent token, try to fetch
 	// an SSH key from Coder!
-	if signer == nil && options.CoderAgentURL != nil && options.CoderAgentToken != "" {
-		options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Fetching key from %s!", options.CoderAgentURL.String())
+	if signer == nil && options.CoderAgentURL != "" && options.CoderAgentToken != "" {
+		options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Fetching key from %s!", options.CoderAgentURL)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		s, err := FetchCoderSSHKey(ctx, options.CoderAgentURL, options.CoderAgentToken)
@@ -231,7 +231,7 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 			signer = s
 			options.Logger(codersdk.LogLevelInfo, "#1: 🔑 Fetched %s key %s !", signer.PublicKey().Type(), keyFingerprint(signer)[:8])
 		} else {
-			options.Logger(codersdk.LogLevelInfo, "#1: ❌ Failed to fetch SSH key: %w", options.CoderAgentURL.String(), err)
+			options.Logger(codersdk.LogLevelInfo, "#1: ❌ Failed to fetch SSH key: %w", options.CoderAgentURL, err)
 		}
 	}
 
@@ -271,8 +271,12 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 
 // FetchCoderSSHKey fetches the user's Git SSH key from Coder using the supplied
 // Coder URL and agent token.
-func FetchCoderSSHKey(ctx context.Context, coderURL url.URL, agentToken string) (gossh.Signer, error) {
-	client := agentsdk.New(&coderURL)
+func FetchCoderSSHKey(ctx context.Context, coderURL string, agentToken string) (gossh.Signer, error) {
+	u, err := url.Parse(coderURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Coder URL: %w", err)
+	}
+	client := agentsdk.New(u)
 	client.SetSessionToken(agentToken)
 	key, err := client.GitSSHKey(ctx)
 	if err != nil {
