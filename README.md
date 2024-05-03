@@ -185,6 +185,24 @@ envbuilder will assume SSH authentication. You have the following options:
       ghcr.io/coder/envbuilder
    ```
 
+1. Fetch the SSH key from Coder: as long as `CODER_AGENT_URL` and
+   `CODER_AGENT_TOKEN` are set, then envbuilder will attempt to fetch the
+   corresponding Git SSH key directly from Coder. Example:
+
+   ```terraform
+    resource "docker_container" "workspace" {
+      count = data.coder_workspace.me.start_count
+      image = "ghcr.io/coder/envbuilder:version"
+      name  =
+      "coder-${data.coder_workspace.me.owner}-${lower(data.coder_workspace.me.name)}"
+
+      env = [
+        "CODER_AGENT_TOKEN=${coder_agent.dev.token}",
+        "CODER_AGENT_URL=${data.coder_workspace.me.access_url}",
+        ...
+      ]
+   ```
+
 1. Agent-based authentication: set `SSH_AUTH_SOCK` and mount in your agent socket, for example:
 
   ```bash

@@ -176,6 +176,13 @@ func LogHostKeyCallback(log LoggerFunc) gossh.HostKeyCallback {
 // If SSH_PRIVATE_KEY_PATH is set, an SSH private key will be read from
 // that path and the SSH auth method will be configured with that key.
 //
+// If no SSH_PRIVATE_KEY_PATH is set, but CODER_AGENT_URL and CODER_AGENT_TOKEN
+// are both specified, envbuilder will attempt to fetch the corresponding
+// Git SSH key for the user.
+//
+// Otherwise, SSH authentication will fall back to SSH_AUTH_SOCK, in which
+// case SSH_AUTH_SOCK must be set to the path of a listening SSH agent socket.
+//
 // If SSH_KNOWN_HOSTS is not set, the SSH auth method will be configured
 // to accept and log all host keys. Otherwise, host key checking will be
 // performed as usual.
