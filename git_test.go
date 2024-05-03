@@ -332,6 +332,19 @@ func TestSetupRepoAuth(t *testing.T) {
 		require.True(t, ok)
 	})
 
+	t.Run("SSH/OtherScheme", func(t *testing.T) {
+		// Anything that is not https:// or http:// is treated as SSH.
+		kPath := writeTestPrivateKey(t)
+		opts := &envbuilder.Options{
+			GitURL:               "git://git@host.tld:repo/path",
+			GitSSHPrivateKeyPath: kPath,
+			Logger:               testLog(t),
+		}
+		auth := envbuilder.SetupRepoAuth(opts)
+		_, ok := auth.(*gitssh.PublicKeys)
+		require.True(t, ok)
+	})
+
 	t.Run("SSH/GitUsername", func(t *testing.T) {
 		kPath := writeTestPrivateKey(t)
 		opts := &envbuilder.Options{

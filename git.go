@@ -131,6 +131,7 @@ func ReadPrivateKey(path string) (gossh.Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open private key file: %w", err)
 	}
+	defer f.Close()
 	bs, err := io.ReadAll(f)
 	if err != nil {
 		return nil, fmt.Errorf("read private key file: %w", err)
@@ -199,9 +200,8 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 
 	// Generally git clones over SSH use the 'git' user, but respect
 	// GIT_USERNAME if set.
-	authUser := options.GitUsername
-	if authUser == "" {
-		authUser = "git"
+	if options.GitUsername == "" {
+		options.GitUsername = "git"
 	}
 
 	// Assume SSH auth for all other formats.
@@ -221,7 +221,7 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 	// If no SSH key set, fall back to agent auth.
 	if signer == nil {
 		options.Logger(codersdk.LogLevelError, "#1: 🔑 No SSH key found, falling back to agent!")
-		auth, err := gitssh.NewSSHAgentAuth(authUser)
+		auth, err := gitssh.NewSSHAgentAuth(options.GitUsername)
 		if err != nil {
 			options.Logger(codersdk.LogLevelError, "#1: ❌ Failed to connect to SSH agent: %s", err.Error())
 			return nil // nothing else we can do
