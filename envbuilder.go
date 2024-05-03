@@ -45,7 +45,6 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/sirupsen/logrus"
@@ -195,14 +194,7 @@ func Run(ctx context.Context, options Options) error {
 			CABundle:     caBundle,
 		}
 
-		if options.GitUsername != "" || options.GitPassword != "" {
-			// NOTE: we previously inserted the credentials into the repo URL.
-			// This was removed in https://github.com/coder/envbuilder/pull/141
-			cloneOpts.RepoAuth = &githttp.BasicAuth{
-				Username: options.GitUsername,
-				Password: options.GitPassword,
-			}
-		}
+		cloneOpts.RepoAuth = SetupRepoAuth(&options)
 		if options.GitHTTPProxyURL != "" {
 			cloneOpts.ProxyOptions = transport.ProxyOptions{
 				URL: options.GitHTTPProxyURL,
