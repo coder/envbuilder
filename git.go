@@ -73,7 +73,7 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
 		}
 	}
 
-	err = opts.Storage.MkdirAll(opts.Path, 0755)
+	err = opts.Storage.MkdirAll(opts.Path, 0o755)
 	if err != nil {
 		return false, fmt.Errorf("mkdir %q: %w", opts.Path, err)
 	}

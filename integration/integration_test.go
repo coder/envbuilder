@@ -279,7 +279,7 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 		},
 	})
 	dir := t.TempDir()
-	err := os.WriteFile(filepath.Join(dir, "secret"), []byte("test"), 0644)
+	err := os.WriteFile(filepath.Join(dir, "secret"), []byte("test"), 0o644)
 	require.NoError(t, err)
 	ctr, err := runEnvbuilder(t, options{
 		env: []string{
@@ -360,6 +360,7 @@ func TestBuildFromDevcontainerInSubfolder(t *testing.T) {
 	output := execContainer(t, ctr, "echo hello")
 	require.Equal(t, "hello", strings.TrimSpace(output))
 }
+
 func TestBuildFromDevcontainerInRoot(t *testing.T) {
 	t.Parallel()
 
@@ -772,7 +773,6 @@ func setupPassthroughRegistry(t *testing.T, image string, auth *registryAuth) st
 		}
 
 		proxy.ServeHTTP(w, r)
-
 	}))
 	return fmt.Sprintf("%s/%s", strings.TrimPrefix(srv.URL, "http://"), image)
 }

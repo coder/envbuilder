@@ -141,7 +141,7 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, 
 	if s.Image != "" {
 		// We just write the image to a file and return it.
 		dockerfilePath := filepath.Join(scratchDir, "Dockerfile")
-		file, err := fs.OpenFile(dockerfilePath, os.O_CREATE|os.O_WRONLY, 0644)
+		file, err := fs.OpenFile(dockerfilePath, os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, fmt.Errorf("open dockerfile: %w", err)
 		}
@@ -228,7 +228,7 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 	}
 
 	featuresDir := filepath.Join(scratchDir, "features")
-	err := fs.MkdirAll(featuresDir, 0644)
+	err := fs.MkdirAll(featuresDir, 0o644)
 	if err != nil {
 		return "", nil, fmt.Errorf("create features directory: %w", err)
 	}
@@ -278,7 +278,7 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		featureSha := md5.Sum([]byte(featureRefRaw))
 		featureName := filepath.Base(featureRef)
 		featureDir := filepath.Join(featuresDir, fmt.Sprintf("%s-%x", featureName, featureSha[:4]))
-		if err := fs.MkdirAll(featureDir, 0644); err != nil {
+		if err := fs.MkdirAll(featureDir, 0o644); err != nil {
 			return "", nil, err
 		}
 		spec, err := features.Extract(fs, devcontainerDir, featureDir, featureRefRaw)

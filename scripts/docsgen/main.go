@@ -30,7 +30,7 @@ func main() {
 	mkd := "\n## Environment Variables\n\n" + options.Markdown()
 	modifiedContent := readmeContent[:startIndex+len(startSection)] + mkd + readmeContent[endIndex:]
 
-	err = os.WriteFile(readmePath, []byte(modifiedContent), 0644)
+	err = os.WriteFile(readmePath, []byte(modifiedContent), 0o644)
 	if err != nil {
 		panic(err)
 	}

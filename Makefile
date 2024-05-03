@@ -1,6 +1,9 @@
 GOARCH := $(shell go env GOARCH)
 PWD=$(shell pwd)
 
+fmt: **/*.go
+	go run mvdan.cc/gofumpt@v0.6.0 -l -w .
+
 develop:
 	./scripts/develop.sh
 

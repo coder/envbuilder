@@ -150,7 +150,7 @@ func Run(ctx context.Context, options Options) error {
 		if err != nil {
 			return fmt.Errorf("parse docker config: %w", err)
 		}
-		err = os.WriteFile(filepath.Join(MagicDir, "config.json"), decoded, 0644)
+		err = os.WriteFile(filepath.Join(MagicDir, "config.json"), decoded, 0o644)
 		if err != nil {
 			return fmt.Errorf("write docker config: %w", err)
 		}
@@ -217,7 +217,7 @@ func Run(ctx context.Context, options Options) error {
 
 	defaultBuildParams := func() (*devcontainer.Compiled, error) {
 		dockerfile := filepath.Join(MagicDir, "Dockerfile")
-		file, err := options.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0644)
+		file, err := options.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, err
 		}
@@ -697,7 +697,7 @@ func Run(ctx context.Context, options Options) error {
 		endStage("👤 Updated the ownership of the workspace!")
 	}
 
-	err = os.MkdirAll(options.WorkspaceFolder, 0755)
+	err = os.MkdirAll(options.WorkspaceFolder, 0o755)
 	if err != nil {
 		return fmt.Errorf("create workspace folder: %w", err)
 	}
@@ -954,7 +954,7 @@ func createPostStartScript(path string, postStartCommand devcontainer.LifecycleS
 	}
 	defer postStartScript.Close()
 
-	if err := postStartScript.Chmod(0755); err != nil {
+	if err := postStartScript.Chmod(0o755); err != nil {
 		return err
 	}
 
