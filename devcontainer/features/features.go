@@ -65,7 +65,7 @@ func extractFromImage(fs billy.Filesystem, directory, reference string) error {
 		path := filepath.Join(directory, header.Name)
 		switch header.Typeflag {
 		case tar.TypeDir:
-			err = fs.MkdirAll(path, 0755)
+			err = fs.MkdirAll(path, 0o755)
 			if err != nil {
 				return fmt.Errorf("mkdir %s: %w", path, err)
 			}
@@ -126,7 +126,7 @@ func Extract(fs billy.Filesystem, devcontainerDir, directory, reference string) 
 	if ok {
 		// For some reason the filesystem abstraction doesn't support chmod.
 		// https://github.com/src-d/go-billy/issues/56
-		err = chmodder.Chmod(installScriptPath, 0755)
+		err = chmodder.Chmod(installScriptPath, 0o755)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("chmod install.sh: %w", err)

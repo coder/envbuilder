@@ -1,11 +1,17 @@
 GOARCH := $(shell go env GOARCH)
 PWD=$(shell pwd)
 
+fmt: **/*.go
+	go run mvdan.cc/gofumpt@v0.6.0 -l -w .
+
 develop:
 	./scripts/develop.sh
 
 build: scripts/envbuilder-$(GOARCH)
 	./scripts/build.sh
+
+docs: options.go
+	go run ./scripts/docsgen/main.go
 
 .PHONY: test
 test: test-registry test-images

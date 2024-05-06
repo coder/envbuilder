@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"net"
 	"net/http"
@@ -44,7 +45,6 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/sirupsen/logrus"
@@ -150,7 +150,7 @@ func Run(ctx context.Context, options Options) error {
 		if err != nil {
 			return fmt.Errorf("parse docker config: %w", err)
 		}
-		err = os.WriteFile(filepath.Join(MagicDir, "config.json"), decoded, 0644)
+		err = os.WriteFile(filepath.Join(MagicDir, "config.json"), decoded, 0o644)
 		if err != nil {
 			return fmt.Errorf("write docker config: %w", err)
 		}
@@ -194,14 +194,7 @@ func Run(ctx context.Context, options Options) error {
 			CABundle:     caBundle,
 		}
 
-		if options.GitUsername != "" || options.GitPassword != "" {
-			// NOTE: we previously inserted the credentials into the repo URL.
-			// This was removed in https://github.com/coder/envbuilder/pull/141
-			cloneOpts.RepoAuth = &githttp.BasicAuth{
-				Username: options.GitUsername,
-				Password: options.GitPassword,
-			}
-		}
+		cloneOpts.RepoAuth = SetupRepoAuth(&options)
 		if options.GitHTTPProxyURL != "" {
 			cloneOpts.ProxyOptions = transport.ProxyOptions{
 				URL: options.GitHTTPProxyURL,
@@ -224,7 +217,7 @@ func Run(ctx context.Context, options Options) error {
 
 	defaultBuildParams := func() (*devcontainer.Compiled, error) {
 		dockerfile := filepath.Join(MagicDir, "Dockerfile")
-		file, err := options.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0644)
+		file, err := options.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, err
 		}
@@ -427,8 +420,7 @@ func Run(ctx context.Context, options Options) error {
 
 		// It's possible that the container will already have files in it, and
 		// we don't want to merge a new container with the old one.
-		err = util.DeleteFilesystem()
-		if err != nil {
+		if err := maybeDeleteFilesystem(options.Logger, options.ForceSafe); err != nil {
 			return nil, fmt.Errorf("delete filesystem: %w", err)
 		}
 
@@ -605,9 +597,14 @@ func Run(ctx context.Context, options Options) error {
 
 	// Remove the Docker config secret file!
 	if options.DockerConfigBase64 != "" {
-		err = os.Remove(filepath.Join(MagicDir, "config.json"))
-		if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove docker config: %w", err)
+		c := filepath.Join(MagicDir, "config.json")
+		err = os.Remove(c)
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("remove docker config: %w", err)
+			} else {
+				fmt.Fprintln(os.Stderr, "failed to remove the Docker config secret file: %w", c)
+			}
 		}
 	}
 
@@ -700,7 +697,7 @@ func Run(ctx context.Context, options Options) error {
 		endStage("👤 Updated the ownership of the workspace!")
 	}
 
-	err = os.MkdirAll(options.WorkspaceFolder, 0755)
+	err = os.MkdirAll(options.WorkspaceFolder, 0o755)
 	if err != nil {
 		return fmt.Errorf("create workspace folder: %w", err)
 	}
@@ -957,7 +954,7 @@ func createPostStartScript(path string, postStartCommand devcontainer.LifecycleS
 	}
 	defer postStartScript.Close()
 
-	if err := postStartScript.Chmod(0755); err != nil {
+	if err := postStartScript.Chmod(0o755); err != nil {
 		return err
 	}
 
@@ -1062,4 +1059,27 @@ func findDevcontainerJSON(options Options) (string, string, error) {
 	}
 
 	return "", "", errors.New("can't find devcontainer.json, is it a correct spec?")
+}
+
+// maybeDeleteFilesystem wraps util.DeleteFilesystem with a guard to hopefully stop
+// folks from unwittingly deleting their entire root directory.
+func maybeDeleteFilesystem(log LoggerFunc, force bool) error {
+	kanikoDir, ok := os.LookupEnv("KANIKO_DIR")
+	if !ok || strings.TrimSpace(kanikoDir) != MagicDir {
+		if force {
+			bailoutSecs := 10
+			log(codersdk.LogLevelWarn, "WARNING! BYPASSING SAFETY CHECK! THIS WILL DELETE YOUR ROOT FILESYSTEM!")
+			log(codersdk.LogLevelWarn, "You have %d seconds to bail out!", bailoutSecs)
+			for i := bailoutSecs; i > 0; i-- {
+				log(codersdk.LogLevelWarn, "%d...", i)
+				<-time.After(time.Second)
+			}
+		} else {
+			log(codersdk.LogLevelError, "KANIKO_DIR is not set to %s. Bailing!\n", MagicDir)
+			log(codersdk.LogLevelError, "To bypass this check, set FORCE_SAFE=true.")
+			return errors.New("safety check failed")
+		}
+	}
+
+	return util.DeleteFilesystem()
 }

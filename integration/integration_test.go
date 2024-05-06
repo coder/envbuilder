@@ -44,6 +44,42 @@ const (
 	testImageUbuntu    = "localhost:5000/envbuilder-test-ubuntu:latest"
 )
 
+func TestForceSafe(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Safe", func(t *testing.T) {
+		t.Parallel()
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": "FROM " + testImageAlpine,
+			},
+		})
+		_, err := runEnvbuilder(t, options{env: []string{
+			"GIT_URL=" + srv.URL,
+			"KANIKO_DIR=/not/envbuilder",
+			"DOCKERFILE_PATH=Dockerfile",
+		}})
+		require.ErrorContains(t, err, "delete filesystem: safety check failed")
+	})
+
+	// Careful with this one!
+	t.Run("Unsafe", func(t *testing.T) {
+		t.Parallel()
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": "FROM " + testImageAlpine,
+			},
+		})
+		_, err := runEnvbuilder(t, options{env: []string{
+			"GIT_URL=" + srv.URL,
+			"KANIKO_DIR=/not/envbuilder",
+			"FORCE_SAFE=true",
+			"DOCKERFILE_PATH=Dockerfile",
+		}})
+		require.NoError(t, err)
+	})
+}
+
 func TestFailsGitAuth(t *testing.T) {
 	t.Parallel()
 	srv := createGitServer(t, gitServerOptions{
@@ -195,11 +231,16 @@ func TestBuildFromDockerfile(t *testing.T) {
 	ctr, err := runEnvbuilder(t, options{env: []string{
 		"GIT_URL=" + srv.URL,
 		"DOCKERFILE_PATH=Dockerfile",
+		"DOCKER_CONFIG_BASE64=" + base64.StdEncoding.EncodeToString([]byte(`{"experimental": "enabled"}`)),
 	}})
 	require.NoError(t, err)
 
 	output := execContainer(t, ctr, "echo hello")
 	require.Equal(t, "hello", strings.TrimSpace(output))
+
+	// Verify that the Docker configuration secret file is removed
+	output = execContainer(t, ctr, "stat "+filepath.Join(envbuilder.MagicDir, "config.json"))
+	require.Contains(t, output, "No such file or directory")
 }
 
 func TestBuildPrintBuildOutput(t *testing.T) {
@@ -238,7 +279,7 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 		},
 	})
 	dir := t.TempDir()
-	err := os.WriteFile(filepath.Join(dir, "secret"), []byte("test"), 0644)
+	err := os.WriteFile(filepath.Join(dir, "secret"), []byte("test"), 0o644)
 	require.NoError(t, err)
 	ctr, err := runEnvbuilder(t, options{
 		env: []string{
@@ -319,6 +360,7 @@ func TestBuildFromDevcontainerInSubfolder(t *testing.T) {
 	output := execContainer(t, ctr, "echo hello")
 	require.Equal(t, "hello", strings.TrimSpace(output))
 }
+
 func TestBuildFromDevcontainerInRoot(t *testing.T) {
 	t.Parallel()
 
@@ -731,7 +773,6 @@ func setupPassthroughRegistry(t *testing.T, image string, auth *registryAuth) st
 		}
 
 		proxy.ServeHTTP(w, r)
-
 	}))
 	return fmt.Sprintf("%s/%s", strings.TrimPrefix(srv.URL, "http://"), image)
 }

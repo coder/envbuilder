@@ -1,12 +1,20 @@
 package gittest
 
 import (
+	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"sync"
 	"testing"
 	"time"
 
+	gossh "golang.org/x/crypto/ssh"
+
+	"github.com/gliderlabs/ssh"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -97,6 +105,97 @@ func NewServer(fs billy.Filesystem) http.Handler {
 	return mux
 }
 
+func NewServerSSH(t *testing.T, fs billy.Filesystem, pubkeys ...gossh.PublicKey) *transport.Endpoint {
+	t.Helper()
+
+	l, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = l.Close() })
+
+	srvOpts := []ssh.Option{
+		ssh.PublicKeyAuth(func(ctx ssh.Context, key ssh.PublicKey) bool {
+			for _, pk := range pubkeys {
+				if ssh.KeysEqual(pk, key) {
+					return true
+				}
+			}
+			return false
+		}),
+	}
+
+	done := make(chan struct{}, 1)
+	go func() {
+		_ = ssh.Serve(l, handleSession, srvOpts...)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		_ = l.Close()
+		<-done
+	})
+
+	addr, ok := l.Addr().(*net.TCPAddr)
+	require.True(t, ok)
+	tr, err := transport.NewEndpoint(fmt.Sprintf("ssh://git@%s:%d/", addr.IP, addr.Port))
+	require.NoError(t, err)
+	return tr
+}
+
+func handleSession(sess ssh.Session) {
+	c := sess.Command()
+	if len(c) < 1 {
+		_, _ = fmt.Fprintf(os.Stderr, "invalid command: %q\n", c)
+	}
+
+	cmd := exec.Command(c[0], c[1:]...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "cmd stdout pipe: %s\n", err.Error())
+		return
+	}
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "cmd stdin pipe: %s\n", err.Error())
+		return
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "cmd stderr pipe: %s\n", err.Error())
+		return
+	}
+
+	err = cmd.Start()
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "start cmd: %s\n", err.Error())
+		return
+	}
+
+	go func() {
+		defer stdin.Close()
+		_, _ = io.Copy(stdin, sess)
+	}()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(sess.Stderr(), stderr)
+	}()
+
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(sess, stdout)
+	}()
+
+	wg.Wait()
+
+	if err := cmd.Wait(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "wait cmd: %s\n", err.Error())
+	}
+}
+
 // CommitFunc commits to a repo.
 type CommitFunc func(billy.Filesystem, *git.Repository)
 
@@ -143,7 +242,7 @@ func NewRepo(t *testing.T, fs billy.Filesystem, commits ...CommitFunc) *git.Repo
 // WriteFile writes a file to the filesystem.
 func WriteFile(t *testing.T, fs billy.Filesystem, path, content string) {
 	t.Helper()
-	file, err := fs.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
+	file, err := fs.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	require.NoError(t, err)
 	_, err = file.Write([]byte(content))
 	require.NoError(t, err)

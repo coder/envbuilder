@@ -1,0 +1,150 @@
+USAGE:
+  envbuilder
+
+OPTIONS:
+      --base-image-cache-dir string, $BASE_IMAGE_CACHE_DIR
+          The path to a directory where the base image can be found. This should
+          be a read-only directory solely mounted for the purpose of caching the
+          base image.
+
+      --build-context-path string, $BUILD_CONTEXT_PATH
+          Can be specified when a DockerfilePath is specified outside the base
+          WorkspaceFolder. This path MUST be relative to the WorkspaceFolder
+          path into which the repo is cloned.
+
+      --cache-repo string, $CACHE_REPO
+          The name of the container registry to push the cache image to. If this
+          is empty, the cache will not be pushed.
+
+      --cache-ttl-days int, $CACHE_TTL_DAYS
+          The number of days to use cached layers before expiring them. Defaults
+          to 7 days.
+
+      --coder-agent-subsystem string-array, $CODER_AGENT_SUBSYSTEM
+          Coder agent subsystems to report when forwarding logs. The envbuilder
+          subsystem is always included.
+
+      --coder-agent-token string, $CODER_AGENT_TOKEN
+          Authentication token for a Coder agent. If this is set, then
+          CODER_AGENT_URL must also be set.
+
+      --coder-agent-url string, $CODER_AGENT_URL
+          URL of the Coder deployment. If CODER_AGENT_TOKEN is also set, logs
+          from envbuilder will be forwarded here and will be visible in the
+          workspace build logs.
+
+      --devcontainer-dir string, $DEVCONTAINER_DIR
+          The path to the folder containing the devcontainer.json file that will
+          be used to build the workspace and can either be an absolute path or a
+          path relative to the workspace folder. If not provided, defaults to
+          `.devcontainer`.
+
+      --devcontainer-json-path string, $DEVCONTAINER_JSON_PATH
+          The path to a devcontainer.json file that is either an absolute path
+          or a path relative to DevcontainerDir. This can be used in cases where
+          one wants to substitute an edited devcontainer.json file for the one
+          that exists in the repo.
+
+      --docker-config-base64 string, $DOCKER_CONFIG_BASE64
+          The base64 encoded Docker config file that will be used to pull images
+          from private container registries.
+
+      --dockerfile-path string, $DOCKERFILE_PATH
+          The relative path to the Dockerfile that will be used to build the
+          workspace. This is an alternative to using a devcontainer that some
+          might find simpler.
+
+      --exit-on-build-failure bool, $EXIT_ON_BUILD_FAILURE
+          Terminates the container upon a build failure. This is handy when
+          preferring the FALLBACK_IMAGE in cases where no devcontainer.json or
+          image is provided. However, it ensures that the container stops if the
+          build process encounters an error.
+
+      --export-env-file string, $EXPORT_ENV_FILE
+          Optional file path to a .env file where envbuilder will dump
+          environment variables from devcontainer.json and the built container
+          image.
+
+      --fallback-image string, $FALLBACK_IMAGE
+          Specifies an alternative image to use when neither an image is
+          declared in the devcontainer.json file nor a Dockerfile is present. If
+          there's a build failure (from a faulty Dockerfile) or a
+          misconfiguration, this image will be the substitute. Set
+          ExitOnBuildFailure to true to halt the container if the build faces an
+          issue.
+
+      --force-safe bool, $FORCE_SAFE
+          Ignores any filesystem safety checks. This could cause serious harm to
+          your system! This is used in cases where bypass is needed to unblock
+          customers.
+
+      --git-clone-depth int, $GIT_CLONE_DEPTH
+          The depth to use when cloning the Git repository.
+
+      --git-clone-single-branch bool, $GIT_CLONE_SINGLE_BRANCH
+          Clone only a single branch of the Git repository.
+
+      --git-http-proxy-url string, $GIT_HTTP_PROXY_URL
+          The URL for the HTTP proxy. This is optional.
+
+      --git-password string, $GIT_PASSWORD
+          The password to use for Git authentication. This is optional.
+
+      --git-ssh-private-key-path string, $GIT_SSH_PRIVATE_KEY_PATH
+          Path to an SSH private key to be used for Git authentication.
+
+      --git-url string, $GIT_URL
+          The URL of the Git repository to clone. This is optional.
+
+      --git-username string, $GIT_USERNAME
+          The username to use for Git authentication. This is optional.
+
+      --ignore-paths string-array, $IGNORE_PATHS (default: /var/run)
+          The comma separated list of paths to ignore when building the
+          workspace.
+
+      --init-args string, $INIT_ARGS
+          The arguments to pass to the init command. They are split according to
+          /bin/sh rules with https://github.com/kballard/go-shellquote.
+
+      --init-command string, $INIT_COMMAND (default: /bin/sh)
+          The command to run to initialize the workspace.
+
+      --init-script string, $INIT_SCRIPT (default: sleep infinity)
+          The script to run to initialize the workspace.
+
+      --insecure bool, $INSECURE
+          Bypass TLS verification when cloning and pulling from container
+          registries.
+
+      --layer-cache-dir string, $LAYER_CACHE_DIR
+          The path to a directory where built layers will be stored. This spawns
+          an in-memory registry to serve the layers from.
+
+      --post-start-script-path string, $POST_START_SCRIPT_PATH
+          The path to a script that will be created by envbuilder based on the
+          postStartCommand in devcontainer.json, if any is specified (otherwise
+          the script is not created). If this is set, the specified InitCommand
+          should check for the presence of this script and execute it after
+          successful startup.
+
+      --setup-script string, $SETUP_SCRIPT
+          The script to run before the init script. It runs as the root user
+          regardless of the user specified in the devcontainer.json file.
+          SetupScript is ran as the root user prior to the init script. It is
+          used to configure envbuilder dynamically during the runtime. e.g.
+          specifying whether to start systemd or tiny init for PID 1.
+
+      --skip-rebuild bool, $SKIP_REBUILD
+          Skip building if the MagicFile exists. This is used to skip building
+          when a container is restarting. e.g. docker stop -> docker start This
+          value can always be set to true - even if the container is being
+          started for the first time.
+
+      --ssl-cert-base64 string, $SSL_CERT_BASE64
+          The content of an SSL cert file. This is useful for self-signed
+          certificates.
+
+      --workspace-folder string, $WORKSPACE_FOLDER
+          The path to the workspace folder that will be built. This is optional.
+
