@@ -26,6 +26,10 @@ import (
 	"syscall"
 	"time"
 
+	dcontext "github.com/distribution/distribution/v3/context"
+	"github.com/kballard/go-shellquote"
+	"github.com/mattn/go-isatty"
+
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
@@ -34,7 +38,6 @@ import (
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/containerd/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
-	dcontext "github.com/distribution/distribution/v3/context"
 	"github.com/distribution/distribution/v3/registry/handlers"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
 	"github.com/docker/cli/cli/config/configfile"
@@ -44,8 +47,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/kballard/go-shellquote"
-	"github.com/mattn/go-isatty"
 	"github.com/prometheus/procfs"
 	"github.com/sirupsen/logrus"
 	"github.com/tailscale/hujson"
