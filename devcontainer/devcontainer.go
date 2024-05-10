@@ -15,6 +15,7 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/tailscale/hujson"
 )
 
@@ -29,16 +30,26 @@ func Parse(content []byte) (*Spec, error) {
 }
 
 type Spec struct {
-	Image      string            `json:"image"`
-	Build      BuildSpec         `json:"build"`
-	RemoteUser string            `json:"remoteUser"`
-	RemoteEnv  map[string]string `json:"remoteEnv"`
+	Image         string            `json:"image"`
+	Build         BuildSpec         `json:"build"`
+	RemoteUser    string            `json:"remoteUser"`
+	ContainerUser string            `json:"containerUser"`
+	ContainerEnv  map[string]string `json:"containerEnv"`
+	RemoteEnv     map[string]string `json:"remoteEnv"`
 	// Features is a map of feature names to feature configurations.
 	Features map[string]any `json:"features"`
+	LifecycleScripts
 
 	// Deprecated but still frequently used...
 	Dockerfile string `json:"dockerFile"`
 	Context    string `json:"context"`
+}
+
+type LifecycleScripts struct {
+	OnCreateCommand      LifecycleScript `json:"onCreateCommand"`
+	UpdateContentCommand LifecycleScript `json:"updateContentCommand"`
+	PostCreateCommand    LifecycleScript `json:"postCreateCommand"`
+	PostStartCommand     LifecycleScript `json:"postStartCommand"`
 }
 
 type BuildSpec struct {
@@ -54,10 +65,55 @@ type Compiled struct {
 	DockerfilePath    string
 	DockerfileContent string
 	BuildContext      string
+	FeatureContexts   map[string]string
 	BuildArgs         []string
 
-	User string
-	Env  []string
+	User         string
+	ContainerEnv map[string]string
+	RemoteEnv    map[string]string
+}
+
+func SubstituteVars(s string, workspaceFolder string) string {
+	var buf string
+	for {
+		beforeOpen, afterOpen, ok := strings.Cut(s, "${")
+		if !ok {
+			return buf + s
+		}
+		varExpr, afterClose, ok := strings.Cut(afterOpen, "}")
+		if !ok {
+			return buf + s
+		}
+
+		buf += beforeOpen + substitute(varExpr, workspaceFolder)
+		s = afterClose
+	}
+}
+
+// Spec for variable substitutions:
+// https://containers.dev/implementors/json_reference/#variables-in-devcontainerjson
+func substitute(varExpr string, workspaceFolder string) string {
+	parts := strings.Split(varExpr, ":")
+	if len(parts) == 1 {
+		switch varExpr {
+		case "localWorkspaceFolder", "containerWorkspaceFolder":
+			return workspaceFolder
+		case "localWorkspaceFolderBasename", "containerWorkspaceFolderBasename":
+			return filepath.Base(workspaceFolder)
+		default:
+			return os.Getenv(varExpr)
+		}
+	}
+	switch parts[0] {
+	case "env", "localEnv", "containerEnv":
+		if val, ok := os.LookupEnv(parts[1]); ok {
+			return val
+		}
+		if len(parts) == 3 {
+			return parts[2]
+		}
+	}
+	return ""
 }
 
 // HasImage returns true if the devcontainer.json specifies an image.
@@ -75,20 +131,17 @@ func (s Spec) HasDockerfile() bool {
 // devcontainerDir is the path to the directory where the devcontainer.json file
 // is located. scratchDir is the path to the directory where the Dockerfile will
 // be written to if one doesn't exist.
-func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbackDockerfile string) (*Compiled, error) {
-	env := make([]string, 0)
-	for key, value := range s.RemoteEnv {
-		env = append(env, key+"="+value)
-	}
+func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, fallbackDockerfile, workspaceFolder string, useBuildContexts bool) (*Compiled, error) {
 	params := &Compiled{
-		User: s.RemoteUser,
-		Env:  env,
+		User:         s.ContainerUser,
+		ContainerEnv: s.ContainerEnv,
+		RemoteEnv:    s.RemoteEnv,
 	}
 
 	if s.Image != "" {
 		// We just write the image to a file and return it.
 		dockerfilePath := filepath.Join(scratchDir, "Dockerfile")
-		file, err := fs.OpenFile(dockerfilePath, os.O_CREATE|os.O_WRONLY, 0644)
+		file, err := fs.OpenFile(dockerfilePath, os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, fmt.Errorf("open dockerfile: %w", err)
 		}
@@ -125,7 +178,8 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbac
 
 	buildArgs := make([]string, 0)
 	for _, key := range buildArgkeys {
-		buildArgs = append(buildArgs, key+"="+s.Build.Args[key])
+		val := SubstituteVars(s.Build.Args[key], workspaceFolder)
+		buildArgs = append(buildArgs, key+"="+val)
 	}
 	params.BuildArgs = buildArgs
 
@@ -156,25 +210,30 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir, fallbac
 			return nil, fmt.Errorf("get user from image: %w", err)
 		}
 	}
-	params.DockerfileContent, err = s.compileFeatures(fs, scratchDir, params.User, params.DockerfileContent)
+	remoteUser := s.RemoteUser
+	if remoteUser == "" {
+		remoteUser = params.User
+	}
+	params.DockerfileContent, params.FeatureContexts, err = s.compileFeatures(fs, devcontainerDir, scratchDir, params.User, remoteUser, params.DockerfileContent, useBuildContexts)
 	if err != nil {
 		return nil, err
 	}
 	return params, nil
 }
 
-func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, remoteUser, dockerfileContent string) (string, error) {
+func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir string, containerUser, remoteUser, dockerfileContent string, useBuildContexts bool) (string, map[string]string, error) {
 	// If there are no features, we don't need to do anything!
 	if len(s.Features) == 0 {
-		return dockerfileContent, nil
+		return dockerfileContent, nil, nil
 	}
 
 	featuresDir := filepath.Join(scratchDir, "features")
-	err := fs.MkdirAll(featuresDir, 0644)
+	err := fs.MkdirAll(featuresDir, 0o644)
 	if err != nil {
-		return "", fmt.Errorf("create features directory: %w", err)
+		return "", nil, fmt.Errorf("create features directory: %w", err)
 	}
 	featureDirectives := []string{}
+	featureContexts := make(map[string]string)
 
 	// TODO: Respect the installation order outlined by the spec:
 	// https://containers.dev/implementors/features/#installation-order
@@ -186,10 +245,18 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, remoteUser, dock
 	// is deterministic which allows for caching.
 	sort.Strings(featureOrder)
 
+	var lines []string
 	for _, featureRefRaw := range featureOrder {
-		featureRefParsed, err := name.NewTag(featureRefRaw)
-		if err != nil {
-			return "", fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
+		var (
+			featureRef string
+			ok         bool
+		)
+		if _, featureRef, ok = strings.Cut(featureRefRaw, "./"); !ok {
+			featureRefParsed, err := name.NewTag(featureRefRaw)
+			if err != nil {
+				return "", nil, fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
+			}
+			featureRef = featureRefParsed.Repository.Name()
 		}
 
 		featureOpts := map[string]any{}
@@ -209,31 +276,35 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, scratchDir, remoteUser, dock
 		// devcontainers/cli has a very complex method of computing the feature
 		// name from the feature reference. We're just going to hash it for simplicity.
 		featureSha := md5.Sum([]byte(featureRefRaw))
-		featureName := filepath.Base(featureRefParsed.Repository.Name())
+		featureName := filepath.Base(featureRef)
 		featureDir := filepath.Join(featuresDir, fmt.Sprintf("%s-%x", featureName, featureSha[:4]))
-		err = fs.MkdirAll(featureDir, 0644)
-		if err != nil {
-			return "", err
+		if err := fs.MkdirAll(featureDir, 0o644); err != nil {
+			return "", nil, err
 		}
-		spec, err := features.Extract(fs, featureDir, featureRefRaw)
+		spec, err := features.Extract(fs, devcontainerDir, featureDir, featureRefRaw)
 		if err != nil {
-			return "", fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
+			return "", nil, fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
 		}
-		directive, err := spec.Compile(featureOpts)
+		fromDirective, directive, err := spec.Compile(featureName, containerUser, remoteUser, useBuildContexts, featureOpts)
 		if err != nil {
-			return "", fmt.Errorf("compile feature %s: %w", featureRefRaw, err)
+			return "", nil, fmt.Errorf("compile feature %s: %w", featureRefRaw, err)
 		}
 		featureDirectives = append(featureDirectives, directive)
+		if useBuildContexts {
+			featureContexts[featureName] = featureDir
+			lines = append(lines, fromDirective)
+		}
 	}
 
-	lines := []string{"\nUSER root"}
+	lines = append(lines, dockerfileContent)
+	lines = append(lines, "\nUSER root")
 	lines = append(lines, featureDirectives...)
 	if remoteUser != "" {
 		// TODO: We should warn that because we were unable to find the remote user,
 		// we're going to run as root.
 		lines = append(lines, fmt.Sprintf("USER %s", remoteUser))
 	}
-	return strings.Join(append([]string{dockerfileContent}, lines...), "\n"), err
+	return strings.Join(lines, "\n"), featureContexts, err
 }
 
 // UserFromDockerfile inspects the contents of a provided Dockerfile
@@ -254,30 +325,43 @@ func UserFromDockerfile(dockerfileContent string) string {
 // ImageFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the image that will be used to run the container.
 func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
-	args := map[string]string{}
+	lexer := shell.NewLex('\\')
+	var args []string
 	var imageRef string
 	lines := strings.Split(dockerfileContent, "\n")
 	// Iterate over lines in reverse
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := lines[i]
-		if strings.HasPrefix(line, "ARG ") {
-			arg := strings.TrimSpace(strings.TrimPrefix(line, "ARG "))
+		if arg, ok := strings.CutPrefix(line, "ARG "); ok {
+			arg = strings.TrimSpace(arg)
 			if strings.Contains(arg, "=") {
 				parts := strings.SplitN(arg, "=", 2)
-				args[parts[0]] = parts[1]
+				key, err := lexer.ProcessWord(parts[0], args)
+				if err != nil {
+					return nil, fmt.Errorf("processing %q: %w", line, err)
+				}
+				val, err := lexer.ProcessWord(parts[1], args)
+				if err != nil {
+					return nil, fmt.Errorf("processing %q: %w", line, err)
+				}
+				args = append(args, key+"="+val)
 			}
 			continue
 		}
-		if imageRef == "" && strings.HasPrefix(line, "FROM ") {
-			imageRef = strings.TrimPrefix(line, "FROM ")
+		if imageRef == "" {
+			if fromArgs, ok := strings.CutPrefix(line, "FROM "); ok {
+				imageRef = fromArgs
+			}
 		}
 	}
 	if imageRef == "" {
 		return nil, fmt.Errorf("no FROM directive found")
 	}
-	image, err := name.ParseReference(os.Expand(imageRef, func(s string) string {
-		return args[s]
-	}))
+	imageRef, err := lexer.ProcessWord(imageRef, args)
+	if err != nil {
+		return nil, fmt.Errorf("processing %q: %w", imageRef, err)
+	}
+	image, err := name.ParseReference(strings.TrimSpace(imageRef))
 	if err != nil {
 		return nil, fmt.Errorf("parse image ref %q: %w", imageRef, err)
 	}

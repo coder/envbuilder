@@ -1,1 +1,2 @@
-scripts/envbuilder
+scripts/envbuilder-*
+.registry-cache

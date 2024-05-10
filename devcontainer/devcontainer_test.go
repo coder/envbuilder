@@ -10,10 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/coder/envbuilder/devcontainer/features"
-	"github.com/coder/envbuilder/registrytest"
+	"github.com/coder/envbuilder/testutil/registrytest"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -22,6 +21,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 )
+
+const magicDir = "/.envbuilder"
 
 func TestParse(t *testing.T) {
 	t.Parallel()
@@ -77,7 +78,7 @@ func TestCompileWithFeatures(t *testing.T) {
     "context": ".",
   },
   // Comments here!
-  "image": "codercom/code-server:latest",
+  "image": "localhost:5000/envbuilder-test-codercom-code-server:latest",
   "features": {
 	"` + featureOne + `": {},
 	"` + featureTwo + `": "potato"
@@ -86,24 +87,26 @@ func TestCompileWithFeatures(t *testing.T) {
 	dc, err := devcontainer.Parse([]byte(raw))
 	require.NoError(t, err)
 	fs := memfs.New()
-	params, err := dc.Compile(fs, "", envbuilder.MagicDir, "")
+	params, err := dc.Compile(fs, "", magicDir, "", "", false)
 	require.NoError(t, err)
 
 	// We have to SHA because we get a different MD5 every time!
 	featureOneMD5 := md5.Sum([]byte(featureOne))
-	featureOneSha := fmt.Sprintf("%x", featureOneMD5[:4])
+	featureOneDir := fmt.Sprintf("/.envbuilder/features/one-%x", featureOneMD5[:4])
 	featureTwoMD5 := md5.Sum([]byte(featureTwo))
-	featureTwoSha := fmt.Sprintf("%x", featureTwoMD5[:4])
+	featureTwoDir := fmt.Sprintf("/.envbuilder/features/two-%x", featureTwoMD5[:4])
 
-	require.Equal(t, `FROM codercom/code-server:latest
+	require.Equal(t, `FROM localhost:5000/envbuilder-test-codercom-code-server:latest
 
 USER root
 # Rust tomato - Example description!
+WORKDIR `+featureOneDir+`
 ENV TOMATO=example
-RUN .envbuilder/features/one-`+featureOneSha+`/install.sh
+RUN _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 # Go potato - Example description!
+WORKDIR `+featureTwoDir+`
 ENV POTATO=example
-RUN VERSION=potato .envbuilder/features/two-`+featureTwoSha+`/install.sh
+RUN VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 USER 1000`, params.DockerfileContent)
 }
 
@@ -113,12 +116,12 @@ func TestCompileDevContainer(t *testing.T) {
 		t.Parallel()
 		fs := memfs.New()
 		dc := &devcontainer.Spec{
-			Image: "codercom/code-server:latest",
+			Image: "localhost:5000/envbuilder-test-ubuntu:latest",
 		}
-		params, err := dc.Compile(fs, "", envbuilder.MagicDir, "")
+		params, err := dc.Compile(fs, "", magicDir, "", "", false)
 		require.NoError(t, err)
-		require.Equal(t, filepath.Join(envbuilder.MagicDir, "Dockerfile"), params.DockerfilePath)
-		require.Equal(t, envbuilder.MagicDir, params.BuildContext)
+		require.Equal(t, filepath.Join(magicDir, "Dockerfile"), params.DockerfilePath)
+		require.Equal(t, magicDir, params.BuildContext)
 	})
 	t.Run("WithBuild", func(t *testing.T) {
 		t.Parallel()
@@ -129,20 +132,22 @@ func TestCompileDevContainer(t *testing.T) {
 				Context:    ".",
 				Args: map[string]string{
 					"ARG1": "value1",
+					"ARG2": "${localWorkspaceFolderBasename}",
 				},
 			},
 		}
 		dcDir := "/workspaces/coder/.devcontainer"
-		err := fs.MkdirAll(dcDir, 0755)
+		err := fs.MkdirAll(dcDir, 0o755)
 		require.NoError(t, err)
-		file, err := fs.OpenFile(filepath.Join(dcDir, "Dockerfile"), os.O_CREATE|os.O_WRONLY, 0644)
+		file, err := fs.OpenFile(filepath.Join(dcDir, "Dockerfile"), os.O_CREATE|os.O_WRONLY, 0o644)
 		require.NoError(t, err)
-		_, err = io.WriteString(file, "FROM ubuntu")
+		_, err = io.WriteString(file, "FROM localhost:5000/envbuilder-test-ubuntu:latest")
 		require.NoError(t, err)
 		_ = file.Close()
-		params, err := dc.Compile(fs, dcDir, envbuilder.MagicDir, "")
+		params, err := dc.Compile(fs, dcDir, magicDir, "", "/var/workspace", false)
 		require.NoError(t, err)
 		require.Equal(t, "ARG1=value1", params.BuildArgs[0])
+		require.Equal(t, "ARG2=workspace", params.BuildArgs[1])
 		require.Equal(t, filepath.Join(dcDir, "Dockerfile"), params.DockerfilePath)
 		require.Equal(t, dcDir, params.BuildContext)
 	})
@@ -163,8 +168,14 @@ func TestImageFromDockerfile(t *testing.T) {
 		content: "FROM ubuntu",
 		image:   "index.docker.io/library/ubuntu:latest",
 	}, {
-		content: "ARG VARIANT=ionic\nFROM ubuntu:$VARIANT",
-		image:   "index.docker.io/library/ubuntu:ionic",
+		content: "ARG VARIANT=bionic\nFROM ubuntu:$VARIANT",
+		image:   "index.docker.io/library/ubuntu:bionic",
+	}, {
+		content: "ARG VARIANT=\"3.10\"\nFROM mcr.microsoft.com/devcontainers/python:0-${VARIANT}",
+		image:   "mcr.microsoft.com/devcontainers/python:0-3.10",
+	}, {
+		content: "ARG VARIANT=\"3.10\"\nFROM mcr.microsoft.com/devcontainers/python:0-$VARIANT ",
+		image:   "mcr.microsoft.com/devcontainers/python:0-3.10",
 	}} {
 		tc := tc
 		t.Run(tc.image, func(t *testing.T) {

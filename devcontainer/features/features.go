@@ -10,27 +10,28 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/otiai10/copy"
+	"github.com/tailscale/hujson"
 )
 
-// Extract unpacks the feature from the image and returns the
-// parsed specification.
-func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
+func extractFromImage(fs billy.Filesystem, directory, reference string) error {
 	ref, err := name.ParseReference(reference)
 	if err != nil {
-		return nil, fmt.Errorf("parse feature ref %s: %w", reference, err)
+		return fmt.Errorf("parse feature ref %s: %w", reference, err)
 	}
 	image, err := remote.Image(ref)
 	if err != nil {
-		return nil, fmt.Errorf("fetch feature image %s: %w", reference, err)
+		return fmt.Errorf("fetch feature image %s: %w", reference, err)
 	}
 	manifest, err := image.Manifest()
 	if err != nil {
-		return nil, fmt.Errorf("fetch feature manifest %s: %w", reference, err)
+		return fmt.Errorf("fetch feature manifest %s: %w", reference, err)
 	}
 
 	var tarLayer *tar.Reader
@@ -40,17 +41,17 @@ func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
 		}
 		layer, err := image.LayerByDigest(manifestLayer.Digest)
 		if err != nil {
-			return nil, fmt.Errorf("fetch feature layer %s: %w", reference, err)
+			return fmt.Errorf("fetch feature layer %s: %w", reference, err)
 		}
 		layerReader, err := layer.Uncompressed()
 		if err != nil {
-			return nil, fmt.Errorf("uncompress feature layer %s: %w", reference, err)
+			return fmt.Errorf("uncompress feature layer %s: %w", reference, err)
 		}
 		tarLayer = tar.NewReader(layerReader)
 		break
 	}
 	if tarLayer == nil {
-		return nil, fmt.Errorf("no tar layer found with media type %q: are you sure this is a devcontainer feature?", TarLayerMediaType)
+		return fmt.Errorf("no tar layer found with media type %q: are you sure this is a devcontainer feature?", TarLayerMediaType)
 	}
 
 	for {
@@ -59,35 +60,60 @@ func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("read feature layer %s: %w", reference, err)
+			return fmt.Errorf("read feature layer %s: %w", reference, err)
 		}
 		path := filepath.Join(directory, header.Name)
 		switch header.Typeflag {
 		case tar.TypeDir:
-			err = fs.MkdirAll(path, 0755)
+			err = fs.MkdirAll(path, 0o755)
 			if err != nil {
-				return nil, fmt.Errorf("mkdir %s: %w", path, err)
+				return fmt.Errorf("mkdir %s: %w", path, err)
 			}
 		case tar.TypeReg:
 			outFile, err := fs.Create(path)
 			if err != nil {
-				return nil, fmt.Errorf("create %s: %w", path, err)
+				return fmt.Errorf("create %s: %w", path, err)
 			}
 			_, err = io.Copy(outFile, tarLayer)
 			if err != nil {
-				return nil, fmt.Errorf("copy %s: %w", path, err)
+				return fmt.Errorf("copy %s: %w", path, err)
 			}
 			err = outFile.Close()
 			if err != nil {
-				return nil, fmt.Errorf("close %s: %w", path, err)
+				return fmt.Errorf("close %s: %w", path, err)
 			}
 		default:
-			return nil, fmt.Errorf("unknown type %d in %s", header.Typeflag, path)
+			return fmt.Errorf("unknown type %d in %s", header.Typeflag, path)
 		}
+	}
+	return nil
+}
+
+// Extract unpacks the feature from the image and returns the
+// parsed specification.
+func Extract(fs billy.Filesystem, devcontainerDir, directory, reference string) (*Spec, error) {
+	if strings.HasPrefix(reference, "./") {
+		if err := copy.Copy(filepath.Join(devcontainerDir, reference), directory, copy.Options{
+			PreserveTimes: true,
+			PreserveOwner: true,
+			OnSymlink: func(src string) copy.SymlinkAction {
+				return copy.Shallow
+			},
+			OnError: func(src, dest string, err error) error {
+				if err == nil {
+					return nil
+				}
+				return fmt.Errorf("copy error: %q -> %q: %w", reference, directory, err)
+			},
+		}); err != nil {
+			return nil, err
+		}
+	} else if err := extractFromImage(fs, directory, reference); err != nil {
+		return nil, err
 	}
 
 	installScriptPath := filepath.Join(directory, "install.sh")
-	_, err = fs.Stat(installScriptPath)
+	_, err := fs.Stat(installScriptPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, errors.New("install.sh must be in the root of the feature")
@@ -100,7 +126,7 @@ func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
 	if ok {
 		// For some reason the filesystem abstraction doesn't support chmod.
 		// https://github.com/src-d/go-billy/issues/56
-		err = chmodder.Chmod(installScriptPath, 0755)
+		err = chmodder.Chmod(installScriptPath, 0o755)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("chmod install.sh: %w", err)
@@ -113,9 +139,16 @@ func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
 		return nil, fmt.Errorf("open devcontainer-feature.json: %w", err)
 	}
 	defer featureFile.Close()
-	var spec *Spec
-	err = json.NewDecoder(featureFile).Decode(&spec)
+	featureFileBytes, err := io.ReadAll(featureFile)
 	if err != nil {
+		return nil, fmt.Errorf("read devcontainer-feature.json: %w", err)
+	}
+	standardizedFeatureFileBytes, err := hujson.Standardize(featureFileBytes)
+	if err != nil {
+		return nil, fmt.Errorf("standardize devcontainer-feature.json: %w", err)
+	}
+	var spec *Spec
+	if err := json.Unmarshal(standardizedFeatureFileBytes, &spec); err != nil {
 		return nil, fmt.Errorf("decode devcontainer-feature.json: %w", err)
 	}
 	// See https://containers.dev/implementors/features/#devcontainer-feature-json-properties
@@ -129,7 +162,7 @@ func Extract(fs billy.Filesystem, directory, reference string) (*Spec, error) {
 		return nil, errors.New(`devcontainer-feature.json: name is required`)
 	}
 
-	spec.InstallScriptPath = installScriptPath
+	spec.Directory = directory
 	return spec, nil
 }
 
@@ -156,13 +189,20 @@ type Spec struct {
 	Options          map[string]Option `json:"options"`
 	ContainerEnv     map[string]string `json:"containerEnv"`
 
-	InstallScriptPath string `json:"-"`
+	Directory string `json:"-"`
 }
 
 // Extract unpacks the feature from the image and returns a set of lines
 // that should be appended to a Dockerfile to install the feature.
-func (s *Spec) Compile(options map[string]any) (string, error) {
-	var runDirective []string
+func (s *Spec) Compile(featureName, containerUser, remoteUser string, useBuildContexts bool, options map[string]any) (string, string, error) {
+	// TODO not sure how we figure out _(REMOTE|CONTAINER)_USER_HOME
+	// as per the feature spec.
+	// See https://containers.dev/implementors/features/#user-env-var
+	var fromDirective string
+	runDirective := []string{
+		"_CONTAINER_USER=" + strconv.Quote(containerUser),
+		"_REMOTE_USER=" + strconv.Quote(remoteUser),
+	}
 	for key, value := range s.Options {
 		strValue := fmt.Sprint(value.Default)
 		provided, ok := options[key]
@@ -171,17 +211,22 @@ func (s *Spec) Compile(options map[string]any) (string, error) {
 			// delete so we can check if there are any unknown options
 			delete(options, key)
 		}
-		runDirective = append(runDirective, fmt.Sprintf("%s=%s", convertOptionNameToEnv(key), strValue))
+		runDirective = append(runDirective, fmt.Sprintf(`%s=%q`, convertOptionNameToEnv(key), strValue))
 	}
 	if len(options) > 0 {
-		return "", fmt.Errorf("unknown option: %v", options)
+		return "", "", fmt.Errorf("unknown option: %v", options)
 	}
 	// It's critical that the Dockerfile produced is deterministic,
 	// regardless of map iteration order.
 	sort.Strings(runDirective)
 	// See https://containers.dev/implementors/features/#invoking-installsh
-	runDirective = append([]string{"RUN"}, runDirective...)
-	runDirective = append(runDirective, s.InstallScriptPath)
+	if useBuildContexts {
+		fromDirective = "FROM scratch AS envbuilder_feature_" + featureName + "\nCOPY --from=" + featureName + " / /\n"
+		runDirective = append([]string{"RUN", "--mount=type=bind,from=envbuilder_feature_" + featureName + ",target=/envbuilder-features/" + featureName + ",rw"}, runDirective...)
+	} else {
+		runDirective = append([]string{"RUN"}, runDirective...)
+	}
+	runDirective = append(runDirective, "./install.sh")
 
 	comment := ""
 	if s.Name != "" {
@@ -197,6 +242,11 @@ func (s *Spec) Compile(options map[string]any) (string, error) {
 	if comment != "" {
 		lines = append(lines, comment)
 	}
+	if useBuildContexts {
+		lines = append(lines, "WORKDIR /envbuilder-features/"+featureName)
+	} else {
+		lines = append(lines, "WORKDIR "+s.Directory)
+	}
 	envKeys := make([]string, 0, len(s.ContainerEnv))
 	for key := range s.ContainerEnv {
 		envKeys = append(envKeys, key)
@@ -209,7 +259,7 @@ func (s *Spec) Compile(options map[string]any) (string, error) {
 	}
 	lines = append(lines, strings.Join(runDirective, " "))
 
-	return strings.Join(lines, "\n"), nil
+	return fromDirective, strings.Join(lines, "\n"), nil
 }
 
 var (

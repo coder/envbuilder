@@ -1,6 +1,7 @@
 FROM scratch
+ARG TARGETARCH
 
-COPY envbuilder /.envbuilder/bin/envbuilder
+COPY envbuilder-${TARGETARCH} /.envbuilder/bin/envbuilder
 
 ENV KANIKO_DIR /.envbuilder
 # Kaniko looks for the Docker config at $DOCKER_CONFIG/config.json
