@@ -142,10 +142,12 @@ type Options struct {
 
 // Generate CLI options for the envbuilder command.
 func (o *Options) CLI() serpent.OptionSet {
-	return serpent.OptionSet{
+	const prefix = "ENVBUILDER_"
+
+	set := serpent.OptionSet{
 		{
 			Flag:  "setup-script",
-			Env:   "SETUP_SCRIPT",
+			Env:   prefix + "SETUP_SCRIPT",
 			Value: serpent.StringOf(&o.SetupScript),
 			Description: "The script to run before the init script. It runs as " +
 				"the root user regardless of the user specified in the devcontainer.json " +
@@ -155,21 +157,21 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:        "init-script",
-			Env:         "INIT_SCRIPT",
+			Env:         prefix + "INIT_SCRIPT",
 			Default:     "sleep infinity",
 			Value:       serpent.StringOf(&o.InitScript),
 			Description: "The script to run to initialize the workspace.",
 		},
 		{
 			Flag:        "init-command",
-			Env:         "INIT_COMMAND",
+			Env:         prefix + "INIT_COMMAND",
 			Default:     "/bin/sh",
 			Value:       serpent.StringOf(&o.InitCommand),
 			Description: "The command to run to initialize the workspace.",
 		},
 		{
 			Flag:  "init-args",
-			Env:   "INIT_ARGS",
+			Env:   prefix + "INIT_ARGS",
 			Value: serpent.StringOf(&o.InitArgs),
 			Description: "The arguments to pass to the init command. They are " +
 				"split according to /bin/sh rules with " +
@@ -177,14 +179,14 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:  "cache-repo",
-			Env:   "CACHE_REPO",
+			Env:   prefix + "CACHE_REPO",
 			Value: serpent.StringOf(&o.CacheRepo),
 			Description: "The name of the container registry to push the cache " +
 				"image to. If this is empty, the cache will not be pushed.",
 		},
 		{
 			Flag:  "base-image-cache-dir",
-			Env:   "BASE_IMAGE_CACHE_DIR",
+			Env:   prefix + "BASE_IMAGE_CACHE_DIR",
 			Value: serpent.StringOf(&o.BaseImageCacheDir),
 			Description: "The path to a directory where the base image " +
 				"can be found. This should be a read-only directory solely mounted " +
@@ -192,7 +194,7 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:  "layer-cache-dir",
-			Env:   "LAYER_CACHE_DIR",
+			Env:   prefix + "LAYER_CACHE_DIR",
 			Value: serpent.StringOf(&o.LayerCacheDir),
 			Description: "The path to a directory where built layers will " +
 				"be stored. This spawns an in-memory registry to serve the layers " +
@@ -200,7 +202,7 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:  "devcontainer-dir",
-			Env:   "DEVCONTAINER_DIR",
+			Env:   prefix + "DEVCONTAINER_DIR",
 			Value: serpent.StringOf(&o.DevcontainerDir),
 			Description: "The path to the folder containing the " +
 				"devcontainer.json file that will be used to build the workspace " +
@@ -209,7 +211,7 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:  "devcontainer-json-path",
-			Env:   "DEVCONTAINER_JSON_PATH",
+			Env:   prefix + "DEVCONTAINER_JSON_PATH",
 			Value: serpent.StringOf(&o.DevcontainerJSONPath),
 			Description: "The path to a devcontainer.json file that " +
 				"is either an absolute path or a path relative to DevcontainerDir. " +
@@ -218,7 +220,7 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:  "dockerfile-path",
-			Env:   "DOCKERFILE_PATH",
+			Env:   prefix + "DOCKERFILE_PATH",
 			Value: serpent.StringOf(&o.DockerfilePath),
 			Description: "The relative path to the Dockerfile that will " +
 				"be used to build the workspace. This is an alternative to using " +
@@ -226,7 +228,7 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:  "build-context-path",
-			Env:   "BUILD_CONTEXT_PATH",
+			Env:   prefix + "BUILD_CONTEXT_PATH",
 			Value: serpent.StringOf(&o.BuildContextPath),
 			Description: "Can be specified when a DockerfilePath is " +
 				"specified outside the base WorkspaceFolder. This path MUST be " +
@@ -234,21 +236,21 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:  "cache-ttl-days",
-			Env:   "CACHE_TTL_DAYS",
+			Env:   prefix + "CACHE_TTL_DAYS",
 			Value: serpent.Int64Of(&o.CacheTTLDays),
 			Description: "The number of days to use cached layers before " +
 				"expiring them. Defaults to 7 days.",
 		},
 		{
 			Flag:  "docker-config-base64",
-			Env:   "DOCKER_CONFIG_BASE64",
+			Env:   prefix + "DOCKER_CONFIG_BASE64",
 			Value: serpent.StringOf(&o.DockerConfigBase64),
 			Description: "The base64 encoded Docker config file that " +
 				"will be used to pull images from private container registries.",
 		},
 		{
 			Flag:  "fallback-image",
-			Env:   "FALLBACK_IMAGE",
+			Env:   prefix + "FALLBACK_IMAGE",
 			Value: serpent.StringOf(&o.FallbackImage),
 			Description: "Specifies an alternative image to use when neither " +
 				"an image is declared in the devcontainer.json file nor a Dockerfile " +
@@ -259,7 +261,7 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:  "exit-on-build-failure",
-			Env:   "EXIT_ON_BUILD_FAILURE",
+			Env:   prefix + "EXIT_ON_BUILD_FAILURE",
 			Value: serpent.BoolOf(&o.ExitOnBuildFailure),
 			Description: "Terminates the container upon a build failure. " +
 				"This is handy when preferring the FALLBACK_IMAGE in cases where " +
@@ -268,7 +270,7 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:  "force-safe",
-			Env:   "FORCE_SAFE",
+			Env:   prefix + "FORCE_SAFE",
 			Value: serpent.BoolOf(&o.ForceSafe),
 			Description: "Ignores any filesystem safety checks. This could cause " +
 				"serious harm to your system! This is used in cases where bypass " +
@@ -276,14 +278,14 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:  "insecure",
-			Env:   "INSECURE",
+			Env:   prefix + "INSECURE",
 			Value: serpent.BoolOf(&o.Insecure),
 			Description: "Bypass TLS verification when cloning and pulling from " +
 				"container registries.",
 		},
 		{
 			Flag:    "ignore-paths",
-			Env:     "IGNORE_PATHS",
+			Env:     prefix + "IGNORE_PATHS",
 			Value:   serpent.StringArrayOf(&o.IgnorePaths),
 			Default: "/var/run",
 			Description: "The comma separated list of paths to ignore when " +
@@ -291,7 +293,7 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:  "skip-rebuild",
-			Env:   "SKIP_REBUILD",
+			Env:   prefix + "SKIP_REBUILD",
 			Value: serpent.BoolOf(&o.SkipRebuild),
 			Description: "Skip building if the MagicFile exists. This is used " +
 				"to skip building when a container is restarting. e.g. docker stop -> " +
@@ -300,63 +302,63 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:        "git-url",
-			Env:         "GIT_URL",
+			Env:         prefix + "GIT_URL",
 			Value:       serpent.StringOf(&o.GitURL),
 			Description: "The URL of the Git repository to clone. This is optional.",
 		},
 		{
 			Flag:        "git-clone-depth",
-			Env:         "GIT_CLONE_DEPTH",
+			Env:         prefix + "GIT_CLONE_DEPTH",
 			Value:       serpent.Int64Of(&o.GitCloneDepth),
 			Description: "The depth to use when cloning the Git repository.",
 		},
 		{
 			Flag:        "git-clone-single-branch",
-			Env:         "GIT_CLONE_SINGLE_BRANCH",
+			Env:         prefix + "GIT_CLONE_SINGLE_BRANCH",
 			Value:       serpent.BoolOf(&o.GitCloneSingleBranch),
 			Description: "Clone only a single branch of the Git repository.",
 		},
 		{
 			Flag:        "git-username",
-			Env:         "GIT_USERNAME",
+			Env:         prefix + "GIT_USERNAME",
 			Value:       serpent.StringOf(&o.GitUsername),
 			Description: "The username to use for Git authentication. This is optional.",
 		},
 		{
 			Flag:        "git-password",
-			Env:         "GIT_PASSWORD",
+			Env:         prefix + "GIT_PASSWORD",
 			Value:       serpent.StringOf(&o.GitPassword),
 			Description: "The password to use for Git authentication. This is optional.",
 		},
 		{
 			Flag:        "git-ssh-private-key-path",
-			Env:         "GIT_SSH_PRIVATE_KEY_PATH",
+			Env:         prefix + "GIT_SSH_PRIVATE_KEY_PATH",
 			Value:       serpent.StringOf(&o.GitSSHPrivateKeyPath),
 			Description: "Path to an SSH private key to be used for Git authentication.",
 		},
 		{
 			Flag:        "git-http-proxy-url",
-			Env:         "GIT_HTTP_PROXY_URL",
+			Env:         prefix + "GIT_HTTP_PROXY_URL",
 			Value:       serpent.StringOf(&o.GitHTTPProxyURL),
 			Description: "The URL for the HTTP proxy. This is optional.",
 		},
 		{
 			Flag:  "workspace-folder",
-			Env:   "WORKSPACE_FOLDER",
+			Env:   prefix + "WORKSPACE_FOLDER",
 			Value: serpent.StringOf(&o.WorkspaceFolder),
 			Description: "The path to the workspace folder that will " +
 				"be built. This is optional.",
 		},
 		{
 			Flag:  "ssl-cert-base64",
-			Env:   "SSL_CERT_BASE64",
+			Env:   prefix + "SSL_CERT_BASE64",
 			Value: serpent.StringOf(&o.SSLCertBase64),
 			Description: "The content of an SSL cert file. This is useful " +
 				"for self-signed certificates.",
 		},
 		{
 			Flag:  "export-env-file",
-			Env:   "EXPORT_ENV_FILE",
+			Env:   prefix + "EXPORT_ENV_FILE",
 			Value: serpent.StringOf(&o.ExportEnvFile),
 			Description: "Optional file path to a .env file where " +
 				"envbuilder will dump environment variables from devcontainer.json " +
@@ -364,7 +366,7 @@ func (o *Options) CLI() serpent.OptionSet {
 		},
 		{
 			Flag:  "post-start-script-path",
-			Env:   "POST_START_SCRIPT_PATH",
+			Env:   prefix + "POST_START_SCRIPT_PATH",
 			Value: serpent.StringOf(&o.PostStartScriptPath),
 			Description: "The path to a script that will be created " +
 				"by envbuilder based on the postStartCommand in devcontainer.json, " +
@@ -395,15 +397,40 @@ func (o *Options) CLI() serpent.OptionSet {
 				"The envbuilder subsystem is always included.",
 		},
 	}
+
+	// Add options without the prefix for backward compatibility. These options
+	// are marked as deprecated and will be removed in future versions. Note:
+	// Future versions will require the 'ENVBUILDER' prefix for default
+	// environment variables.
+	for _, o := range set {
+		if strings.HasPrefix(o.Env, prefix) {
+			prevOption := o
+			prevOption.Env = strings.TrimPrefix(o.Env, prefix)
+			prevOption.UseInstead = []serpent.Option{o}
+			prevOption.Hidden = true
+			set = append(set, prevOption)
+		}
+	}
+
+	return set
 }
 
 func (o *Options) Markdown() string {
-	cliOptions := o.CLI()
+	var visibleOpts serpent.OptionSet
+
+	// We don't want to include deprecated opts in the README.
+	for _, opt := range o.CLI() {
+		isDeprecated := len(opt.UseInstead) > 0
+		if !isDeprecated {
+			visibleOpts = append(visibleOpts, opt)
+		}
+	}
+
 	var sb strings.Builder
 	_, _ = sb.WriteString("| Flag | Environment variable | Default | Description |\n")
 	_, _ = sb.WriteString("| - | - | - | - |\n")
 
-	for _, opt := range cliOptions {
+	for _, opt := range visibleOpts {
 		d := opt.Default
 		if d != "" {
 			d = "`" + d + "`"
