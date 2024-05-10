@@ -284,10 +284,9 @@ func (o *Options) CLI() serpent.OptionSet {
 				"container registries.",
 		},
 		{
-			Flag:    "ignore-paths",
-			Env:     WithEnvPrefix("IGNORE_PATHS"),
-			Value:   serpent.StringArrayOf(&o.IgnorePaths),
-			Default: "/var/run",
+			Flag:  "ignore-paths",
+			Env:   WithEnvPrefix("IGNORE_PATHS"),
+			Value: serpent.StringArrayOf(&o.IgnorePaths),
 			Description: "The comma separated list of paths to ignore when " +
 				"building the workspace.",
 		},
