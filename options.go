@@ -405,6 +405,7 @@ func (o *Options) CLI() serpent.OptionSet {
 	for _, o := range set {
 		if strings.HasPrefix(o.Env, prefix) {
 			prevOption := o
+			prevOption.Flag = "legacy-" + o.Flag
 			prevOption.Env = strings.TrimPrefix(o.Env, prefix)
 			prevOption.UseInstead = []serpent.Option{o}
 			prevOption.Hidden = true
