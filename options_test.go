@@ -15,50 +15,50 @@ import (
 func TestEnvOptionParsing(t *testing.T) {
 	t.Run("string", func(t *testing.T) {
 		const val = "setup.sh"
-		t.Setenv(envbuilder.WithOptionPrefix("SETUP_SCRIPT"), val)
+		t.Setenv(envbuilder.WithEnvPrefix("SETUP_SCRIPT"), val)
 		o := runCLI()
 		require.Equal(t, o.SetupScript, val)
 	})
 
 	t.Run("int", func(t *testing.T) {
-		t.Setenv(envbuilder.WithOptionPrefix("CACHE_TTL_DAYS"), "7")
+		t.Setenv(envbuilder.WithEnvPrefix("CACHE_TTL_DAYS"), "7")
 		o := runCLI()
 		require.Equal(t, o.CacheTTLDays, int64(7))
 	})
 
 	t.Run("string array", func(t *testing.T) {
-		t.Setenv(envbuilder.WithOptionPrefix("IGNORE_PATHS"), "/var,/temp")
+		t.Setenv(envbuilder.WithEnvPrefix("IGNORE_PATHS"), "/var,/temp")
 		o := runCLI()
 		require.Equal(t, o.IgnorePaths, []string{"/var", "/temp"})
 	})
 
 	t.Run("bool", func(t *testing.T) {
 		t.Run("lowercase", func(t *testing.T) {
-			t.Setenv(envbuilder.WithOptionPrefix("SKIP_REBUILD"), "true")
-			t.Setenv(envbuilder.WithOptionPrefix("GIT_CLONE_SINGLE_BRANCH"), "false")
+			t.Setenv(envbuilder.WithEnvPrefix("SKIP_REBUILD"), "true")
+			t.Setenv(envbuilder.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "false")
 			o := runCLI()
 			require.True(t, o.SkipRebuild)
 			require.False(t, o.GitCloneSingleBranch)
 		})
 
 		t.Run("uppercase", func(t *testing.T) {
-			t.Setenv(envbuilder.WithOptionPrefix("SKIP_REBUILD"), "TRUE")
-			t.Setenv(envbuilder.WithOptionPrefix("GIT_CLONE_SINGLE_BRANCH"), "FALSE")
+			t.Setenv(envbuilder.WithEnvPrefix("SKIP_REBUILD"), "TRUE")
+			t.Setenv(envbuilder.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "FALSE")
 			o := runCLI()
 			require.True(t, o.SkipRebuild)
 			require.False(t, o.GitCloneSingleBranch)
 		})
 
 		t.Run("numeric", func(t *testing.T) {
-			t.Setenv(envbuilder.WithOptionPrefix("SKIP_REBUILD"), "1")
-			t.Setenv(envbuilder.WithOptionPrefix("GIT_CLONE_SINGLE_BRANCH"), "0")
+			t.Setenv(envbuilder.WithEnvPrefix("SKIP_REBUILD"), "1")
+			t.Setenv(envbuilder.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "0")
 			o := runCLI()
 			require.True(t, o.SkipRebuild)
 			require.False(t, o.GitCloneSingleBranch)
 		})
 
 		t.Run("empty", func(t *testing.T) {
-			t.Setenv(envbuilder.WithOptionPrefix("GIT_CLONE_SINGLE_BRANCH"), "")
+			t.Setenv(envbuilder.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "")
 			o := runCLI()
 			require.False(t, o.GitCloneSingleBranch)
 		})
