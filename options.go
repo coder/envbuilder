@@ -144,7 +144,6 @@ const prefix = "ENVBUILDER_"
 
 // Generate CLI options for the envbuilder command.
 func (o *Options) CLI() serpent.OptionSet {
-
 	options := serpent.OptionSet{
 		{
 			Flag:  "setup-script",
