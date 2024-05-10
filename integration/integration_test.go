@@ -56,7 +56,7 @@ func TestForceSafe(t *testing.T) {
 		})
 		_, err := runEnvbuilder(t, options{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("KANIKO_DIR", "/not/envbuilder"),
+			"KANIKO_DIR=/not/envbuilder",
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		}})
 		require.ErrorContains(t, err, "delete filesystem: safety check failed")
@@ -72,8 +72,8 @@ func TestForceSafe(t *testing.T) {
 		})
 		_, err := runEnvbuilder(t, options{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("KANIKO_DIR", "/not/envbuilder"),
-			envbuilderEnv("FORCE_SAGE", "true"),
+			"KANIKO_DIR=/not/envbuilder",
+			envbuilderEnv("FORCE_SAFE", "true"),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		}})
 		require.NoError(t, err)
@@ -129,7 +129,7 @@ func TestSucceedsGitAuthInURL(t *testing.T) {
 	require.NoError(t, err)
 	u.User = url.UserPassword("kyle", "testing")
 	ctr, err := runEnvbuilder(t, options{env: []string{
-		envbuilderEnv("GIT_UR", u.String()),
+		envbuilderEnv("GIT_URL", u.String()),
 		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 	}})
 	require.NoError(t, err)
