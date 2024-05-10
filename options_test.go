@@ -63,6 +63,18 @@ func TestEnvOptionParsing(t *testing.T) {
 			require.False(t, o.GitCloneSingleBranch)
 		})
 	})
+
+	t.Run("legacy", func(t *testing.T) {
+		legacyEnvValue := "./setup-legacy-script.sh"
+		t.Setenv("SETUP_SCRIPT", legacyEnvValue)
+		o := runCLI()
+		require.Equal(t, o.SetupScript, legacyEnvValue)
+
+		envValue := "./setup-script.sh"
+		t.Setenv(envbuilder.WithEnvPrefix("SETUP_SCRIPT"), envValue)
+		o = runCLI()
+		require.Equal(t, o.SetupScript, envValue)
+	})
 }
 
 // UpdateGoldenFiles indicates golden files should be updated.
