@@ -50,9 +50,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/tailscale/hujson"
 	"golang.org/x/xerrors"
-
-	"github.com/coder/coder/codersdk"
-	"github.com/coder/envbuilder/devcontainer"
 )
 
 const (
