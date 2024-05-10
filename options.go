@@ -421,6 +421,7 @@ func supportLegacyEnvWithoutPrefixes(opts serpent.OptionSet) serpent.OptionSet {
 			prevOption.Env = strings.TrimPrefix(o.Env, optionPrefix)
 			prevOption.UseInstead = []serpent.Option{o}
 			prevOption.Hidden = true
+			prevOption.Default = ""
 			withLegacyOpts = append(withLegacyOpts, prevOption)
 		}
 	}
