@@ -63,7 +63,6 @@ func TestEnvOptionParsing(t *testing.T) {
 			require.False(t, o.GitCloneSingleBranch)
 		})
 	})
-
 }
 
 func TestLegacyEnvVars(t *testing.T) {
