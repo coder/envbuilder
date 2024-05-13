@@ -555,7 +555,7 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	if err := restoreMounts(); err != nil {
-		options.Logger(codersdk.LogLevelError, "recreate mountpoint: %w", err)
+		return fmt.Errorf("restore mounts: %w", err)
 	}
 
 	// Create the magic file to indicate that this build
