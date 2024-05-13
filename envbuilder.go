@@ -396,7 +396,7 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	// temp move of all ro mounts
-	tempRemountDest := filepath.Join("/", MagicDir)
+	tempRemountDest := filepath.Join("/", MagicDir, "mnt")
 	ignorePrefixes := []string{tempRemountDest, "/proc", "/sys"}
 	restoreMounts, err := ebutil.TempRemount(options.Logger, tempRemountDest, ignorePrefixes...)
 	defer func() { // restoreMounts should never be nil
