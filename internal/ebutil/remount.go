@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/coder/coder/v2/codersdk"
+	"github.com/hashicorp/go-multierror"
 	"github.com/prometheus/procfs"
 )
 
@@ -46,12 +47,13 @@ func tempRemount(m mounter, logf func(codersdk.LogLevel, string, ...any), base s
 	mounts := map[string]string{}
 	// closer to attempt to restore original mount points
 	restore = func() error {
+		var merr error
 		for orig, moved := range mounts {
 			if err := remount(m, moved, orig); err != nil {
-				return fmt.Errorf("restore mount: %w", err)
+				merr = multierror.Append(merr, fmt.Errorf("restore mount: %w", err))
 			}
 		}
-		return nil
+		return merr
 	}
 
 outer:
