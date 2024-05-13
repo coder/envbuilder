@@ -36,6 +36,8 @@ func Test_tempRemount(t *testing.T) {
 		require.NoError(t, err)
 		err = remount()
 		require.NoError(t, err)
+		// sync.Once should handle multiple remount calls
+		_ = remount()
 	})
 
 	t.Run("IgnorePrefixes", func(t *testing.T) {

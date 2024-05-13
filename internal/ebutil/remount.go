@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/coder/coder/v2/codersdk"
@@ -46,13 +47,16 @@ func tempRemount(m mounter, logf func(codersdk.LogLevel, string, ...any), base s
 	// temp move of all ro mounts
 	mounts := map[string]string{}
 	// closer to attempt to restore original mount points
+	var restoreOnce sync.Once
 	restore = func() error {
 		var merr error
-		for orig, moved := range mounts {
-			if err := remount(m, moved, orig); err != nil {
-				merr = multierror.Append(merr, fmt.Errorf("restore mount: %w", err))
+		restoreOnce.Do(func() {
+			for orig, moved := range mounts {
+				if err := remount(m, moved, orig); err != nil {
+					merr = multierror.Append(merr, fmt.Errorf("restore mount: %w", err))
+				}
 			}
-		}
+		})
 		return merr
 	}
 
