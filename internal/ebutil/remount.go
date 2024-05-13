@@ -19,14 +19,14 @@ import (
 //
 // It is the responsibility of the caller to call the returned function
 // to restore the original mount points. If an error is encountered while attempting to perform
-// the operation, calling the returned remount function will make a best-effort attempt to
-// restore the original state.
-func TempRemount(logf func(codersdk.LogLevel, string, ...any), dest string, ignorePrefixes ...string) (remount func() error, err error,
+// the operation, calling the returned function will make a best-effort attempt to restore
+// the original state.
+func TempRemount(logf func(codersdk.LogLevel, string, ...any), dest string, ignorePrefixes ...string) (restore func() error, err error,
 ) {
 	return tempRemount(&realMounter{}, logf, dest, ignorePrefixes...)
 }
 
-func tempRemount(m mounter, logf func(codersdk.LogLevel, string, ...any), dest string, ignorePrefixes ...string) (remount func() error, err error) {
+func tempRemount(m mounter, logf func(codersdk.LogLevel, string, ...any), dest string, ignorePrefixes ...string) (restore func() error, err error) {
 	mountInfos, err := m.GetMounts()
 	if err != nil {
 		return func() error { return nil }, fmt.Errorf("get mounts: %w", err)
@@ -35,7 +35,7 @@ func tempRemount(m mounter, logf func(codersdk.LogLevel, string, ...any), dest s
 	// temp move of all ro mounts
 	mounts := map[string]string{}
 	// closer to attempt to restore original mount points
-	remount = func() error {
+	restore = func() error {
 		for src, tgt := range mounts {
 			err := m.MkdirAll(src, 0o750)
 			if err != nil {
@@ -73,22 +73,22 @@ outer:
 		tgt := filepath.Join("/", dest, src)
 		err := m.MkdirAll(tgt, 0o750)
 		if err != nil {
-			return remount, fmt.Errorf("create temp mountpoint %s: %w", dest, err)
+			return restore, fmt.Errorf("create temp mountpoint %s: %w", dest, err)
 		}
 
 		err = m.Mount(src, tgt, "bind", syscall.MS_BIND, "")
 		if err != nil {
-			return remount, fmt.Errorf("bind mount %s => %s: %s", src, dest, err.Error())
+			return restore, fmt.Errorf("bind mount %s => %s: %s", src, dest, err.Error())
 		}
 		err = m.Unmount(src, 0)
 		if err != nil {
-			return remount, fmt.Errorf("temp unmount src %s: %s", src, err.Error())
+			return restore, fmt.Errorf("temp unmount src %s: %s", src, err.Error())
 		}
 
 		mounts[src] = tgt
 	}
 
-	return remount, nil
+	return restore, nil
 }
 
 // mounter is an interface to system-level calls used by TempRemount.
