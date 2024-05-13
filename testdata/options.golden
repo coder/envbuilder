@@ -99,7 +99,7 @@ OPTIONS:
       --git-username string, $ENVBUILDER_GIT_USERNAME
           The username to use for Git authentication. This is optional.
 
-      --ignore-paths string-array, $ENVBUILDER_IGNORE_PATHS (default: /var/run)
+      --ignore-paths string-array, $ENVBUILDER_IGNORE_PATHS
           The comma separated list of paths to ignore when building the
           workspace.
 
