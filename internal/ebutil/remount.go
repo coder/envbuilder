@@ -17,6 +17,18 @@ import (
 // and unmounts them from their original source. All mount points underneath ignorePrefixes
 // will not be touched.
 //
+// Some container runtimes such as sysbox-runc will mount in `/lib/modules` read-only.
+// See https://github.com/nestybox/sysbox/issues/564
+// This trips us up because:
+//  1. We call a Kaniko library function `util.DeleteFilesystem` that does exactly what it says
+//     on the tin. If this hits a read-only volume mounted in, unhappiness is the result.
+//  2. After deleting the filesystem and building the image, we extract it to the filesystem.
+//     If some paths mounted in via volume are present at that time, unhappiness is also likely
+//     to result -- especially in case of read-only mounts.
+//
+// To work around this we move the mounts out of the way temporarily by bind-mounting them
+// while we do our thing, and move them back when we're done.
+//
 // It is the responsibility of the caller to call the returned function
 // to restore the original mount points. If an error is encountered while attempting to perform
 // the operation, calling the returned function will make a best-effort attempt to restore
