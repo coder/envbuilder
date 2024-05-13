@@ -1,14 +1,15 @@
 package ebutil
 
 import (
-	"github.com/coder/coder/v2/codersdk"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 	"os"
 	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/coder/coder/v2/codersdk"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/prometheus/procfs"
 )
@@ -24,10 +25,10 @@ func Test_tempRemount(t *testing.T) {
 		mounts := fakeMounts("/home", "/var/lib/modules:ro", "/proc", "/sys")
 
 		mm.EXPECT().GetMounts().Return(mounts, nil)
-		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0750)).Times(1).Return(nil)
+		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0o750)).Times(1).Return(nil)
 		mm.EXPECT().Mount("/var/lib/modules", "/.test/var/lib/modules", "bind", uintptr(syscall.MS_BIND), "").Times(1).Return(nil)
 		mm.EXPECT().Unmount("/var/lib/modules", 0).Times(1).Return(nil)
-		mm.EXPECT().MkdirAll("/var/lib/modules", os.FileMode(0750)).Times(1).Return(nil)
+		mm.EXPECT().MkdirAll("/var/lib/modules", os.FileMode(0o750)).Times(1).Return(nil)
 		mm.EXPECT().Mount("/.test/var/lib/modules", "/var/lib/modules", "bind", uintptr(syscall.MS_BIND), "").Times(1).Return(nil)
 		mm.EXPECT().Unmount("/.test/var/lib/modules", 0).Times(1).Return(nil)
 
@@ -72,7 +73,7 @@ func Test_tempRemount(t *testing.T) {
 		mounts := fakeMounts("/home", "/var/lib/modules:ro", "/proc", "/sys")
 
 		mm.EXPECT().GetMounts().Return(mounts, nil)
-		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0750)).Times(1).Return(assert.AnError)
+		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0o750)).Times(1).Return(assert.AnError)
 
 		remount, err := tempRemount(mm, fakeLog(t), "/.test")
 		require.ErrorContains(t, err, assert.AnError.Error())
@@ -88,7 +89,7 @@ func Test_tempRemount(t *testing.T) {
 		mounts := fakeMounts("/home", "/var/lib/modules:ro", "/proc", "/sys")
 
 		mm.EXPECT().GetMounts().Return(mounts, nil)
-		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0750)).Times(1).Return(nil)
+		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0o750)).Times(1).Return(nil)
 		mm.EXPECT().Mount("/var/lib/modules", "/.test/var/lib/modules", "bind", uintptr(syscall.MS_BIND), "").Times(1).Return(assert.AnError)
 
 		remount, err := tempRemount(mm, fakeLog(t), "/.test")
@@ -105,7 +106,7 @@ func Test_tempRemount(t *testing.T) {
 		mounts := fakeMounts("/home", "/var/lib/modules:ro", "/proc", "/sys")
 
 		mm.EXPECT().GetMounts().Return(mounts, nil)
-		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0750)).Times(1).Return(nil)
+		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0o750)).Times(1).Return(nil)
 		mm.EXPECT().Mount("/var/lib/modules", "/.test/var/lib/modules", "bind", uintptr(syscall.MS_BIND), "").Times(1).Return(nil)
 		mm.EXPECT().Unmount("/var/lib/modules", 0).Times(1).Return(assert.AnError)
 
@@ -123,10 +124,10 @@ func Test_tempRemount(t *testing.T) {
 		mounts := fakeMounts("/home", "/var/lib/modules:ro", "/proc", "/sys")
 
 		mm.EXPECT().GetMounts().Return(mounts, nil)
-		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0750)).Times(1).Return(nil)
+		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0o750)).Times(1).Return(nil)
 		mm.EXPECT().Mount("/var/lib/modules", "/.test/var/lib/modules", "bind", uintptr(syscall.MS_BIND), "").Times(1).Return(nil)
 		mm.EXPECT().Unmount("/var/lib/modules", 0).Times(1).Return(nil)
-		mm.EXPECT().MkdirAll("/var/lib/modules", os.FileMode(0750)).Times(1).Return(assert.AnError)
+		mm.EXPECT().MkdirAll("/var/lib/modules", os.FileMode(0o750)).Times(1).Return(assert.AnError)
 
 		remount, err := tempRemount(mm, fakeLog(t), "/.test")
 		require.NoError(t, err)
@@ -142,10 +143,10 @@ func Test_tempRemount(t *testing.T) {
 		mounts := fakeMounts("/home", "/var/lib/modules:ro", "/proc", "/sys")
 
 		mm.EXPECT().GetMounts().Return(mounts, nil)
-		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0750)).Times(1).Return(nil)
+		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0o750)).Times(1).Return(nil)
 		mm.EXPECT().Mount("/var/lib/modules", "/.test/var/lib/modules", "bind", uintptr(syscall.MS_BIND), "").Times(1).Return(nil)
 		mm.EXPECT().Unmount("/var/lib/modules", 0).Times(1).Return(nil)
-		mm.EXPECT().MkdirAll("/var/lib/modules", os.FileMode(0750)).Times(1).Return(nil)
+		mm.EXPECT().MkdirAll("/var/lib/modules", os.FileMode(0o750)).Times(1).Return(nil)
 		mm.EXPECT().Mount("/.test/var/lib/modules", "/var/lib/modules", "bind", uintptr(syscall.MS_BIND), "").Times(1).Return(assert.AnError)
 
 		remount, err := tempRemount(mm, fakeLog(t), "/.test")
@@ -162,10 +163,10 @@ func Test_tempRemount(t *testing.T) {
 		mounts := fakeMounts("/home", "/var/lib/modules:ro", "/proc", "/sys")
 
 		mm.EXPECT().GetMounts().Return(mounts, nil)
-		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0750)).Times(1).Return(nil)
+		mm.EXPECT().MkdirAll("/.test/var/lib/modules", os.FileMode(0o750)).Times(1).Return(nil)
 		mm.EXPECT().Mount("/var/lib/modules", "/.test/var/lib/modules", "bind", uintptr(syscall.MS_BIND), "").Times(1).Return(nil)
 		mm.EXPECT().Unmount("/var/lib/modules", 0).Times(1).Return(nil)
-		mm.EXPECT().MkdirAll("/var/lib/modules", os.FileMode(0750)).Times(1).Return(nil)
+		mm.EXPECT().MkdirAll("/var/lib/modules", os.FileMode(0o750)).Times(1).Return(nil)
 		mm.EXPECT().Mount("/.test/var/lib/modules", "/var/lib/modules", "bind", uintptr(syscall.MS_BIND), "").Times(1).Return(nil)
 		mm.EXPECT().Unmount("/.test/var/lib/modules", 0).Times(1).Return(assert.AnError)
 

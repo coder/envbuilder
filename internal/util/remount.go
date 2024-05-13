@@ -35,7 +35,7 @@ func tempRemount(m mounter, logf func(codersdk.LogLevel, string, ...any), dest s
 	// closer to attempt to restore original mount points
 	remount = func() error {
 		for src, tgt := range mounts {
-			err := m.MkdirAll(src, 0750)
+			err := m.MkdirAll(src, 0o750)
 			if err != nil {
 				return fmt.Errorf("recreate original mountpoint %s: %w", src, err)
 			}
@@ -69,7 +69,7 @@ outer:
 
 		src := mountInfo.MountPoint
 		tgt := filepath.Join("/", dest, src)
-		err := m.MkdirAll(tgt, 0750)
+		err := m.MkdirAll(tgt, 0o750)
 		if err != nil {
 			return remount, fmt.Errorf("create temp mountpoint %s: %w", dest, err)
 		}
@@ -109,12 +109,15 @@ var _ mounter = &realMounter{}
 func (m *realMounter) Mount(src string, dest string, fstype string, flags uintptr, data string) error {
 	return syscall.Mount(src, dest, fstype, flags, data)
 }
+
 func (m *realMounter) Unmount(tgt string, flags int) error {
 	return syscall.Unmount(tgt, flags)
 }
+
 func (m *realMounter) GetMounts() ([]*procfs.MountInfo, error) {
 	return procfs.GetMounts()
 }
+
 func (m *realMounter) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
 }
