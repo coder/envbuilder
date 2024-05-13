@@ -62,6 +62,7 @@ func tempRemount(m mounter, logf func(codersdk.LogLevel, string, ...any), base s
 
 outer:
 	for _, mountInfo := range mountInfos {
+		// TODO: do this for all mounts
 		if _, ok := mountInfo.Options["ro"]; !ok {
 			logf(codersdk.LogLevelTrace, "skip rw mount %s", mountInfo.MountPoint)
 			continue
