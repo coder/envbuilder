@@ -398,7 +398,12 @@ func Run(ctx context.Context, options Options) error {
 	// temp move of all ro mounts
 	tempRemountDest := filepath.Join("/", MagicDir)
 	ignorePrefixes := []string{tempRemountDest, "/proc", "/sys"}
-	remount, err := ebutil.TempRemount(options.Logger, tempRemountDest, ignorePrefixes...)
+	restoreMounts, err := ebutil.TempRemount(options.Logger, tempRemountDest, ignorePrefixes...)
+	defer func() { // restoreMounts should never be nil
+		if err := restoreMounts(); err != nil {
+			options.Logger(codersdk.LogLevelError, "restore mounts: %s", err.Error())
+		}
+	}()
 	if err != nil {
 		return fmt.Errorf("temp remount: %w", err)
 	}
@@ -549,8 +554,7 @@ func Run(ctx context.Context, options Options) error {
 		closeAfterBuild()
 	}
 
-	if err := remount(); err != nil {
-		// Don't fail at this point as it may be useful to be able to inspect the build.
+	if err := restoreMounts(); err != nil {
 		options.Logger(codersdk.LogLevelError, "recreate mountpoint: %w", err)
 	}
 
