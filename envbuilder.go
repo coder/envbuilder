@@ -26,8 +26,6 @@ import (
 	"syscall"
 	"time"
 
-	ebutil "github.com/coder/envbuilder/internal/util"
-
 	dcontext "github.com/distribution/distribution/v3/context"
 	"github.com/kballard/go-shellquote"
 	"github.com/mattn/go-isatty"
@@ -38,6 +36,7 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/util"
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/envbuilder/devcontainer"
+	"github.com/coder/envbuilder/internal/ebutil"
 	"github.com/containerd/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry/handlers"
