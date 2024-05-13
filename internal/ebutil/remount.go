@@ -1,7 +1,5 @@
 package ebutil
 
-//go:generate  mockgen -source remount.go -package ebutil mounter -destination mock_mounter_test.go
-
 import (
 	"fmt"
 	"os"
