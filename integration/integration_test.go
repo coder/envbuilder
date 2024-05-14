@@ -924,14 +924,14 @@ func checkTestRegistry() {
 	resp, err := http.Get("http://localhost:5000/v2/_catalog")
 	if err != nil {
 		_, _ = fmt.Printf("Check test registry: %s\n", err.Error())
-		_, _ = fmt.Printf("Hint: Did you forget to run `make test-registry`?\n")
+		_, _ = fmt.Printf("Hint: Did you run `make test-registry`?\n")
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
 	v := make(map[string][]string)
 	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
 		_, _ = fmt.Printf("Read test registry catalog: %s\n", err.Error())
-		_, _ = fmt.Printf("Hint: Did you forget to run `make test-registry`?\n")
+		_, _ = fmt.Printf("Hint: Did you run `make test-registry`?\n")
 		os.Exit(1)
 	}
 }
