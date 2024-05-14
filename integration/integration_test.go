@@ -869,6 +869,7 @@ COPY %s .`, testImageAlpine, inclFile)
 
 // TestMain runs before all tests to build the envbuilder image.
 func TestMain(m *testing.M) {
+	checkTestRegistry()
 	cleanOldEnvbuilders()
 	ctx := context.Background()
 	// Run the build script to create the envbuilder image.
@@ -917,6 +918,22 @@ func createGitServer(t *testing.T, opts gitServerOptions) *httptest.Server {
 		return httptest.NewTLSServer(opts.authMW(gittest.NewServer(fs)))
 	}
 	return httptest.NewServer(opts.authMW(gittest.NewServer(fs)))
+}
+
+func checkTestRegistry() {
+	resp, err := http.Get("http://localhost:5000/v2/_catalog")
+	if err != nil {
+		_, _ = fmt.Printf("Check test registry: %s\n", err.Error())
+		_, _ = fmt.Printf("Hint: Did you forget to run `make test-registry`?\n")
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	v := make(map[string][]string)
+	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+		_, _ = fmt.Printf("Read test registry catalog: %s\n", err.Error())
+		_, _ = fmt.Printf("Hint: Did you forget to run `make test-registry`?\n")
+		os.Exit(1)
+	}
 }
 
 // cleanOldEnvbuilders removes any old envbuilder containers.
