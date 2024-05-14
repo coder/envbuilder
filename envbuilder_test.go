@@ -10,7 +10,7 @@ import (
 func TestDefaultWorkspaceFolder(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
+	successTests := []struct {
 		name     string
 		gitURL   string
 		expected string
@@ -41,12 +41,32 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 			expected: envbuilder.EmptyWorkspaceDir,
 		},
 	}
-
-	for _, tt := range tests {
+	for _, tt := range successTests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir, err := envbuilder.DefaultWorkspaceFolder(tt.gitURL)
 			require.NoError(t, err)
 			require.Equal(t, tt.expected, dir)
+		})
+	}
+
+	invalidTests := []struct {
+		name       string
+		invalidURL string
+	}{
+		{
+			name:       "simple text",
+			invalidURL: "not a valid URL",
+		},
+		{
+			name:       "website URL",
+			invalidURL: "www.google.com",
+		},
+	}
+	for _, tt := range invalidTests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir, err := envbuilder.DefaultWorkspaceFolder(tt.invalidURL)
+			require.NoError(t, err)
+			require.Equal(t, envbuilder.EmptyWorkspaceDir, dir)
 		})
 	}
 }

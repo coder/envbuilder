@@ -857,15 +857,16 @@ func Run(ctx context.Context, options Options) error {
 // for a given repository URL.
 func DefaultWorkspaceFolder(repoURL string) (string, error) {
 	if repoURL == "" {
-		return "/workspaces/empty", nil
+		return EmptyWorkspaceDir, nil
 	}
 	parsed, err := giturls.Parse(repoURL)
 	if err != nil {
 		return "", err
 	}
 	name := strings.Split(parsed.Path, "/")
-	if len(name) == 0 {
-		return "", errors.New("no name found in the repository URL")
+	hasOwnerAndRepo := len(name) >= 2
+	if !hasOwnerAndRepo {
+		return EmptyWorkspaceDir, nil
 	}
 	repo := strings.TrimSuffix(name[len(name)-1], ".git")
 	return fmt.Sprintf("/workspaces/%s", repo), nil
