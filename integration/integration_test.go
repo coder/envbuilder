@@ -48,69 +48,49 @@ const (
 func TestInitScriptInitCommand(t *testing.T) {
 	t.Parallel()
 
-	t.Run("OK", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
 
-		// Init script will hit the below handler to signify INIT_SCRIPT works.
-		initCalled := make(chan struct{})
-		initSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			close(initCalled)
-			w.WriteHeader(http.StatusOK)
-		}))
+	// Init script will hit the below handler to signify INIT_SCRIPT works.
+	initCalled := make(chan struct{})
+	initSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		initCalled <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
 
-		srv := createGitServer(t, gitServerOptions{
-			files: map[string]string{
-				// Let's say /bin/sh is not available and we can only use /bin/ash
-				"Dockerfile": fmt.Sprintf("FROM %s\nRUN unlink /bin/sh", testImageAlpine),
-			},
-		})
-		_, err := runEnvbuilder(t, options{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-			envbuilderEnv("INIT_SCRIPT", fmt.Sprintf(`wget -O - %q`, initSrv.URL)),
-			envbuilderEnv("INIT_COMMAND", "/bin/ash"),
-		}})
-		require.NoError(t, err)
-
-		select {
-		case <-initCalled:
-		case <-ctx.Done():
-		}
-		require.NoError(t, ctx.Err(), "init script did not execute")
+	srv := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			// Let's say /bin/sh is not available and we can only use /bin/ash
+			"Dockerfile": fmt.Sprintf("FROM %s\nRUN unlink /bin/sh", testImageAlpine),
+		},
 	})
+	_, err := runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		envbuilderEnv("INIT_SCRIPT", fmt.Sprintf(`wget -O - %q`, initSrv.URL)),
+		envbuilderEnv("INIT_COMMAND", "/bin/ash"),
+	}})
+	require.NoError(t, err)
 
-	t.Run("Legacy", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-		defer cancel()
+	select {
+	case <-initCalled:
+	case <-ctx.Done():
+	}
+	require.NoError(t, ctx.Err(), "init script did not execute for prefixed env vars")
 
-		// Init script will hit the below handler to signify INIT_SCRIPT works.
-		initCalled := make(chan struct{})
-		initSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			close(initCalled)
-			w.WriteHeader(http.StatusOK)
-		}))
+	_, err = runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		fmt.Sprintf(`INIT_SCRIPT=wget -O - %q`, initSrv.URL),
+		`INIT_COMMAND=/bin/ash`,
+	}})
+	require.NoError(t, err)
 
-		srv := createGitServer(t, gitServerOptions{
-			files: map[string]string{
-				// Let's say /bin/sh is not available and we can only use /bin/ash
-				"Dockerfile": fmt.Sprintf("FROM %s\nRUN unlink /bin/sh", testImageAlpine),
-			},
-		})
-		_, err := runEnvbuilder(t, options{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-			fmt.Sprintf(`INIT_SCRIPT=wget -O - %q`, initSrv.URL),
-			`INIT_COMMAND=/bin/ash`,
-		}})
-		require.NoError(t, err)
-
-		select {
-		case <-initCalled:
-		case <-ctx.Done():
-		}
-		require.NoError(t, ctx.Err(), "init script did not execute")
-	})
+	select {
+	case <-initCalled:
+	case <-ctx.Done():
+	}
+	require.NoError(t, ctx.Err(), "init script did not execute for legacy env vars")
 }
 
 func TestForceSafe(t *testing.T) {
