@@ -86,6 +86,19 @@ type DockerConfig configfile.ConfigFile
 // Filesystem is the filesystem to use for all operations.
 // Defaults to the host filesystem.
 func Run(ctx context.Context, options Options) error {
+	// Temporarily removed these from the default settings to prevent conflicts
+	// between current and legacy environment variables that add default values.
+	// Once the legacy environment variables are phased out, this can be
+	// reinstated to the previous default values.
+	if len(options.IgnorePaths) == 0 {
+		options.IgnorePaths = []string{"/var/run"}
+	}
+	if options.InitScript == "" {
+		options.InitScript = "sleep infinity"
+	}
+	if options.InitCommand == "" {
+		options.InitCommand = "/bin/sh"
+	}
 	// Default to the shell!
 	initArgs := []string{"-c", options.InitScript}
 	if options.InitArgs != "" {
@@ -377,13 +390,6 @@ func Run(ctx context.Context, options Options) error {
 		options.CacheRepo = fmt.Sprintf("localhost:%d/local/cache", tcpAddr.Port)
 	}
 
-	// Temporarily removed this from the default settings to prevent conflicts
-	// between current and legacy environment variables that add default values.
-	// Once the legacy environment variables are phased out, this can be
-	// reinstated to the IGNORE_PATHS default.
-	if len(options.IgnorePaths) == 0 {
-		options.IgnorePaths = []string{"/var/run"}
-	}
 	// IgnorePaths in the Kaniko options doesn't properly ignore paths.
 	// So we add them to the default ignore list. See:
 	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
