@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer/features"
@@ -43,6 +44,54 @@ const (
 	testImageAlpine    = "localhost:5000/envbuilder-test-alpine:latest"
 	testImageUbuntu    = "localhost:5000/envbuilder-test-ubuntu:latest"
 )
+
+func TestInitScriptInitCommand(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	// Init script will hit the below handler to signify INIT_SCRIPT works.
+	initCalled := make(chan struct{})
+	initSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		initCalled <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	srv := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			// Let's say /bin/sh is not available and we can only use /bin/ash
+			"Dockerfile": fmt.Sprintf("FROM %s\nRUN unlink /bin/sh", testImageAlpine),
+		},
+	})
+	_, err := runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		envbuilderEnv("INIT_SCRIPT", fmt.Sprintf(`wget -O - %q`, initSrv.URL)),
+		envbuilderEnv("INIT_COMMAND", "/bin/ash"),
+	}})
+	require.NoError(t, err)
+
+	select {
+	case <-initCalled:
+	case <-ctx.Done():
+	}
+	require.NoError(t, ctx.Err(), "init script did not execute for prefixed env vars")
+
+	_, err = runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		fmt.Sprintf(`INIT_SCRIPT=wget -O - %q`, initSrv.URL),
+		`INIT_COMMAND=/bin/ash`,
+	}})
+	require.NoError(t, err)
+
+	select {
+	case <-initCalled:
+	case <-ctx.Done():
+	}
+	require.NoError(t, ctx.Err(), "init script did not execute for legacy env vars")
+}
 
 func TestForceSafe(t *testing.T) {
 	t.Parallel()

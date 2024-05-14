@@ -156,18 +156,18 @@ func (o *Options) CLI() serpent.OptionSet {
 				"specifying whether to start systemd or tiny init for PID 1.",
 		},
 		{
-			Flag:        "init-script",
-			Env:         WithEnvPrefix("INIT_SCRIPT"),
-			Default:     "sleep infinity",
+			Flag: "init-script",
+			Env:  WithEnvPrefix("INIT_SCRIPT"),
+			// Default:     "sleep infinity", // TODO: reinstate once legacy opts are removed.
 			Value:       serpent.StringOf(&o.InitScript),
-			Description: "The script to run to initialize the workspace.",
+			Description: "The script to run to initialize the workspace. Default: `sleep infinity`.",
 		},
 		{
-			Flag:        "init-command",
-			Env:         WithEnvPrefix("INIT_COMMAND"),
-			Default:     "/bin/sh",
+			Flag: "init-command",
+			Env:  WithEnvPrefix("INIT_COMMAND"),
+			// Default:     "/bin/sh", // TODO: reinstate once legacy opts are removed.
 			Value:       serpent.StringOf(&o.InitCommand),
-			Description: "The command to run to initialize the workspace.",
+			Description: "The command to run to initialize the workspace. Default: `/bin/sh`.",
 		},
 		{
 			Flag:  "init-args",

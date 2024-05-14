@@ -306,8 +306,8 @@ On MacOS or Windows systems, we recommend either using a VM or the provided `.de
 | Flag | Environment variable | Default | Description |
 | - | - | - | - |
 | `--setup-script` | `ENVBUILDER_SETUP_SCRIPT` |  | The script to run before the init script. It runs as the root user regardless of the user specified in the devcontainer.json file. SetupScript is ran as the root user prior to the init script. It is used to configure envbuilder dynamically during the runtime. e.g. specifying whether to start systemd or tiny init for PID 1. |
-| `--init-script` | `ENVBUILDER_INIT_SCRIPT` | `sleep infinity` | The script to run to initialize the workspace. |
-| `--init-command` | `ENVBUILDER_INIT_COMMAND` | `/bin/sh` | The command to run to initialize the workspace. |
+| `--init-script` | `ENVBUILDER_INIT_SCRIPT` |  | The script to run to initialize the workspace. Default: `sleep infinity`. |
+| `--init-command` | `ENVBUILDER_INIT_COMMAND` |  | The command to run to initialize the workspace. Default: `/bin/sh`. |
 | `--init-args` | `ENVBUILDER_INIT_ARGS` |  | The arguments to pass to the init command. They are split according to /bin/sh rules with https://github.com/kballard/go-shellquote. |
 | `--cache-repo` | `ENVBUILDER_CACHE_REPO` |  | The name of the container registry to push the cache image to. If this is empty, the cache will not be pushed. |
 | `--base-image-cache-dir` | `ENVBUILDER_BASE_IMAGE_CACHE_DIR` |  | The path to a directory where the base image can be found. This should be a read-only directory solely mounted for the purpose of caching the base image. |
