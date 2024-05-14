@@ -107,11 +107,12 @@ OPTIONS:
           The arguments to pass to the init command. They are split according to
           /bin/sh rules with https://github.com/kballard/go-shellquote.
 
-      --init-command string, $ENVBUILDER_INIT_COMMAND (default: /bin/sh)
-          The command to run to initialize the workspace.
+      --init-command string, $ENVBUILDER_INIT_COMMAND
+          The command to run to initialize the workspace. Default: `/bin/sh`.
 
-      --init-script string, $ENVBUILDER_INIT_SCRIPT (default: sleep infinity)
-          The script to run to initialize the workspace.
+      --init-script string, $ENVBUILDER_INIT_SCRIPT
+          The script to run to initialize the workspace. Default: `sleep
+          infinity`.
 
       --insecure bool, $ENVBUILDER_INSECURE
           Bypass TLS verification when cloning and pulling from container
