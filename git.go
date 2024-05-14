@@ -22,6 +22,7 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/skeema/knownhosts"
+	giturls "github.com/whilp/git-urls"
 	"golang.org/x/crypto/ssh"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -46,7 +47,7 @@ type CloneRepoOptions struct {
 //
 // The bool returned states whether the repository was cloned or not.
 func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
-	parsed, err := url.Parse(opts.RepoURL)
+	parsed, err := ParseGitURL(opts.RepoURL)
 	if err != nil {
 		return false, fmt.Errorf("parse url %q: %w", opts.RepoURL, err)
 	}
@@ -250,4 +251,9 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 		auth.HostKeyCallback = LogHostKeyCallback(options.Logger)
 	}
 	return auth
+}
+
+// Parses a Git URL and returns a corresponding URL object
+func ParseGitURL(URL string) (*url.URL, error) {
+	return giturls.Parse(URL)
 }

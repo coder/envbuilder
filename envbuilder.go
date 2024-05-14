@@ -14,7 +14,6 @@ import (
 	"maps"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -859,12 +858,13 @@ func DefaultWorkspaceFolder(repoURL string) (string, error) {
 	if repoURL == "" {
 		return "/workspaces/empty", nil
 	}
-	parsed, err := url.Parse(repoURL)
+	parsed, err := ParseGitURL(repoURL)
 	if err != nil {
 		return "", err
 	}
 	name := strings.Split(parsed.Path, "/")
-	return fmt.Sprintf("/workspaces/%s", name[len(name)-1]), nil
+	repo := strings.TrimSuffix(name[len(name)-1], ".git")
+	return fmt.Sprintf("/workspaces/%s", repo), nil
 }
 
 type userInfo struct {
