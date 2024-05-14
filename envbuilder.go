@@ -36,6 +36,7 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/util"
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/envbuilder/devcontainer"
+	"github.com/coder/envbuilder/internal/ebutil"
 	"github.com/containerd/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry/handlers"
@@ -401,6 +402,19 @@ func Run(ctx context.Context, options Options) error {
 		})
 	}
 
+	// temp move of all ro mounts
+	tempRemountDest := filepath.Join("/", MagicDir, "mnt")
+	ignorePrefixes := []string{tempRemountDest, "/proc", "/sys"}
+	restoreMounts, err := ebutil.TempRemount(options.Logger, tempRemountDest, ignorePrefixes...)
+	defer func() { // restoreMounts should never be nil
+		if err := restoreMounts(); err != nil {
+			options.Logger(codersdk.LogLevelError, "restore mounts: %s", err.Error())
+		}
+	}()
+	if err != nil {
+		return fmt.Errorf("temp remount: %w", err)
+	}
+
 	skippedRebuild := false
 	build := func() (v1.Image, error) {
 		_, err := options.Filesystem.Stat(MagicFile)
@@ -545,6 +559,10 @@ func Run(ctx context.Context, options Options) error {
 
 	if closeAfterBuild != nil {
 		closeAfterBuild()
+	}
+
+	if err := restoreMounts(); err != nil {
+		return fmt.Errorf("restore mounts: %w", err)
 	}
 
 	// Create the magic file to indicate that this build
