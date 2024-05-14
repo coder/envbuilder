@@ -69,8 +69,8 @@ func TestEnvOptionParsing(t *testing.T) {
 func TestLegacyEnvVars(t *testing.T) {
 	legacyEnvs := map[string]string{
 		"SETUP_SCRIPT":             "./setup-legacy-script.sh",
-		"INIT_SCRIPT":              "sleep infinity",
-		"INIT_COMMAND":             "/bin/sh",
+		"INIT_SCRIPT":              "./init-legacy-script.sh",
+		"INIT_COMMAND":             "/bin/zsh",
 		"INIT_ARGS":                "arg1 arg2",
 		"CACHE_REPO":               "example-cache-repo",
 		"BASE_IMAGE_CACHE_DIR":     "/path/to/base/image/cache",

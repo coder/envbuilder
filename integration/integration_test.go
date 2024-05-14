@@ -44,6 +44,39 @@ const (
 	testImageUbuntu    = "localhost:5000/envbuilder-test-ubuntu:latest"
 )
 
+func TestInitCommand(t *testing.T) {
+	t.Parallel()
+	t.Run("OK", func(t *testing.T) {
+		t.Parallel()
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": "FROM " + testImageAlpine,
+			},
+		})
+		_, err := runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			envbuilderEnv("INIT_SCRIPT", "exit 0"),
+		}})
+		require.NoError(t, err)
+	})
+
+	t.Run("Legacy", func(t *testing.T) {
+		t.Parallel()
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": "FROM " + testImageAlpine,
+			},
+		})
+		_, err := runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			`INIT_SCRIPT="exit 0"`,
+		}})
+		require.NoError(t, err)
+	})
+}
+
 func TestForceSafe(t *testing.T) {
 	t.Parallel()
 
