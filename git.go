@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/url"
 	"os"
 	"strings"
 
@@ -22,6 +21,7 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/skeema/knownhosts"
+	giturls "github.com/whilp/git-urls"
 	"golang.org/x/crypto/ssh"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -46,7 +46,7 @@ type CloneRepoOptions struct {
 //
 // The bool returned states whether the repository was cloned or not.
 func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
-	parsed, err := url.Parse(opts.RepoURL)
+	parsed, err := giturls.Parse(opts.RepoURL)
 	if err != nil {
 		return false, fmt.Errorf("parse url %q: %w", opts.RepoURL, err)
 	}

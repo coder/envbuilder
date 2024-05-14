@@ -14,7 +14,6 @@ import (
 	"maps"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -50,6 +49,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/sirupsen/logrus"
 	"github.com/tailscale/hujson"
+	giturls "github.com/whilp/git-urls"
 	"golang.org/x/xerrors"
 )
 
@@ -863,14 +863,19 @@ func Run(ctx context.Context, options Options) error {
 // for a given repository URL.
 func DefaultWorkspaceFolder(repoURL string) (string, error) {
 	if repoURL == "" {
-		return "/workspaces/empty", nil
+		return EmptyWorkspaceDir, nil
 	}
-	parsed, err := url.Parse(repoURL)
+	parsed, err := giturls.Parse(repoURL)
 	if err != nil {
 		return "", err
 	}
 	name := strings.Split(parsed.Path, "/")
-	return fmt.Sprintf("/workspaces/%s", name[len(name)-1]), nil
+	hasOwnerAndRepo := len(name) >= 2
+	if !hasOwnerAndRepo {
+		return EmptyWorkspaceDir, nil
+	}
+	repo := strings.TrimSuffix(name[len(name)-1], ".git")
+	return fmt.Sprintf("/workspaces/%s", repo), nil
 }
 
 type userInfo struct {

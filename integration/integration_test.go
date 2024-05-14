@@ -160,7 +160,7 @@ func TestSucceedsGitAuth(t *testing.T) {
 		envbuilderEnv("GIT_PASSWORD", "testing"),
 	}})
 	require.NoError(t, err)
-	gitConfig := execContainer(t, ctr, "cat /workspaces/.git/config")
+	gitConfig := execContainer(t, ctr, "cat /workspaces/empty/.git/config")
 	require.Contains(t, gitConfig, srv.URL)
 }
 
@@ -182,7 +182,7 @@ func TestSucceedsGitAuthInURL(t *testing.T) {
 		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 	}})
 	require.NoError(t, err)
-	gitConfig := execContainer(t, ctr, "cat /workspaces/.git/config")
+	gitConfig := execContainer(t, ctr, "cat /workspaces/empty/.git/config")
 	require.Contains(t, gitConfig, u.String())
 }
 
