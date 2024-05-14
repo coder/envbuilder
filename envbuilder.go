@@ -49,6 +49,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/sirupsen/logrus"
 	"github.com/tailscale/hujson"
+	giturls "github.com/whilp/git-urls"
 	"golang.org/x/xerrors"
 )
 
@@ -858,11 +859,14 @@ func DefaultWorkspaceFolder(repoURL string) (string, error) {
 	if repoURL == "" {
 		return "/workspaces/empty", nil
 	}
-	parsed, err := ParseGitURL(repoURL)
+	parsed, err := giturls.Parse(repoURL)
 	if err != nil {
 		return "", err
 	}
 	name := strings.Split(parsed.Path, "/")
+	if len(name) == 0 {
+		return "", errors.New("no name found in the repository URL")
+	}
 	repo := strings.TrimSuffix(name[len(name)-1], ".git")
 	return fmt.Sprintf("/workspaces/%s", repo), nil
 }

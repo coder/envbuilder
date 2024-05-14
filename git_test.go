@@ -384,35 +384,6 @@ func TestSetupRepoAuth(t *testing.T) {
 	})
 }
 
-func TestParseGitURL(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		gitURL   string
-		expected string
-	}{
-		{
-			name:     "HTTP",
-			gitURL:   "https://github.com/coder/envbuilder.git",
-			expected: "https://github.com/coder/envbuilder.git",
-		},
-		{
-			name:     "SSH",
-			gitURL:   "git@github.com:coder/envbuilder.git",
-			expected: "ssh://git@github.com/coder/envbuilder.git",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			url, err := envbuilder.ParseGitURL(tt.gitURL)
-			require.NoError(t, err)
-			require.Equal(t, tt.expected, url.String())
-		})
-	}
-}
-
 func mustRead(t *testing.T, fs billy.Filesystem, path string) string {
 	t.Helper()
 	f, err := fs.OpenFile(path, os.O_RDONLY, 0o644)

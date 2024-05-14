@@ -26,6 +26,16 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 			expected: "/workspaces/envbuilder",
 		},
 		{
+			name:     "username and password",
+			gitURL:   "https://username:password@github.com/coder/envbuilder.git",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "fragment",
+			gitURL:   "https://github.com/coder/envbuilder.git#feature-branch",
+			expected: "/workspaces/envbuilder",
+		},
+		{
 			name:     "empty",
 			gitURL:   "",
 			expected: envbuilder.EmptyWorkspaceDir,

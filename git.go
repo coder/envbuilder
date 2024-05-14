@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/url"
 	"os"
 	"strings"
 
@@ -47,7 +46,7 @@ type CloneRepoOptions struct {
 //
 // The bool returned states whether the repository was cloned or not.
 func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
-	parsed, err := ParseGitURL(opts.RepoURL)
+	parsed, err := giturls.Parse(opts.RepoURL)
 	if err != nil {
 		return false, fmt.Errorf("parse url %q: %w", opts.RepoURL, err)
 	}
@@ -251,9 +250,4 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 		auth.HostKeyCallback = LogHostKeyCallback(options.Logger)
 	}
 	return auth
-}
-
-// Parses a Git URL and returns a corresponding URL object
-func ParseGitURL(URL string) (*url.URL, error) {
-	return giturls.Parse(URL)
 }
