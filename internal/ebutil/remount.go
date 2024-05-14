@@ -46,10 +46,10 @@ func tempRemount(m mounter, logf func(codersdk.LogLevel, string, ...any), base s
 
 	// temp move of all ro mounts
 	mounts := map[string]string{}
-	// closer to attempt to restore original mount points
 	var restoreOnce sync.Once
+	var merr error
+	// closer to attempt to restore original mount points
 	restore = func() error {
-		var merr error
 		restoreOnce.Do(func() {
 			for orig, moved := range mounts {
 				if err := remount(m, moved, orig); err != nil {
@@ -76,7 +76,7 @@ outer:
 		}
 
 		src := mountInfo.MountPoint
-		dest := filepath.Join("/", base, src)
+		dest := filepath.Join(base, src)
 		if err := remount(m, src, dest); err != nil {
 			return restore, fmt.Errorf("temp remount: %w", err)
 		}
