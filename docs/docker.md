@@ -17,12 +17,13 @@ you are experimenting on your own workstation).
 
 Example:
 
-```shell
+```console
 docker run -it --rm \
     -v /tmp/envbuilder:/workspaces \
     -e ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder \
     -e ENVBUILDER_DEVCONTAINER_DIR=/workspaces/envbuilder/examples/docker/01_dood \
     -e ENVBUILDER_INIT_SCRIPT=bash \
+    -v /var/run/docker.socket:/var/run/docker.socket \
     ghcr.io/coder/envbuilder:latest
 ```
 
@@ -43,7 +44,7 @@ Example:
 > create a custom entrypoint to start the Docker daemon in the background and
 > call this entrypoint via `ENVBUILDER_INIT_SCRIPT`.
 
-```shell
+```console
 docker run -it --rm \
     --privileged \
     -v /tmp/envbuilder:/workspaces \
@@ -53,7 +54,25 @@ docker run -it --rm \
     ghcr.io/coder/envbuilder:latest
 ```
 
-This can also be accomplished using the [`docker-in-docker` Devcontainer feature](https://github.com/devcontainers/features/tree/main/src/docker-in-docker).
+### DinD via Devcontainer Feature
+
+The above can also be accomplished using the [`docker-in-docker` Devcontainer
+feature](https://github.com/devcontainers/features/tree/main/src/docker-in-docker).
+
+> Note: we still need the custom entrypoint to start the docker startup script.
+> See https://github.com/devcontainers/features/blob/main/src/docker-in-docker/devcontainer-feature.json#L60
+
+Example:
+
+```console
+docker run -it --rm \
+    --privileged \
+    -v /tmp/envbuilder:/workspaces \
+    -e ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder \
+    -e ENVBUILDER_DEVCONTAINER_DIR=/workspaces/envbuilder/examples/docker/03_dind_feature \
+    -e ENVBUILDER_INIT_SCRIPT=/entrypoint.sh \
+    ghcr.io/coder/envbuilder:latest
+```
 
 ## Rootless DinD
 
@@ -71,7 +90,7 @@ then be a 'regular' user without root permissions.
 
 Example:
 
-```
+```console
 docker run -it --rm \
     --privileged \
     -v /tmp/envbuilder:/workspaces \
@@ -94,7 +113,7 @@ including transparently enabling Docker inside workspaces. Most notably, it
 access inside their workspaces, if required.
 
 Example:
-```
+```console
 docker run -it --rm \
     -v /tmp/envbuilder:/workspaces \
     -e ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder \
