@@ -33,6 +33,7 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
 	"github.com/GoogleContainerTools/kaniko/pkg/util"
+	giturls "github.com/chainguard-dev/git-urls"
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/coder/envbuilder/internal/ebutil"
@@ -49,7 +50,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/sirupsen/logrus"
 	"github.com/tailscale/hujson"
-	giturls "github.com/whilp/git-urls"
 	"golang.org/x/xerrors"
 )
 
