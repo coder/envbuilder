@@ -19,6 +19,7 @@ require (
 	cdr.dev/slog v1.6.2-0.20240126064726-20367d4aede6
 	github.com/GoogleContainerTools/kaniko v1.9.2
 	github.com/breml/rootcerts v0.2.10
+	github.com/chainguard-dev/git-urls v1.0.2
 	github.com/coder/coder/v2 v2.3.3
 	github.com/coder/serpent v0.7.0
 	github.com/containerd/containerd v1.7.11
@@ -40,7 +41,6 @@ require (
 	github.com/skeema/knownhosts v1.2.2
 	github.com/stretchr/testify v1.9.0
 	github.com/tailscale/hujson v0.0.0-20221223112325-20486734a56a
-	github.com/whilp/git-urls v1.0.0
 	go.uber.org/mock v0.4.0
 	golang.org/x/crypto v0.22.0
 	golang.org/x/sync v0.7.0

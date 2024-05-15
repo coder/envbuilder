@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	giturls "github.com/chainguard-dev/git-urls"
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
@@ -21,7 +22,6 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/skeema/knownhosts"
-	giturls "github.com/whilp/git-urls"
 	"golang.org/x/crypto/ssh"
 	gossh "golang.org/x/crypto/ssh"
 )
