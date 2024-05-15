@@ -134,6 +134,11 @@ Provide the encoded JSON config to envbuilder:
 DOCKER_CONFIG_BASE64=ewoJImF1dGhzIjogewoJCSJodHRwczovL2luZGV4LmRvY2tlci5pby92MS8iOiB7CgkJCSJhdXRoIjogImJhc2U2NCBlbmNvZGVkIHRva2VuIgoJCX0KCX0KfQo=
 ```
 
+### Docker-in-Docker
+
+See [here](./docs/docker.md) for instructions on running Docker containers inside
+environments built by Envbuilder.
+
 ## Git Authentication
 
 Two methods of authentication are supported:
