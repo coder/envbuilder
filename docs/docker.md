@@ -95,7 +95,7 @@ docker run -it --rm \
     --privileged \
     -v /tmp/envbuilder:/workspaces \
     -e ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder \
-    -e ENVBUILDER_DEVCONTAINER_DIR=/workspaces/envbuilder/examples/docker/03_dind_rootless \
+    -e ENVBUILDER_DEVCONTAINER_DIR=/workspaces/envbuilder/examples/docker/04_dind_rootless \
     -e ENVBUILDER_INIT_SCRIPT=/entrypoint.sh \
     ghcr.io/coder/envbuilder:latest
 ```
