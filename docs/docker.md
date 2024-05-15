@@ -96,7 +96,6 @@ access inside their workspaces, if required.
 Example:
 ```
 docker run -it --rm \
-    --privileged \
     -v /tmp/envbuilder:/workspaces \
     -e ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder \
     -e ENVBUILDER_DEVCONTAINER_DIR=/workspaces/envbuilder/examples/docker/02_dind \
