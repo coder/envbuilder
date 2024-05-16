@@ -12,8 +12,8 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/envbuilder"
+	"github.com/coder/envbuilder/internal/notcodersdk"
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -404,7 +404,7 @@ func randKeygen(t *testing.T) gossh.Signer {
 }
 
 func testLog(t *testing.T) envbuilder.LoggerFunc {
-	return func(_ codersdk.LogLevel, format string, args ...interface{}) {
+	return func(_ notcodersdk.LogLevel, format string, args ...interface{}) {
 		t.Logf(format, args...)
 	}
 }
