@@ -23,6 +23,7 @@ import (
 
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer/features"
+	"github.com/coder/envbuilder/internal/notcodersdk"
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/coder/envbuilder/testutil/registrytest"
 	clitypes "github.com/docker/cli/cli/config/types"
@@ -35,6 +36,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,6 +46,74 @@ const (
 	testImageAlpine    = "localhost:5000/envbuilder-test-alpine:latest"
 	testImageUbuntu    = "localhost:5000/envbuilder-test-ubuntu:latest"
 )
+
+func TestLogSender(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	agentToken := uuid.NewString()
+
+	// Server to read logs posted by envbuilder. Matched to backlog limit.
+	logCh := make(chan notcodersdk.Log, 100)
+	logs := make([]notcodersdk.Log, 0)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case log, ok := <-logCh:
+				if !ok {
+					return
+				}
+				t.Logf("got log: " + log.Output)
+				logs = append(logs, log)
+			}
+		}
+	}()
+	logSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !assert.Equal(t, http.MethodPatch, r.Method) {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		t.Logf("got patch logs request")
+		assert.Equal(t, agentToken, r.Header.Get(notcodersdk.SessionTokenHeader))
+		var res notcodersdk.PatchLogs
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&res)) {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		t.Logf("got %d logs", len(res.Logs))
+		if !assert.Equal(t, notcodersdk.ExternalLogSourceID, res.LogSourceID) {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, log := range res.Logs {
+			t.Logf("got log: %s" + log.Output)
+			logCh <- log
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	srv := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			"Dockerfile": "FROM " + testImageAlpine,
+		},
+	})
+	ctrID, err := runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		"CODER_AGENT_URL=" + logSrv.URL,
+		"CODER_AGENT_TOKEN=" + agentToken,
+	}})
+	require.NoError(t, err, "run envbuilder")
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	require.NoError(t, err, "init docker client")
+	// Gracefully stop the container to trigger flush
+	require.NoError(t, cli.ContainerStop(ctx, ctrID, container.StopOptions{}))
+	<-time.After(5 * time.Second)                  // wait for logs to flush
+	require.NotEmpty(t, logs, "no logs were sent") // TODO: WHY?!
+}
 
 func TestInitScriptInitCommand(t *testing.T) {
 	t.Parallel()
