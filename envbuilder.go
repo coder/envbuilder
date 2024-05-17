@@ -480,14 +480,18 @@ func Run(ctx context.Context, options Options) error {
 		if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
 			registryMirror = strings.Split(val, ";")
 		}
-		image, err := executor.DoBuild(&config.KanikoOptions{
+		var destinations []string
+		if options.CacheRepo != "" {
+			destinations = append(destinations, options.CacheRepo)
+		}
+		opts := &config.KanikoOptions{
 			// Boilerplate!
 			CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
 			SnapshotMode:      "redo",
 			RunV2:             true,
 			RunStdout:         stdoutWriter,
 			RunStderr:         stderrWriter,
-			Destinations:      []string{"local"},
+			Destinations:      destinations,
 			CacheRunLayers:    true,
 			CacheCopyLayers:   true,
 			CompressedCaching: true,
@@ -518,11 +522,16 @@ func Run(ctx context.Context, options Options) error {
 				RegistryMirrors: registryMirror,
 			},
 			SrcContext: buildParams.BuildContext,
-		})
+		}
+		image, err := executor.DoBuild(opts)
 		if err != nil {
 			return nil, err
 		}
+		if err := executor.DoPush(image, opts); err != nil {
+			return nil, err
+		}
 		endStage("🏗️ Built image!")
+
 		return image, err
 	}
 
