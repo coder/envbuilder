@@ -32,7 +32,7 @@ func main() {
 	}
 }
 
-func envbuilderCmd() *serpent.Command {
+func envbuilderCmd() serpent.Command {
 	var options envbuilder.Options
 	cmd := serpent.Command{
 		Use:     "envbuilder",
@@ -89,5 +89,5 @@ func envbuilderCmd() *serpent.Command {
 			return err
 		},
 	}
-	return &cmd
+	return cmd
 }

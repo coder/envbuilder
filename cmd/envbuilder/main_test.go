@@ -69,8 +69,9 @@ func Test_sendLogs(t *testing.T) {
 	t.Setenv("CODER_AGENT_URL", logSrv.URL)
 
 	testLogger := slogtest.Make(t, &slogtest.Options{IgnoreErrors: true})
+	cmd := envbuilderCmd()
 	inv := &serpent.Invocation{
-		Command: envbuilderCmd(),
+		Command: &cmd,
 		Args:    []string{},
 		Logger:  testLogger,
 		Environ: serpent.Environ{},
