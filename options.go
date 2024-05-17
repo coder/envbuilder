@@ -3,12 +3,12 @@ package envbuilder
 import (
 	"strings"
 
-	"github.com/coder/coder/v2/codersdk"
+	"github.com/coder/envbuilder/internal/notcodersdk"
 	"github.com/coder/serpent"
 	"github.com/go-git/go-billy/v5"
 )
 
-type LoggerFunc func(level codersdk.LogLevel, format string, args ...interface{})
+type LoggerFunc func(level notcodersdk.LogLevel, format string, args ...interface{})
 
 // Options contains the configuration for the envbuilder.
 type Options struct {

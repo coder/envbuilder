@@ -13,9 +13,8 @@ import (
 	"time"
 
 	"cdr.dev/slog"
-	"github.com/coder/coder/v2/codersdk"
-	"github.com/coder/coder/v2/codersdk/agentsdk"
 	"github.com/coder/envbuilder"
+	"github.com/coder/envbuilder/internal/notcodersdk"
 	"github.com/coder/serpent"
 
 	// *Never* remove this. Certificates are not bundled as part
@@ -25,12 +24,21 @@ import (
 )
 
 func main() {
+	cmd := envbuilderCmd()
+	err := cmd.Invoke().WithOS().Run()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v", err)
+		os.Exit(1)
+	}
+}
+
+func envbuilderCmd() serpent.Command {
 	var options envbuilder.Options
 	cmd := serpent.Command{
 		Use:     "envbuilder",
 		Options: options.CLI(),
 		Handler: func(inv *serpent.Invocation) error {
-			var sendLogs func(ctx context.Context, log ...agentsdk.Log) error
+			var sendLogs func(ctx context.Context, log ...notcodersdk.Log) error
 			if options.CoderAgentToken != "" {
 				if options.CoderAgentURL == "" {
 					return errors.New("CODER_AGENT_URL must be set if CODER_AGENT_TOKEN is set")
@@ -39,9 +47,9 @@ func main() {
 				if err != nil {
 					return fmt.Errorf("unable to parse CODER_AGENT_URL as URL: %w", err)
 				}
-				client := agentsdk.New(u)
+				client := notcodersdk.New(u)
 				client.SetSessionToken(options.CoderAgentToken)
-				client.SDK.HTTPClient = &http.Client{
+				client.HTTPClient = &http.Client{
 					Transport: &http.Transport{
 						TLSClientConfig: &tls.Config{
 							InsecureSkipVerify: options.Insecure,
@@ -49,24 +57,24 @@ func main() {
 					},
 				}
 				var flushAndClose func(ctx context.Context) error
-				sendLogs, flushAndClose = agentsdk.LogsSender(agentsdk.ExternalLogSourceID, client.PatchLogs, slog.Logger{})
+				sendLogs, flushAndClose = notcodersdk.LogsSender(notcodersdk.ExternalLogSourceID, client.PatchLogs, slog.Logger{})
 				defer flushAndClose(inv.Context())
 
 				// This adds the envbuilder subsystem.
 				// If telemetry is enabled in a Coder deployment,
 				// this will be reported and help us understand
 				// envbuilder usage.
-				if !slices.Contains(options.CoderAgentSubsystem, string(codersdk.AgentSubsystemEnvbuilder)) {
-					options.CoderAgentSubsystem = append(options.CoderAgentSubsystem, string(codersdk.AgentSubsystemEnvbuilder))
+				if !slices.Contains(options.CoderAgentSubsystem, string(notcodersdk.AgentSubsystemEnvbuilder)) {
+					options.CoderAgentSubsystem = append(options.CoderAgentSubsystem, string(notcodersdk.AgentSubsystemEnvbuilder))
 					os.Setenv("CODER_AGENT_SUBSYSTEM", strings.Join(options.CoderAgentSubsystem, ","))
 				}
 			}
 
-			options.Logger = func(level codersdk.LogLevel, format string, args ...interface{}) {
+			options.Logger = func(level notcodersdk.LogLevel, format string, args ...interface{}) {
 				output := fmt.Sprintf(format, args...)
 				fmt.Fprintln(inv.Stderr, output)
 				if sendLogs != nil {
-					sendLogs(inv.Context(), agentsdk.Log{
+					sendLogs(inv.Context(), notcodersdk.Log{
 						CreatedAt: time.Now(),
 						Output:    output,
 						Level:     level,
@@ -76,14 +84,10 @@ func main() {
 
 			err := envbuilder.Run(inv.Context(), options)
 			if err != nil {
-				options.Logger(codersdk.LogLevelError, "error: %s", err)
+				options.Logger(notcodersdk.LogLevelError, "error: %s", err)
 			}
 			return err
 		},
 	}
-	err := cmd.Invoke().WithOS().Run()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v", err)
-		os.Exit(1)
-	}
+	return cmd
 }

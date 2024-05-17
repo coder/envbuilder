@@ -8,7 +8,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/coder/coder/v2/codersdk"
+	"github.com/coder/envbuilder/internal/notcodersdk"
 	"github.com/hashicorp/go-multierror"
 	"github.com/prometheus/procfs"
 )
@@ -33,12 +33,12 @@ import (
 // to restore the original mount points. If an error is encountered while attempting to perform
 // the operation, calling the returned function will make a best-effort attempt to restore
 // the original state.
-func TempRemount(logf func(codersdk.LogLevel, string, ...any), dest string, ignorePrefixes ...string) (restore func() error, err error,
+func TempRemount(logf func(notcodersdk.LogLevel, string, ...any), dest string, ignorePrefixes ...string) (restore func() error, err error,
 ) {
 	return tempRemount(&realMounter{}, logf, dest, ignorePrefixes...)
 }
 
-func tempRemount(m mounter, logf func(codersdk.LogLevel, string, ...any), base string, ignorePrefixes ...string) (restore func() error, err error) {
+func tempRemount(m mounter, logf func(notcodersdk.LogLevel, string, ...any), base string, ignorePrefixes ...string) (restore func() error, err error) {
 	mountInfos, err := m.GetMounts()
 	if err != nil {
 		return func() error { return nil }, fmt.Errorf("get mounts: %w", err)
@@ -64,13 +64,13 @@ outer:
 	for _, mountInfo := range mountInfos {
 		// TODO: do this for all mounts
 		if _, ok := mountInfo.Options["ro"]; !ok {
-			logf(codersdk.LogLevelTrace, "skip rw mount %s", mountInfo.MountPoint)
+			logf(notcodersdk.LogLevelTrace, "skip rw mount %s", mountInfo.MountPoint)
 			continue
 		}
 
 		for _, prefix := range ignorePrefixes {
 			if strings.HasPrefix(mountInfo.MountPoint, prefix) {
-				logf(codersdk.LogLevelTrace, "skip mount %s under ignored prefix %s", mountInfo.MountPoint, prefix)
+				logf(notcodersdk.LogLevelTrace, "skip mount %s under ignored prefix %s", mountInfo.MountPoint, prefix)
 				continue outer
 			}
 		}

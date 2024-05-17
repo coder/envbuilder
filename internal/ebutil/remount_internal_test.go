@@ -6,7 +6,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/coder/coder/v2/codersdk"
+	"github.com/coder/envbuilder/internal/notcodersdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -194,9 +194,9 @@ func fakeMounts(mounts ...string) []*procfs.MountInfo {
 	return m
 }
 
-func fakeLog(t *testing.T) func(codersdk.LogLevel, string, ...any) {
+func fakeLog(t *testing.T) func(notcodersdk.LogLevel, string, ...any) {
 	t.Helper()
-	return func(_ codersdk.LogLevel, s string, a ...any) {
+	return func(_ notcodersdk.LogLevel, s string, a ...any) {
 		t.Logf(s, a...)
 	}
 }
