@@ -24,6 +24,15 @@ import (
 )
 
 func main() {
+	cmd := envbuilderCmd()
+	err := cmd.Invoke().WithOS().Run()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v", err)
+		os.Exit(1)
+	}
+}
+
+func envbuilderCmd() *serpent.Command {
 	var options envbuilder.Options
 	cmd := serpent.Command{
 		Use:     "envbuilder",
@@ -80,9 +89,5 @@ func main() {
 			return err
 		},
 	}
-	err := cmd.Invoke().WithOS().Run()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v", err)
-		os.Exit(1)
-	}
+	return &cmd
 }
