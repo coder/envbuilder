@@ -14,7 +14,7 @@ docs: options.go
 	go run ./scripts/docsgen/main.go
 
 .PHONY: test
-test: test-registry test-images
+test: test-registry
 	go test -count=1 ./...
 
 test-race:
