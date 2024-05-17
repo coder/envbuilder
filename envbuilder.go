@@ -14,7 +14,6 @@ import (
 	"maps"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/user"
@@ -34,8 +33,10 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
 	"github.com/GoogleContainerTools/kaniko/pkg/util"
-	"github.com/coder/coder/v2/codersdk"
+	giturls "github.com/chainguard-dev/git-urls"
 	"github.com/coder/envbuilder/devcontainer"
+	"github.com/coder/envbuilder/internal/ebutil"
+	"github.com/coder/envbuilder/internal/notcodersdk"
 	"github.com/containerd/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry/handlers"
@@ -85,6 +86,19 @@ type DockerConfig configfile.ConfigFile
 // Filesystem is the filesystem to use for all operations.
 // Defaults to the host filesystem.
 func Run(ctx context.Context, options Options) error {
+	// Temporarily removed these from the default settings to prevent conflicts
+	// between current and legacy environment variables that add default values.
+	// Once the legacy environment variables are phased out, this can be
+	// reinstated to the previous default values.
+	if len(options.IgnorePaths) == 0 {
+		options.IgnorePaths = []string{"/var/run"}
+	}
+	if options.InitScript == "" {
+		options.InitScript = "sleep infinity"
+	}
+	if options.InitCommand == "" {
+		options.InitCommand = "/bin/sh"
+	}
 	// Default to the shell!
 	initArgs := []string{"-c", options.InitScript}
 	if options.InitArgs != "" {
@@ -110,14 +124,14 @@ func Run(ctx context.Context, options Options) error {
 		now := time.Now()
 		stageNum := stageNumber
 		stageNumber++
-		options.Logger(codersdk.LogLevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
+		options.Logger(notcodersdk.LogLevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
 
 		return func(format string, args ...any) {
-			options.Logger(codersdk.LogLevelInfo, "#%d: %s [%s]", stageNum, fmt.Sprintf(format, args...), time.Since(now))
+			options.Logger(notcodersdk.LogLevelInfo, "#%d: %s [%s]", stageNum, fmt.Sprintf(format, args...), time.Since(now))
 		}
 	}
 
-	options.Logger(codersdk.LogLevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
+	options.Logger(notcodersdk.LogLevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
 
 	var caBundle []byte
 	if options.SSLCertBase64 != "" {
@@ -179,7 +193,7 @@ func Run(ctx context.Context, options Options) error {
 					if line == "" {
 						continue
 					}
-					options.Logger(codersdk.LogLevelInfo, "#1: %s", strings.TrimSpace(line))
+					options.Logger(notcodersdk.LogLevelInfo, "#1: %s", strings.TrimSpace(line))
 				}
 			}
 		}()
@@ -210,8 +224,8 @@ func Run(ctx context.Context, options Options) error {
 				endStage("📦 The repository already exists!")
 			}
 		} else {
-			options.Logger(codersdk.LogLevelError, "Failed to clone repository: %s", fallbackErr.Error())
-			options.Logger(codersdk.LogLevelError, "Falling back to the default image...")
+			options.Logger(notcodersdk.LogLevelError, "Failed to clone repository: %s", fallbackErr.Error())
+			options.Logger(notcodersdk.LogLevelError, "Falling back to the default image...")
 		}
 	}
 
@@ -251,8 +265,8 @@ func Run(ctx context.Context, options Options) error {
 		// devcontainer is a standard, so it's reasonable to be the default.
 		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(options)
 		if err != nil {
-			options.Logger(codersdk.LogLevelError, "Failed to locate devcontainer.json: %s", err.Error())
-			options.Logger(codersdk.LogLevelError, "Falling back to the default image...")
+			options.Logger(notcodersdk.LogLevelError, "Failed to locate devcontainer.json: %s", err.Error())
+			options.Logger(notcodersdk.LogLevelError, "Falling back to the default image...")
 		} else {
 			// We know a devcontainer exists.
 			// Let's parse it and use it!
@@ -273,7 +287,7 @@ func Run(ctx context.Context, options Options) error {
 					if err != nil {
 						return fmt.Errorf("no Dockerfile or image found: %w", err)
 					}
-					options.Logger(codersdk.LogLevelInfo, "No Dockerfile or image specified; falling back to the default image...")
+					options.Logger(notcodersdk.LogLevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
 				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir, fallbackDockerfile, options.WorkspaceFolder, false)
@@ -282,8 +296,8 @@ func Run(ctx context.Context, options Options) error {
 				}
 				scripts = devContainer.LifecycleScripts
 			} else {
-				options.Logger(codersdk.LogLevelError, "Failed to parse devcontainer.json: %s", err.Error())
-				options.Logger(codersdk.LogLevelError, "Falling back to the default image...")
+				options.Logger(notcodersdk.LogLevelError, "Failed to parse devcontainer.json: %s", err.Error())
+				options.Logger(notcodersdk.LogLevelError, "Falling back to the default image...")
 			}
 		}
 	} else {
@@ -294,8 +308,8 @@ func Run(ctx context.Context, options Options) error {
 		// not defined, show a warning
 		dockerfileDir := filepath.Dir(dockerfilePath)
 		if dockerfileDir != filepath.Clean(options.WorkspaceFolder) && options.BuildContextPath == "" {
-			options.Logger(codersdk.LogLevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, options.WorkspaceFolder)
-			options.Logger(codersdk.LogLevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
+			options.Logger(notcodersdk.LogLevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, options.WorkspaceFolder)
+			options.Logger(notcodersdk.LogLevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
 		}
 
 		dockerfile, err := options.Filesystem.Open(dockerfilePath)
@@ -324,7 +338,7 @@ func Run(ctx context.Context, options Options) error {
 
 	HijackLogrus(func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
-			options.Logger(codersdk.LogLevelInfo, "#2: %s", color.HiBlackString(line))
+			options.Logger(notcodersdk.LogLevelInfo, "#2: %s", color.HiBlackString(line))
 		}
 	})
 
@@ -363,7 +377,7 @@ func Run(ctx context.Context, options Options) error {
 		go func() {
 			err := srv.Serve(listener)
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				options.Logger(codersdk.LogLevelError, "Failed to serve registry: %s", err.Error())
+				options.Logger(notcodersdk.LogLevelError, "Failed to serve registry: %s", err.Error())
 			}
 		}()
 		closeAfterBuild = func() {
@@ -371,7 +385,7 @@ func Run(ctx context.Context, options Options) error {
 			_ = listener.Close()
 		}
 		if options.CacheRepo != "" {
-			options.Logger(codersdk.LogLevelWarn, "Overriding cache repo with local registry...")
+			options.Logger(notcodersdk.LogLevelWarn, "Overriding cache repo with local registry...")
 		}
 		options.CacheRepo = fmt.Sprintf("localhost:%d/local/cache", tcpAddr.Port)
 	}
@@ -392,6 +406,19 @@ func Run(ctx context.Context, options Options) error {
 			Path:            ignorePath,
 			PrefixMatchOnly: false,
 		})
+	}
+
+	// temp move of all ro mounts
+	tempRemountDest := filepath.Join("/", MagicDir, "mnt")
+	ignorePrefixes := []string{tempRemountDest, "/proc", "/sys"}
+	restoreMounts, err := ebutil.TempRemount(options.Logger, tempRemountDest, ignorePrefixes...)
+	defer func() { // restoreMounts should never be nil
+		if err := restoreMounts(); err != nil {
+			options.Logger(notcodersdk.LogLevelError, "restore mounts: %s", err.Error())
+		}
+	}()
+	if err != nil {
+		return fmt.Errorf("temp remount: %w", err)
 	}
 
 	skippedRebuild := false
@@ -433,13 +460,13 @@ func Run(ctx context.Context, options Options) error {
 		go func() {
 			scanner := bufio.NewScanner(stdoutReader)
 			for scanner.Scan() {
-				options.Logger(codersdk.LogLevelInfo, "%s", scanner.Text())
+				options.Logger(notcodersdk.LogLevelInfo, "%s", scanner.Text())
 			}
 		}()
 		go func() {
 			scanner := bufio.NewScanner(stderrReader)
 			for scanner.Scan() {
-				options.Logger(codersdk.LogLevelInfo, "%s", scanner.Text())
+				options.Logger(notcodersdk.LogLevelInfo, "%s", scanner.Text())
 			}
 		}()
 		cacheTTL := time.Hour * 24 * 7
@@ -519,13 +546,13 @@ func Run(ctx context.Context, options Options) error {
 			fallback = true
 			fallbackErr = err
 		case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
-			options.Logger(codersdk.LogLevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
+			options.Logger(notcodersdk.LogLevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
 		}
 		if !fallback || options.ExitOnBuildFailure {
 			return err
 		}
-		options.Logger(codersdk.LogLevelError, "Failed to build: %s", err)
-		options.Logger(codersdk.LogLevelError, "Falling back to the default image...")
+		options.Logger(notcodersdk.LogLevelError, "Failed to build: %s", err)
+		options.Logger(notcodersdk.LogLevelError, "Falling back to the default image...")
 		buildParams, err = defaultBuildParams()
 		if err != nil {
 			return err
@@ -538,6 +565,10 @@ func Run(ctx context.Context, options Options) error {
 
 	if closeAfterBuild != nil {
 		closeAfterBuild()
+	}
+
+	if err := restoreMounts(); err != nil {
+		return fmt.Errorf("restore mounts: %w", err)
 	}
 
 	// Create the magic file to indicate that this build
@@ -568,10 +599,10 @@ func Run(ctx context.Context, options Options) error {
 		if err != nil {
 			return fmt.Errorf("unmarshal metadata: %w", err)
 		}
-		options.Logger(codersdk.LogLevelInfo, "#3: 👀 Found devcontainer.json label metadata in image...")
+		options.Logger(notcodersdk.LogLevelInfo, "#3: 👀 Found devcontainer.json label metadata in image...")
 		for _, container := range devContainer {
 			if container.RemoteUser != "" {
-				options.Logger(codersdk.LogLevelInfo, "#3: 🧑 Updating the user to %q!", container.RemoteUser)
+				options.Logger(notcodersdk.LogLevelInfo, "#3: 🧑 Updating the user to %q!", container.RemoteUser)
 
 				configFile.Config.User = container.RemoteUser
 			}
@@ -671,7 +702,7 @@ func Run(ctx context.Context, options Options) error {
 		username = buildParams.User
 	}
 	if username == "" {
-		options.Logger(codersdk.LogLevelWarn, "#3: no user specified, using root")
+		options.Logger(notcodersdk.LogLevelWarn, "#3: no user specified, using root")
 	}
 
 	userInfo, err := getUser(username)
@@ -726,7 +757,7 @@ func Run(ctx context.Context, options Options) error {
 		// We execute the initialize script as the root user!
 		os.Setenv("HOME", "/root")
 
-		options.Logger(codersdk.LogLevelInfo, "=== Running the setup command %q as the root user...", options.SetupScript)
+		options.Logger(notcodersdk.LogLevelInfo, "=== Running the setup command %q as the root user...", options.SetupScript)
 
 		envKey := "ENVBUILDER_ENV"
 		envFile := filepath.Join("/", MagicDir, "environ")
@@ -753,7 +784,7 @@ func Run(ctx context.Context, options Options) error {
 			go func() {
 				scanner := bufio.NewScanner(&buf)
 				for scanner.Scan() {
-					options.Logger(codersdk.LogLevelInfo, "%s", scanner.Text())
+					options.Logger(notcodersdk.LogLevelInfo, "%s", scanner.Text())
 				}
 			}()
 
@@ -819,7 +850,7 @@ func Run(ctx context.Context, options Options) error {
 		return fmt.Errorf("set uid: %w", err)
 	}
 
-	options.Logger(codersdk.LogLevelInfo, "=== Running the init command %s %+v as the %q user...", options.InitCommand, initArgs, userInfo.user.Username)
+	options.Logger(notcodersdk.LogLevelInfo, "=== Running the init command %s %+v as the %q user...", options.InitCommand, initArgs, userInfo.user.Username)
 
 	err = syscall.Exec(options.InitCommand, append([]string{options.InitCommand}, initArgs...), os.Environ())
 	if err != nil {
@@ -832,14 +863,19 @@ func Run(ctx context.Context, options Options) error {
 // for a given repository URL.
 func DefaultWorkspaceFolder(repoURL string) (string, error) {
 	if repoURL == "" {
-		return "/workspaces/empty", nil
+		return EmptyWorkspaceDir, nil
 	}
-	parsed, err := url.Parse(repoURL)
+	parsed, err := giturls.Parse(repoURL)
 	if err != nil {
 		return "", err
 	}
 	name := strings.Split(parsed.Path, "/")
-	return fmt.Sprintf("/workspaces/%s", name[len(name)-1]), nil
+	hasOwnerAndRepo := len(name) >= 2
+	if !hasOwnerAndRepo {
+		return EmptyWorkspaceDir, nil
+	}
+	repo := strings.TrimSuffix(name[len(name)-1], ".git")
+	return fmt.Sprintf("/workspaces/%s", repo), nil
 }
 
 type userInfo struct {
@@ -892,7 +928,7 @@ func findUser(nameOrID string) (*user.User, error) {
 
 func execOneLifecycleScript(
 	ctx context.Context,
-	logf func(level codersdk.LogLevel, format string, args ...any),
+	logf func(level notcodersdk.LogLevel, format string, args ...any),
 	s devcontainer.LifecycleScript,
 	scriptName string,
 	userInfo userInfo,
@@ -900,9 +936,9 @@ func execOneLifecycleScript(
 	if s.IsEmpty() {
 		return nil
 	}
-	logf(codersdk.LogLevelInfo, "=== Running %s as the %q user...", scriptName, userInfo.user.Username)
+	logf(notcodersdk.LogLevelInfo, "=== Running %s as the %q user...", scriptName, userInfo.user.Username)
 	if err := s.Execute(ctx, userInfo.uid, userInfo.gid); err != nil {
-		logf(codersdk.LogLevelError, "Failed to run %s: %v", scriptName, err)
+		logf(notcodersdk.LogLevelError, "Failed to run %s: %v", scriptName, err)
 		return err
 	}
 	return nil
@@ -1045,13 +1081,13 @@ func findDevcontainerJSON(options Options) (string, string, error) {
 
 	for _, fileInfo := range fileInfos {
 		if !fileInfo.IsDir() {
-			options.Logger(codersdk.LogLevelDebug, `%s is a file`, fileInfo.Name())
+			options.Logger(notcodersdk.LogLevelDebug, `%s is a file`, fileInfo.Name())
 			continue
 		}
 
 		location := filepath.Join(devcontainerDir, fileInfo.Name(), "devcontainer.json")
 		if _, err := options.Filesystem.Stat(location); err != nil {
-			options.Logger(codersdk.LogLevelDebug, `stat %s failed: %s`, location, err.Error())
+			options.Logger(notcodersdk.LogLevelDebug, `stat %s failed: %s`, location, err.Error())
 			continue
 		}
 
@@ -1068,15 +1104,15 @@ func maybeDeleteFilesystem(log LoggerFunc, force bool) error {
 	if !ok || strings.TrimSpace(kanikoDir) != MagicDir {
 		if force {
 			bailoutSecs := 10
-			log(codersdk.LogLevelWarn, "WARNING! BYPASSING SAFETY CHECK! THIS WILL DELETE YOUR ROOT FILESYSTEM!")
-			log(codersdk.LogLevelWarn, "You have %d seconds to bail out!", bailoutSecs)
+			log(notcodersdk.LogLevelWarn, "WARNING! BYPASSING SAFETY CHECK! THIS WILL DELETE YOUR ROOT FILESYSTEM!")
+			log(notcodersdk.LogLevelWarn, "You have %d seconds to bail out!", bailoutSecs)
 			for i := bailoutSecs; i > 0; i-- {
-				log(codersdk.LogLevelWarn, "%d...", i)
+				log(notcodersdk.LogLevelWarn, "%d...", i)
 				<-time.After(time.Second)
 			}
 		} else {
-			log(codersdk.LogLevelError, "KANIKO_DIR is not set to %s. Bailing!\n", MagicDir)
-			log(codersdk.LogLevelError, "To bypass this check, set FORCE_SAFE=true.")
+			log(notcodersdk.LogLevelError, "KANIKO_DIR is not set to %s. Bailing!\n", MagicDir)
+			log(notcodersdk.LogLevelError, "To bypass this check, set FORCE_SAFE=true.")
 			return errors.New("safety check failed")
 		}
 	}

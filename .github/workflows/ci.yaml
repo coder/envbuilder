@@ -66,4 +66,4 @@ jobs:
           go-version: "~1.21"
 
       - name: Check format
-        run: bash ./scripts/check_fmt.sh
+        run: ./scripts/check_fmt.sh

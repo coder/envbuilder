@@ -1,7 +1,7 @@
 GOARCH := $(shell go env GOARCH)
 PWD=$(shell pwd)
 
-fmt: **/*.go
+fmt: $(shell find . -type f -name '*.go')
 	go run mvdan.cc/gofumpt@v0.6.0 -l -w .
 
 develop:
