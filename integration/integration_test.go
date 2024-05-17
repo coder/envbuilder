@@ -477,7 +477,7 @@ func TestBuildStopStartCached(t *testing.T) {
 	err = cli.ContainerStop(ctx, ctr, container.StopOptions{})
 	require.NoError(t, err)
 
-	err = cli.ContainerStart(ctx, ctr, types.ContainerStartOptions{})
+	err = cli.ContainerStart(ctx, ctr, container.StartOptions{})
 	require.NoError(t, err)
 
 	logChan, _ := streamContainerLogs(t, cli, ctr)
@@ -993,7 +993,7 @@ func cleanOldEnvbuilders() {
 		panic(err)
 	}
 	defer cli.Close()
-	ctrs, err := cli.ContainerList(ctx, types.ContainerListOptions{
+	ctrs, err := cli.ContainerList(ctx, container.ListOptions{
 		Filters: filters.NewArgs(filters.KeyValuePair{
 			Key:   "label",
 			Value: testContainerLabel,
@@ -1003,7 +1003,7 @@ func cleanOldEnvbuilders() {
 		panic(err)
 	}
 	for _, ctr := range ctrs {
-		cli.ContainerRemove(ctx, ctr.ID, types.ContainerRemoveOptions{
+		cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
 			Force: true,
 		})
 	}
@@ -1036,12 +1036,12 @@ func runEnvbuilder(t *testing.T, options options) (string, error) {
 	}, nil, nil, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		cli.ContainerRemove(ctx, ctr.ID, types.ContainerRemoveOptions{
+		cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
 			RemoveVolumes: true,
 			Force:         true,
 		})
 	})
-	err = cli.ContainerStart(ctx, ctr.ID, types.ContainerStartOptions{})
+	err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
 	require.NoError(t, err)
 
 	logChan, errChan := streamContainerLogs(t, cli, ctr.ID)
@@ -1082,9 +1082,9 @@ func execContainer(t *testing.T, containerID, command string) string {
 
 func streamContainerLogs(t *testing.T, cli *client.Client, containerID string) (chan string, chan error) {
 	ctx := context.Background()
-	err := cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
+	err := cli.ContainerStart(ctx, containerID, container.StartOptions{})
 	require.NoError(t, err)
-	rawLogs, err := cli.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{
+	rawLogs, err := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
