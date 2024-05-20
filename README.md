@@ -293,7 +293,7 @@ On MacOS or Windows systems, we recommend either using a VM or the provided `.de
 
 **Additional Requirements:**
 
-- `go 1.21`
+- `go 1.22`
 - `make`
 - Docker daemon (for running tests)
 
