@@ -132,7 +132,7 @@ RUN printf "%%s\n" \
 	t.Run("SingleStage", func(t *testing.T) {
 		t.Parallel()
 
-		dockerFile := fmt.Sprintf(`FROM %s AS builder
+		dockerFile := fmt.Sprintf(`FROM %s
 RUN mkdir -p /myapp/somedir \
 && touch /myapp/somedir/somefile \
 && chown 123:123 /myapp/somedir \
