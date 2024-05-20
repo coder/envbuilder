@@ -526,10 +526,10 @@ func Run(ctx context.Context, options Options) error {
 		}
 		image, err := executor.DoBuild(opts)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("do build: %w", err)
 		}
 		if err := executor.DoPush(image, opts); err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("do push: %w", err)
 		}
 		endStage("🏗️ Built image!")
 
