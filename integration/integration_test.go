@@ -93,6 +93,74 @@ func TestInitScriptInitCommand(t *testing.T) {
 	require.NoError(t, ctx.Err(), "init script did not execute for legacy env vars")
 }
 
+func TestUidGid(t *testing.T) {
+
+	t.Run("MultiStage", func(t *testing.T) {
+		t.Parallel()
+
+		dockerFile := fmt.Sprintf(`FROM %s AS builder
+RUN mkdir -p /myapp/somedir \
+&& touch /myapp/somedir/somefile \
+&& chown 123:123 /myapp/somedir \
+&& chown 321:321 /myapp/somedir/somefile
+ 
+FROM %s
+COPY --from=builder /myapp /myapp
+RUN printf "%%s\n" \
+			"0 0 /myapp/" \
+			"123 123 /myapp/somedir" \
+			"321 321 /myapp/somedir/somefile" \
+			> /tmp/expected \
+&& stat -c "%%u %%g %%n" \
+			/myapp/ \
+			/myapp/somedir \
+			/myapp/somedir/somefile \
+			> /tmp/got \
+&& diff -u /tmp/got /tmp/expected`, testImageAlpine, testImageAlpine)
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": dockerFile,
+			},
+		})
+		_, err := runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.NoError(t, err)
+	})
+
+	t.Run("SingleStage", func(t *testing.T) {
+		t.Parallel()
+
+		dockerFile := fmt.Sprintf(`FROM %s AS builder
+RUN mkdir -p /myapp/somedir \
+&& touch /myapp/somedir/somefile \
+&& chown 123:123 /myapp/somedir \
+&& chown 321:321 /myapp/somedir/somefile \
+&& printf "%%s\n" \
+			"0 0 /myapp/" \
+			"123 123 /myapp/somedir" \
+			"321 321 /myapp/somedir/somefile" \
+			> /tmp/expected \
+&& stat -c "%%u %%g %%n" \
+			/myapp/ \
+			/myapp/somedir \
+			/myapp/somedir/somefile \
+			> /tmp/got \
+&& diff -u /tmp/got /tmp/expected`, testImageAlpine)
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": dockerFile,
+			},
+		})
+		_, err := runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.NoError(t, err)
+	})
+}
+
 func TestForceSafe(t *testing.T) {
 	t.Parallel()
 
