@@ -492,6 +492,7 @@ func Run(ctx context.Context, options Options) error {
 			RunStdout:         stdoutWriter,
 			RunStderr:         stderrWriter,
 			Destinations:      destinations,
+			NoPush:            len(destinations) == 0,
 			CacheRunLayers:    true,
 			CacheCopyLayers:   true,
 			CompressedCaching: true,
