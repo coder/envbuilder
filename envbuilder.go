@@ -440,7 +440,7 @@ func Run(ctx context.Context, options Options) error {
 		}
 
 		// This is required for deleting the filesystem prior to build!
-		err = util.InitIgnoreList(true)
+		err = util.InitIgnoreList()
 		if err != nil {
 			return nil, fmt.Errorf("init ignore list: %w", err)
 		}
