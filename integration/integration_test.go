@@ -94,7 +94,7 @@ func TestInitScriptInitCommand(t *testing.T) {
 }
 
 func TestUidGid(t *testing.T) {
-
+	t.Parallel()
 	t.Run("MultiStage", func(t *testing.T) {
 		t.Parallel()
 
