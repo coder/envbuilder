@@ -209,18 +209,18 @@ envbuilder will assume SSH authentication. You have the following options:
 
 ## Layer Caching
 
-Cache layers in a container registry to speed up builds. To enable caching, [authenticate with your registry](#container-registry-authentication) and set the `CACHE_REPO` environment variable.
+Cache layers in a container registry to speed up builds. To enable caching, [authenticate with your registry](#container-registry-authentication) and set the `ENVBUILDER_CACHE_REPO` environment variable.
 
 ```bash
 CACHE_REPO=ghcr.io/coder/repo-cache
 ```
 
-To experiment without setting up a registry, use `LAYER_CACHE_DIR`:
+To experiment without setting up a registry, use `ENVBUILDER_LAYER_CACHE_DIR`:
 
 ```bash
 docker run -it --rm \
   -v /tmp/envbuilder-cache:/cache \
-  -e LAYER_CACHE_DIR=/cache
+  -e ENVBUILDER_LAYER_CACHE_DIR=/cache
   ...
 ```
 
@@ -243,7 +243,7 @@ docker run --rm \
 # Run envbuilder with the local image cache.
 docker run -it --rm \
   -v /tmp/kaniko-cache:/image-cache:ro \
-  -e BASE_IMAGE_CACHE_DIR=/image-cache
+  -e ENVBUILDER_BASE_IMAGE_CACHE_DIR=/image-cache
 ```
 
 In Kubernetes, you can pre-populate a persistent volume with the same warmer image, then mount it into many workspaces with the [`ReadOnlyMany` access mode](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes).
