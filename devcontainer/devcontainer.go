@@ -285,7 +285,7 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		if err != nil {
 			return "", nil, fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
 		}
-		fromDirective, directive, err := spec.Compile(featureName, containerUser, remoteUser, useBuildContexts, featureOpts)
+		fromDirective, directive, err := spec.Compile(featureRef, featureName, featureDir, containerUser, remoteUser, useBuildContexts, featureOpts)
 		if err != nil {
 			return "", nil, fmt.Errorf("compile feature %s: %w", featureRefRaw, err)
 		}
