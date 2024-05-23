@@ -290,7 +290,7 @@ func Run(ctx context.Context, options Options) error {
 					options.Logger(notcodersdk.LogLevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
-				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir, fallbackDockerfile, options.WorkspaceFolder, false)
+				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir, fallbackDockerfile, options.WorkspaceFolder, false, os.LookupEnv)
 				if err != nil {
 					return fmt.Errorf("compile devcontainer.json: %w", err)
 				}
@@ -669,7 +669,7 @@ func Run(ctx context.Context, options Options) error {
 		}
 		sort.Strings(envKeys)
 		for _, envVar := range envKeys {
-			value := devcontainer.SubstituteVars(env[envVar], options.WorkspaceFolder)
+			value := devcontainer.SubstituteVars(env[envVar], options.WorkspaceFolder, os.LookupEnv)
 			os.Setenv(envVar, value)
 		}
 	}
