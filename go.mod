@@ -30,7 +30,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20
 	github.com/moby/buildkit v0.13.1
 	github.com/otiai10/copy v1.14.0
-	github.com/prometheus/procfs v0.12.0
+	github.com/prometheus/procfs v0.15.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/skeema/knownhosts v1.2.2
 	github.com/stretchr/testify v1.9.0
