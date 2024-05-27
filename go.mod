@@ -6,7 +6,7 @@ toolchain go1.22.3
 
 // There are a few options we need added to Kaniko!
 // See: https://github.com/GoogleContainerTools/kaniko/compare/main...coder:kaniko:main
-replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20240520160304-e4a3f0b1c6d6
+replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20240524082248-9d0d55902c34
 
 require (
 	cdr.dev/slog v1.6.2-0.20240126064726-20367d4aede6
@@ -19,7 +19,7 @@ require (
 	github.com/distribution/distribution/v3 v3.0.0-20230629214736-bac7f02e02a1
 	github.com/docker/cli v26.1.0+incompatible
 	github.com/docker/docker v26.1.0+incompatible
-	github.com/fatih/color v1.16.0
+	github.com/fatih/color v1.17.0
 	github.com/gliderlabs/ssh v0.3.7
 	github.com/go-git/go-billy/v5 v5.5.0
 	github.com/go-git/go-git/v5 v5.12.0
@@ -30,13 +30,13 @@ require (
 	github.com/mattn/go-isatty v0.0.20
 	github.com/moby/buildkit v0.13.1
 	github.com/otiai10/copy v1.14.0
-	github.com/prometheus/procfs v0.12.0
+	github.com/prometheus/procfs v0.15.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/skeema/knownhosts v1.2.2
 	github.com/stretchr/testify v1.9.0
 	github.com/tailscale/hujson v0.0.0-20221223112325-20486734a56a
 	go.uber.org/mock v0.4.0
-	golang.org/x/crypto v0.22.0
+	golang.org/x/crypto v0.23.0
 	golang.org/x/sync v0.7.0
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028
 )
@@ -181,9 +181,9 @@ require (
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/net v0.24.0 // indirect
 	golang.org/x/oauth2 v0.19.0 // indirect
-	golang.org/x/sys v0.19.0 // indirect
-	golang.org/x/term v0.19.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/sys v0.20.0 // indirect
+	golang.org/x/term v0.20.0 // indirect
+	golang.org/x/text v0.15.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.20.0 // indirect
 	google.golang.org/genproto v0.0.0-20240227224415-6ceb2ff114de // indirect

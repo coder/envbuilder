@@ -20,6 +20,11 @@ test: test-registry
 test-race:
 	go test -race -count=3 ./...
 
+.PHYONY: update-kaniko-fork
+update-kaniko-fork:
+	go mod edit -replace github.com/GoogleContainerTools/kaniko=github.com/coder/kaniko@main
+	go mod tidy
+
 # Starts a local Docker registry on port 5000 with a local disk cache.
 .PHONY: test-registry
 test-registry: test-registry-container test-images-pull test-images-push

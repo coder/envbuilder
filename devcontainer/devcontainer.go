@@ -73,7 +73,7 @@ type Compiled struct {
 	RemoteEnv    map[string]string
 }
 
-func SubstituteVars(s string, workspaceFolder string) string {
+func SubstituteVars(s string, workspaceFolder string, lookupEnv func(string) (string, bool)) string {
 	var buf string
 	for {
 		beforeOpen, afterOpen, ok := strings.Cut(s, "${")
@@ -85,14 +85,14 @@ func SubstituteVars(s string, workspaceFolder string) string {
 			return buf + s
 		}
 
-		buf += beforeOpen + substitute(varExpr, workspaceFolder)
+		buf += beforeOpen + substitute(varExpr, workspaceFolder, lookupEnv)
 		s = afterClose
 	}
 }
 
 // Spec for variable substitutions:
 // https://containers.dev/implementors/json_reference/#variables-in-devcontainerjson
-func substitute(varExpr string, workspaceFolder string) string {
+func substitute(varExpr string, workspaceFolder string, lookupEnv func(string) (string, bool)) string {
 	parts := strings.Split(varExpr, ":")
 	if len(parts) == 1 {
 		switch varExpr {
@@ -101,12 +101,16 @@ func substitute(varExpr string, workspaceFolder string) string {
 		case "localWorkspaceFolderBasename", "containerWorkspaceFolderBasename":
 			return filepath.Base(workspaceFolder)
 		default:
-			return os.Getenv(varExpr)
+			val, ok := lookupEnv(varExpr)
+			if ok {
+				return val
+			}
+			return ""
 		}
 	}
 	switch parts[0] {
 	case "env", "localEnv", "containerEnv":
-		if val, ok := os.LookupEnv(parts[1]); ok {
+		if val, ok := lookupEnv(parts[1]); ok {
 			return val
 		}
 		if len(parts) == 3 {
@@ -131,7 +135,7 @@ func (s Spec) HasDockerfile() bool {
 // devcontainerDir is the path to the directory where the devcontainer.json file
 // is located. scratchDir is the path to the directory where the Dockerfile will
 // be written to if one doesn't exist.
-func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, fallbackDockerfile, workspaceFolder string, useBuildContexts bool) (*Compiled, error) {
+func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, fallbackDockerfile, workspaceFolder string, useBuildContexts bool, lookupEnv func(string) (string, bool)) (*Compiled, error) {
 	params := &Compiled{
 		User:         s.ContainerUser,
 		ContainerEnv: s.ContainerEnv,
@@ -178,7 +182,7 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, 
 
 	buildArgs := make([]string, 0)
 	for _, key := range buildArgkeys {
-		val := SubstituteVars(s.Build.Args[key], workspaceFolder)
+		val := SubstituteVars(s.Build.Args[key], workspaceFolder, lookupEnv)
 		buildArgs = append(buildArgs, key+"="+val)
 	}
 	params.BuildArgs = buildArgs
