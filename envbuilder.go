@@ -119,11 +119,11 @@ func Run(ctx context.Context, options Options) error {
 		options.WorkspaceFolder = f
 	}
 
-	stageNumber := 1
+	stageNumber := 0
 	startStage := func(format string, args ...any) func(format string, args ...any) {
 		now := time.Now()
-		stageNum := stageNumber
 		stageNumber++
+		stageNum := stageNumber
 		options.Logger(notcodersdk.LogLevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
 
 		return func(format string, args ...any) {
@@ -338,7 +338,7 @@ func Run(ctx context.Context, options Options) error {
 
 	HijackLogrus(func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
-			options.Logger(notcodersdk.LogLevelInfo, "#2: %s", color.HiBlackString(line))
+			options.Logger(notcodersdk.LogLevelInfo, "#%d: %s", stageNumber, color.HiBlackString(line))
 		}
 	})
 
@@ -474,7 +474,6 @@ func Run(ctx context.Context, options Options) error {
 			cacheTTL = time.Hour * 24 * time.Duration(options.CacheTTLDays)
 		}
 
-		endStage := startStage("🏗️ Building image...")
 		// At this point we have all the context, we can now build!
 		registryMirror := []string{}
 		if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
@@ -492,7 +491,7 @@ func Run(ctx context.Context, options Options) error {
 			RunStdout:         stdoutWriter,
 			RunStderr:         stderrWriter,
 			Destinations:      destinations,
-			NoPush:            len(destinations) == 0,
+			NoPush:            !options.PushImage || len(destinations) == 0,
 			CacheRunLayers:    true,
 			CacheCopyLayers:   true,
 			CompressedCaching: true,
@@ -523,15 +522,41 @@ func Run(ctx context.Context, options Options) error {
 				RegistryMirrors: registryMirror,
 			},
 			SrcContext: buildParams.BuildContext,
+
+			// For cached image utilization, produce reproducible builds.
+			Reproducible: options.PushImage,
 		}
+
+		if options.GetCachedImage {
+			endStage := startStage("🏗️ Building fake image...")
+			image, err := executor.DoFakeBuild(opts)
+			if err != nil {
+				logrus.Infof("unable to build fake image: %s", err)
+				os.Exit(1)
+			}
+			endStage("🏗️ Built fake image!")
+			digest, err := image.Digest()
+			if err != nil {
+				return nil, xerrors.Errorf("image digest: %w", err)
+			}
+
+			_, _ = fmt.Fprintf(os.Stdout, "%s@%s\n", options.CacheRepo, digest.String())
+			os.Exit(0)
+		}
+
+		endStage := startStage("🏗️ Building image...")
 		image, err := executor.DoBuild(opts)
 		if err != nil {
 			return nil, xerrors.Errorf("do build: %w", err)
 		}
-		if err := executor.DoPush(image, opts); err != nil {
-			return nil, xerrors.Errorf("do push: %w", err)
-		}
 		endStage("🏗️ Built image!")
+		if options.PushImage {
+			endStage = startStage("🏗️ Pushing image...")
+			if err := executor.DoPush(image, opts); err != nil {
+				return nil, xerrors.Errorf("do push: %w", err)
+			}
+			endStage("🏗️ Pushed image!")
+		}
 
 		return image, err
 	}
