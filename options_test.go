@@ -181,6 +181,7 @@ func runCLI() envbuilder.Options {
 	}
 
 	i := cmd.Invoke().WithOS()
+	i.Args = []string{"--help"}
 	fakeIO(i)
 	err := i.Run()
 	if err != nil {

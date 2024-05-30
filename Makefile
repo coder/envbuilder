@@ -1,6 +1,10 @@
 GOARCH := $(shell go env GOARCH)
 PWD=$(shell pwd)
 
+GO_SRC_FILES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
+GO_TEST_FILES := $(shell find . -type f -not -name '*.go' -name '*_test.go')
+GOLDEN_FILES := $(shell find . -type f -name '*.golden')
+
 fmt: $(shell find . -type f -name '*.go')
 	go run mvdan.cc/gofumpt@v0.6.0 -l -w .
 
@@ -9,6 +13,13 @@ develop:
 
 build: scripts/envbuilder-$(GOARCH)
 	./scripts/build.sh
+
+.PHONY: update-golden-files
+update-golden-files: .gen-golden
+
+.gen-golden: $(GOLDEN_FILES) $(GO_SRC_FILES) $(GO_TEST_FILES)
+	go test . -update
+	@touch "$@"
 
 docs: options.go
 	go run ./scripts/docsgen/main.go
