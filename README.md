@@ -85,7 +85,7 @@ resource "kubernetes_deployment" "example" {
   }
   spec {
     spec {
-      container {  
+      container {
         # Define the volumeMount with the pull credentials
         volume_mount {
           name       = "docker-config-volume"
@@ -194,8 +194,9 @@ A sample script to pre-fetch a number of images can be viewed [here](./examples/
 
 The `SETUP_SCRIPT` environment variable dynamically configures the user and init command (PID 1) after the container build process.
 
-> **Note**
-> `TARGET_USER` is passed to the setup script to specify who will execute `INIT_COMMAND` (e.g., `code`).
+**Note**
+
+`TARGET_USER` is passed to the setup script to specify who will execute `INIT_COMMAND` (e.g., `code`).
 
 Write the following to `$ENVBUILDER_ENV` to shape the container's init process:
 
@@ -225,6 +226,22 @@ docker run -it --rm \
 - [`SSL_CERT_DIR`](https://go.dev/src/crypto/x509/root_unix.go#L25): Identifies which directory to check for SSL certificate files.
 - `SSL_CERT_BASE64`: Specifies a base64-encoded SSL certificate that will be added to the global certificate pool on start.
 
+## Unsupported features
+
+### Development Containers
+
+| Name                     | Description                                                                                                  | Known issues                                         |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| Volume mounts            | Volumes are used to persist data and share directories between the host and container.                       | TODO                                                 |
+| Port forwarding          | Port forwarding allows exposing container ports to the host, making services accessible.                     | [#48](https://github.com/coder/envbuilder/issues/48) |
+| Script init & Entrypoint | `init` adds a tiny init process to the container and `entrypoint` sets a script to run at container startup. | TODO                                                 |
+| Customizations           | Product specific properties, for instance: _VS Code_ `settings` and `extensions`.                            | [#43](https://github.com/coder/envbuilder/issues/43) |
+
+### Devfile
+
+> [Devfiles](https://devfile.io/) automate and simplify development process by adopting the existing devfiles that are available in the [public community registry](https://registry.devfile.io/viewer).
+
+Issue: [#113](https://github.com/coder/envbuilder/issues/113)
 
 # Local Development
 
