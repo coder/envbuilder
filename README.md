@@ -291,12 +291,12 @@ docker run -it --rm \
 
 The table keeps track of features we would love to implement. Feel free to [create a new issue](https://github.com/coder/envbuilder/issues/new) if you want Envbuilder to support it.
 
-| Name                     | Description                                                                                                  | Known issues                                         |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| Volume mounts            | Volumes are used to persist data and share directories between the host and container.                       | TODO                                                 |
-| Port forwarding          | Port forwarding allows exposing container ports to the host, making services accessible.                     | [#48](https://github.com/coder/envbuilder/issues/48) |
-| Script init & Entrypoint | `init` adds a tiny init process to the container and `entrypoint` sets a script to run at container startup. | TODO                                                 |
-| Customizations           | Product specific properties, for instance: _VS Code_ `settings` and `extensions`.                            | [#43](https://github.com/coder/envbuilder/issues/43) |
+| Name                     | Description                                                                                                  | Known issues                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| Volume mounts            | Volumes are used to persist data and share directories between the host and container.                       | [#220](https://github.com/coder/envbuilder/issues/220) |
+| Port forwarding          | Port forwarding allows exposing container ports to the host, making services accessible.                     | [#48](https://github.com/coder/envbuilder/issues/48)   |
+| Script init & Entrypoint | `init` adds a tiny init process to the container and `entrypoint` sets a script to run at container startup. | [#221](https://github.com/coder/envbuilder/issues/221) |
+| Customizations           | Product specific properties, for instance: _VS Code_ `settings` and `extensions`.                            | [#43](https://github.com/coder/envbuilder/issues/43)   |
 
 ### Devfile
 
