@@ -58,8 +58,6 @@ for arch in "${archs[@]}"; do
 done
 if [ "$push" = true ]; then
   args+=( --push )
-else
-  args+=( --load )
 fi
 
 docker buildx build --builder $BUILDER_NAME "${args[@]}" -t $base:$tag -t $base:latest -f Dockerfile .
