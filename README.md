@@ -289,6 +289,8 @@ docker run -it --rm \
 
 ### Development Containers
 
+The table keeps track of features we would love to implement. Feel free to [create a new issue](https://github.com/coder/envbuilder/issues/new) if you want Envbuilder to support it.
+
 | Name                     | Description                                                                                                  | Known issues                                         |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
 | Volume mounts            | Volumes are used to persist data and share directories between the host and container.                       | TODO                                                 |
