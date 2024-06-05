@@ -73,54 +73,48 @@ func TestCompile(t *testing.T) {
 	t.Run("UnknownOption", func(t *testing.T) {
 		t.Parallel()
 		spec := &features.Spec{}
-		_, _, err := spec.Compile("test", "containerUser", "remoteUser", false, map[string]any{
+		_, _, err := spec.Compile("coder/test:latest", "test", "", "containerUser", "remoteUser", false, map[string]any{
 			"unknown": "value",
 		})
 		require.ErrorContains(t, err, "unknown option")
 	})
 	t.Run("Basic", func(t *testing.T) {
 		t.Parallel()
-		spec := &features.Spec{
-			Directory: "/",
-		}
-		_, directive, err := spec.Compile("test", "containerUser", "remoteUser", false, nil)
+		spec := &features.Spec{}
+		_, directive, err := spec.Compile("coder/test:latest", "test", "/", "containerUser", "remoteUser", false, nil)
 		require.NoError(t, err)
 		require.Equal(t, "WORKDIR /\nRUN _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(directive))
 	})
 	t.Run("ContainerEnv", func(t *testing.T) {
 		t.Parallel()
 		spec := &features.Spec{
-			Directory: "/",
 			ContainerEnv: map[string]string{
 				"FOO": "bar",
 			},
 		}
-		_, directive, err := spec.Compile("test", "containerUser", "remoteUser", false, nil)
+		_, directive, err := spec.Compile("coder/test:latest", "test", "/", "containerUser", "remoteUser", false, nil)
 		require.NoError(t, err)
 		require.Equal(t, "WORKDIR /\nENV FOO=bar\nRUN _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(directive))
 	})
 	t.Run("OptionsEnv", func(t *testing.T) {
 		t.Parallel()
 		spec := &features.Spec{
-			Directory: "/",
 			Options: map[string]features.Option{
 				"foo": {
 					Default: "bar",
 				},
 			},
 		}
-		_, directive, err := spec.Compile("test", "containerUser", "remoteUser", false, nil)
+		_, directive, err := spec.Compile("coder/test:latest", "test", "/", "containerUser", "remoteUser", false, nil)
 		require.NoError(t, err)
 		require.Equal(t, "WORKDIR /\nRUN FOO=\"bar\" _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(directive))
 	})
 	t.Run("BuildContext", func(t *testing.T) {
 		t.Parallel()
-		spec := &features.Spec{
-			Directory: "/",
-		}
-		fromDirective, runDirective, err := spec.Compile("test", "containerUser", "remoteUser", true, nil)
+		spec := &features.Spec{}
+		fromDirective, runDirective, err := spec.Compile("coder/test:latest", "test", "/.envbuilder/feature/test-d8e8fc", "containerUser", "remoteUser", true, nil)
 		require.NoError(t, err)
-		require.Equal(t, "FROM scratch AS envbuilder_feature_test\nCOPY --from=test / /", strings.TrimSpace(fromDirective))
-		require.Equal(t, "WORKDIR /envbuilder-features/test\nRUN --mount=type=bind,from=envbuilder_feature_test,target=/envbuilder-features/test,rw _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(runDirective))
+		require.Equal(t, "FROM scratch AS envbuilder_feature_test\nCOPY --from=coder/test:latest / /", strings.TrimSpace(fromDirective))
+		require.Equal(t, "WORKDIR /.envbuilder/feature/test-d8e8fc\nRUN --mount=type=bind,from=envbuilder_feature_test,target=/.envbuilder/feature/test-d8e8fc,rw _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(runDirective))
 	})
 }

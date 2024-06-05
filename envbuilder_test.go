@@ -9,44 +9,64 @@ import (
 
 func TestDefaultWorkspaceFolder(t *testing.T) {
 	t.Parallel()
-	dir, err := envbuilder.DefaultWorkspaceFolder("https://github.com/coder/coder")
-	require.NoError(t, err)
-	require.Equal(t, "/workspaces/coder", dir)
 
-	dir, err = envbuilder.DefaultWorkspaceFolder("")
-	require.NoError(t, err)
-	require.Equal(t, envbuilder.EmptyWorkspaceDir, dir)
-}
-
-func TestSystemOptions(t *testing.T) {
-	t.Parallel()
-	opts := map[string]string{
-		"INIT_SCRIPT":            "echo hello",
-		"CACHE_REPO":             "kylecarbs/testing",
-		"CACHE_TTL_DAYS":         "30",
-		"DEVCONTAINER_JSON_PATH": "/tmp/devcontainer.json",
-		"DOCKERFILE_PATH":        "Dockerfile",
-		"FALLBACK_IMAGE":         "ubuntu:latest",
-		"FORCE_SAFE":             "true",
-		"INSECURE":               "false",
-		"GIT_CLONE_DEPTH":        "1",
-		"GIT_URL":                "https://github.com/coder/coder",
-		"WORKSPACE_FOLDER":       "/workspaces/coder",
-		"GIT_HTTP_PROXY_URL":     "http://company-proxy.com:8081",
+	successTests := []struct {
+		name     string
+		gitURL   string
+		expected string
+	}{
+		{
+			name:     "HTTP",
+			gitURL:   "https://github.com/coder/envbuilder.git",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "SSH",
+			gitURL:   "git@github.com:coder/envbuilder.git",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "username and password",
+			gitURL:   "https://username:password@github.com/coder/envbuilder.git",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "fragment",
+			gitURL:   "https://github.com/coder/envbuilder.git#feature-branch",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "empty",
+			gitURL:   "",
+			expected: envbuilder.EmptyWorkspaceDir,
+		},
 	}
-	env := envbuilder.OptionsFromEnv(func(s string) (string, bool) {
-		return opts[s], true
-	})
-	require.Equal(t, "echo hello", env.InitScript)
-	require.Equal(t, "kylecarbs/testing", env.CacheRepo)
-	require.Equal(t, "/tmp/devcontainer.json", env.DevcontainerJSONPath)
-	require.Equal(t, 30, env.CacheTTLDays)
-	require.Equal(t, "Dockerfile", env.DockerfilePath)
-	require.Equal(t, "ubuntu:latest", env.FallbackImage)
-	require.True(t, env.ForceSafe)
-	require.False(t, env.Insecure)
-	require.Equal(t, 1, env.GitCloneDepth)
-	require.Equal(t, "https://github.com/coder/coder", env.GitURL)
-	require.Equal(t, "/workspaces/coder", env.WorkspaceFolder)
-	require.Equal(t, "http://company-proxy.com:8081", env.GitHTTPProxyURL)
+	for _, tt := range successTests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir, err := envbuilder.DefaultWorkspaceFolder(tt.gitURL)
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, dir)
+		})
+	}
+
+	invalidTests := []struct {
+		name       string
+		invalidURL string
+	}{
+		{
+			name:       "simple text",
+			invalidURL: "not a valid URL",
+		},
+		{
+			name:       "website URL",
+			invalidURL: "www.google.com",
+		},
+	}
+	for _, tt := range invalidTests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir, err := envbuilder.DefaultWorkspaceFolder(tt.invalidURL)
+			require.NoError(t, err)
+			require.Equal(t, envbuilder.EmptyWorkspaceDir, dir)
+		})
+	}
 }

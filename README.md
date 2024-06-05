@@ -22,15 +22,15 @@ Build development environments from a Dockerfile on Docker, Kubernetes, and Open
 
 ## Quickstart
 
-The easiest way to get started is to run the `envbuilder` Docker container that clones a repository, builds the image from a Dockerfile, and runs the `$INIT_SCRIPT` in the freshly built container.
+The easiest way to get started is to run the `envbuilder` Docker container that clones a repository, builds the image from a Dockerfile, and runs the `$ENVBUILDER_INIT_SCRIPT` in the freshly built container.
 
-> `/tmp/envbuilder` is used to persist data between commands for the purpose of this demo. You can change it to any directory you want.
+> `/tmp/envbuilder` directory persists demo data between commands. You can choose a different directory.
 
 ```bash
 docker run -it --rm \
     -v /tmp/envbuilder:/workspaces \
-    -e GIT_URL=https://github.com/coder/envbuilder-starter-devcontainer \
-    -e INIT_SCRIPT=bash \
+    -e ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder-starter-devcontainer \
+    -e ENVBUILDER_INIT_SCRIPT=bash \
     ghcr.io/coder/envbuilder
 ```
 
@@ -46,6 +46,20 @@ $ vim .devcontainer/Dockerfile
 ```
 
 Exit the container, and re-run the `docker run` command... after the build completes, `htop` should exist in the container! 🥳
+
+> [!NOTE]
+> Envbuilder performs destructive filesystem operations! To guard against accidental data
+> loss, it will refuse to run if it detects that KANIKO_DIR is not set to a specific value.
+> If you need to bypass this behavior for any reason, you can bypass this safety check by setting
+> `ENVBUILDER_FORCE_SAFE=true`.
+
+### Git Branch Selection
+
+Choose a branch using `ENVBUILDER_GIT_URL` with a _ref/heads_ reference. For instance:
+
+```
+ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder-starter-devcontainer/#refs/heads/my-feature-branch
+```
 
 ## Container Registry Authentication
 
@@ -63,7 +77,7 @@ After you have a configuration that resembles the following:
 }
 ```
 
-`base64` encode the JSON and provide it to envbuilder as the `DOCKER_CONFIG_BASE64` environment variable.
+`base64` encode the JSON and provide it to envbuilder as the `ENVBUILDER_DOCKER_CONFIG_BASE64` environment variable.
 
 Alternatively, if running `envbuilder` in Kubernetes, you can create an `ImagePullSecret` and
 pass it into the pod as a volume mount. This example will work for all registries.
@@ -117,21 +131,31 @@ ewoJImF1dGhzIjogewoJCSJodHRwczovL2luZGV4LmRvY2tlci5pby92MS8iOiB7CgkJCSJhdXRoIjog
 Provide the encoded JSON config to envbuilder:
 
 ```env
-DOCKER_CONFIG_BASE64=ewoJImF1dGhzIjogewoJCSJodHRwczovL2luZGV4LmRvY2tlci5pby92MS8iOiB7CgkJCSJhdXRoIjogImJhc2U2NCBlbmNvZGVkIHRva2VuIgoJCX0KCX0KfQo=
+ENVBUILDER_DOCKER_CONFIG_BASE64=ewoJImF1dGhzIjogewoJCSJodHRwczovL2luZGV4LmRvY2tlci5pby92MS8iOiB7CgkJCSJhdXRoIjogImJhc2U2NCBlbmNvZGVkIHRva2VuIgoJCX0KCX0KfQo=
 ```
+
+### Docker-in-Docker
+
+See [here](./docs/docker.md) for instructions on running Docker containers inside
+environments built by Envbuilder.
 
 ## Git Authentication
 
-`GIT_USERNAME` and `GIT_PASSWORD` are environment variables to provide Git authentication for private repositories.
+Two methods of authentication are supported:
+
+### HTTP Authentication
+
+If `ENVBUILDER_GIT_URL` starts with `http://` or `https://`, envbuilder will
+authenticate with `ENVBUILDER_GIT_USERNAME` and `ENVBUILDER_GIT_PASSWORD`, if set.
 
 For access token-based authentication, follow the following schema (if empty, there's no need to provide the field):
 
-| Provider     | `GIT_USERNAME` | `GIT_PASSWORD` |
-| ------------ | -------------- | -------------- |
-| GitHub       | [access-token] |                |
-| GitLab       | oauth2         | [access-token] |
-| BitBucket    | x-token-auth   | [access-token] |
-| Azure DevOps | [access-token] |                |
+| Provider     | `ENVBUILDER_GIT_USERNAME` | `ENVBUILDER_GIT_PASSWORD` |
+| ------------ | ------------------------- | ------------------------- |
+| GitHub       | [access-token]            |                           |
+| GitLab       | oauth2                    | [access-token]            |
+| BitBucket    | x-token-auth              | [access-token]            |
+| Azure DevOps | [access-token]            |                           |
 
 If using envbuilder inside of [Coder](https://github.com/coder/coder), you can use the `coder_external_auth` Terraform resource to automatically provide this token on workspace creation:
 
@@ -142,25 +166,60 @@ data "coder_external_auth" "github" {
 
 resource "docker_container" "dev" {
     env = [
-        GIT_USERNAME = data.coder_external_auth.github.access_token,
+        ENVBUILDER_GIT_USERNAME = data.coder_external_auth.github.access_token,
     ]
 }
 ```
 
+### SSH Authentication
+
+If `ENVBUILDER_GIT_URL` does not start with `http://` or `https://`,
+envbuilder will assume SSH authentication. You have the following options:
+
+1. Public/Private key authentication: set `ENVBUILDER_GIT_SSH_KEY_PATH` to the path of an
+   SSH private key mounted inside the container. Envbuilder will use this SSH
+   key to authenticate. Example:
+
+   ```bash
+    docker run -it --rm \
+      -v /tmp/envbuilder:/workspaces \
+      -e ENVBUILDER_GIT_URL=git@example.com:path/to/private/repo.git \
+      -e ENVBUILDER_INIT_SCRIPT=bash \
+      -e ENVBUILDER_GIT_SSH_KEY_PATH=/.ssh/id_rsa \
+      -v /home/user/id_rsa:/.ssh/id_rsa \
+      ghcr.io/coder/envbuilder
+   ```
+
+1. Agent-based authentication: set `SSH_AUTH_SOCK` and mount in your agent socket, for example:
+
+```bash
+  docker run -it --rm \
+    -v /tmp/envbuilder:/workspaces \
+    -e ENVBUILDER_GIT_URL=git@example.com:path/to/private/repo.git \
+    -e ENVBUILDER_INIT_SCRIPT=bash \
+    -e SSH_AUTH_SOCK=/tmp/ssh-auth-sock \
+    -v $SSH_AUTH_SOCK:/tmp/ssh-auth-sock \
+    ghcr.io/coder/envbuilder
+```
+
+> Note: by default, envbuilder will accept and log all host keys. If you need
+> strict host key checking, set `SSH_KNOWN_HOSTS` and mount in a `known_hosts`
+> file.
+
 ## Layer Caching
 
-Cache layers in a container registry to speed up builds. To enable caching, [authenticate with your registry](#container-registry-authentication) and set the `CACHE_REPO` environment variable.
+Cache layers in a container registry to speed up builds. To enable caching, [authenticate with your registry](#container-registry-authentication) and set the `ENVBUILDER_CACHE_REPO` environment variable.
 
 ```bash
 CACHE_REPO=ghcr.io/coder/repo-cache
 ```
 
-To experiment without setting up a registry, use `LAYER_CACHE_DIR`:
+To experiment without setting up a registry, use `ENVBUILDER_LAYER_CACHE_DIR`:
 
 ```bash
 docker run -it --rm \
   -v /tmp/envbuilder-cache:/cache \
-  -e LAYER_CACHE_DIR=/cache
+  -e ENVBUILDER_LAYER_CACHE_DIR=/cache
   ...
 ```
 
@@ -183,7 +242,7 @@ docker run --rm \
 # Run envbuilder with the local image cache.
 docker run -it --rm \
   -v /tmp/kaniko-cache:/image-cache:ro \
-  -e BASE_IMAGE_CACHE_DIR=/image-cache
+  -e ENVBUILDER_BASE_IMAGE_CACHE_DIR=/image-cache
 ```
 
 In Kubernetes, you can pre-populate a persistent volume with the same warmer image, then mount it into many workspaces with the [`ReadOnlyMany` access mode](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes).
@@ -192,35 +251,37 @@ A sample script to pre-fetch a number of images can be viewed [here](./examples/
 
 ## Setup Script
 
-The `SETUP_SCRIPT` environment variable dynamically configures the user and init command (PID 1) after the container build process.
+The `ENVBUILDER_SETUP_SCRIPT` environment variable dynamically configures the user and init command (PID 1) after the container build process.
 
-**Note**
+> [!NOTE]
 
-`TARGET_USER` is passed to the setup script to specify who will execute `INIT_COMMAND` (e.g., `code`).
+> `TARGET_USER` is passed to the setup script to specify who will execute `ENVBUILDER_INIT_COMMAND` (e.g., `code`).
 
 Write the following to `$ENVBUILDER_ENV` to shape the container's init process:
 
-- `TARGET_USER`: Identifies the `INIT_COMMAND` executor (e.g.`root`).
-- `INIT_COMMAND`: Defines the command executed by `TARGET_USER` (e.g. `/bin/bash`).
-- `INIT_ARGS`: Arguments provided to `INIT_COMMAND` (e.g. `-c 'sleep infinity'`).
+- `TARGET_USER`: Identifies the `ENVBUILDER_INIT_COMMAND` executor (e.g.`root`).
+- `ENVBUILDER_INIT_COMMAND`: Defines the command executed by `TARGET_USER` (e.g. `/bin/bash`).
+- `ENVBUILDER_INIT_ARGS`: Arguments provided to `ENVBUILDER_INIT_COMMAND` (e.g. `-c 'sleep infinity'`).
 
 ```bash
 # init.sh - change the init if systemd exists
 if command -v systemd >/dev/null; then
   echo "Hey 👋 $TARGET_USER"
-  echo INIT_COMMAND=systemd >> $ENVBUILDER_ENV
+  echo ENVBUILDER_INIT_COMMAND=systemd >> $ENVBUILDER_ENV
 else
-  echo INIT_COMMAND=bash >> $ENVBUILDER_ENV
+  echo ENVBUILDER_INIT_COMMAND=bash >> $ENVBUILDER_ENV
 fi
 
 # run envbuilder with the setup script
 docker run -it --rm \
   -v ./:/some-dir \
-  -e SETUP_SCRIPT=/some-dir/init.sh \
+  -e ENVBUILDER_SETUP_SCRIPT=/some-dir/init.sh \
   ...
 ```
 
 ## Custom Certificates
+
+<<<<<<< HEAD
 
 - [`SSL_CERT_FILE`](https://go.dev/src/crypto/x509/root_unix.go#L19): Specifies the path to an SSL certificate.
 - [`SSL_CERT_DIR`](https://go.dev/src/crypto/x509/root_unix.go#L25): Identifies which directory to check for SSL certificate files.
@@ -241,7 +302,12 @@ docker run -it --rm \
 
 > [Devfiles](https://devfile.io/) automate and simplify development process by adopting the existing devfiles that are available in the [public community registry](https://registry.devfile.io/viewer).
 
-Issue: [#113](https://github.com/coder/envbuilder/issues/113)
+# Issue: [#113](https://github.com/coder/envbuilder/issues/113)
+
+- [`ENVBUILDER_SSL_CERT_FILE`](https://go.dev/src/crypto/x509/root_unix.go#L19): Specifies the path to an SSL certificate.
+- [`ENVBUILDER_SSL_CERT_DIR`](https://go.dev/src/crypto/x509/root_unix.go#L25): Identifies which directory to check for SSL certificate files.
+- `ENVBUILDER_SSL_CERT_BASE64`: Specifies a base64-encoded SSL certificate that will be added to the global certificate pool on start.
+  > > > > > > > main
 
 # Local Development
 
@@ -251,7 +317,7 @@ On MacOS or Windows systems, we recommend either using a VM or the provided `.de
 
 **Additional Requirements:**
 
-- `go 1.21`
+- `go 1.22`
 - `make`
 - Docker daemon (for running tests)
 
@@ -261,3 +327,50 @@ On MacOS or Windows systems, we recommend either using a VM or the provided `.de
 - `develop`: runs `envbuilder:latest` against a sample Git repository.
 - `test`: run tests.
 - `test-registry`: stands up a local registry for caching images used in tests.
+  <<<<<<< HEAD
+  =======
+
+<!--- Code generated by docsgen. DO NOT EDIT. --->
+<!--- START docsgen --->
+
+## Environment Variables
+
+| Flag                         | Environment variable                  | Default | Description                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------- | ------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--setup-script`             | `ENVBUILDER_SETUP_SCRIPT`             |         | The script to run before the init script. It runs as the root user regardless of the user specified in the devcontainer.json file. SetupScript is ran as the root user prior to the init script. It is used to configure envbuilder dynamically during the runtime. e.g. specifying whether to start systemd or tiny init for PID 1. |
+| `--init-script`              | `ENVBUILDER_INIT_SCRIPT`              |         | The script to run to initialize the workspace. Default: `sleep infinity`.                                                                                                                                                                                                                                                            |
+| `--init-command`             | `ENVBUILDER_INIT_COMMAND`             |         | The command to run to initialize the workspace. Default: `/bin/sh`.                                                                                                                                                                                                                                                                  |
+| `--init-args`                | `ENVBUILDER_INIT_ARGS`                |         | The arguments to pass to the init command. They are split according to /bin/sh rules with https://github.com/kballard/go-shellquote.                                                                                                                                                                                                 |
+| `--cache-repo`               | `ENVBUILDER_CACHE_REPO`               |         | The name of the container registry to push the cache image to. If this is empty, the cache will not be pushed.                                                                                                                                                                                                                       |
+| `--base-image-cache-dir`     | `ENVBUILDER_BASE_IMAGE_CACHE_DIR`     |         | The path to a directory where the base image can be found. This should be a read-only directory solely mounted for the purpose of caching the base image.                                                                                                                                                                            |
+| `--layer-cache-dir`          | `ENVBUILDER_LAYER_CACHE_DIR`          |         | The path to a directory where built layers will be stored. This spawns an in-memory registry to serve the layers from.                                                                                                                                                                                                               |
+| `--devcontainer-dir`         | `ENVBUILDER_DEVCONTAINER_DIR`         |         | The path to the folder containing the devcontainer.json file that will be used to build the workspace and can either be an absolute path or a path relative to the workspace folder. If not provided, defaults to `.devcontainer`.                                                                                                   |
+| `--devcontainer-json-path`   | `ENVBUILDER_DEVCONTAINER_JSON_PATH`   |         | The path to a devcontainer.json file that is either an absolute path or a path relative to DevcontainerDir. This can be used in cases where one wants to substitute an edited devcontainer.json file for the one that exists in the repo.                                                                                            |
+| `--dockerfile-path`          | `ENVBUILDER_DOCKERFILE_PATH`          |         | The relative path to the Dockerfile that will be used to build the workspace. This is an alternative to using a devcontainer that some might find simpler.                                                                                                                                                                           |
+| `--build-context-path`       | `ENVBUILDER_BUILD_CONTEXT_PATH`       |         | Can be specified when a DockerfilePath is specified outside the base WorkspaceFolder. This path MUST be relative to the WorkspaceFolder path into which the repo is cloned.                                                                                                                                                          |
+| `--cache-ttl-days`           | `ENVBUILDER_CACHE_TTL_DAYS`           |         | The number of days to use cached layers before expiring them. Defaults to 7 days.                                                                                                                                                                                                                                                    |
+| `--docker-config-base64`     | `ENVBUILDER_DOCKER_CONFIG_BASE64`     |         | The base64 encoded Docker config file that will be used to pull images from private container registries.                                                                                                                                                                                                                            |
+| `--fallback-image`           | `ENVBUILDER_FALLBACK_IMAGE`           |         | Specifies an alternative image to use when neither an image is declared in the devcontainer.json file nor a Dockerfile is present. If there's a build failure (from a faulty Dockerfile) or a misconfiguration, this image will be the substitute. Set ExitOnBuildFailure to true to halt the container if the build faces an issue. |
+| `--exit-on-build-failure`    | `ENVBUILDER_EXIT_ON_BUILD_FAILURE`    |         | Terminates the container upon a build failure. This is handy when preferring the FALLBACK_IMAGE in cases where no devcontainer.json or image is provided. However, it ensures that the container stops if the build process encounters an error.                                                                                     |
+| `--force-safe`               | `ENVBUILDER_FORCE_SAFE`               |         | Ignores any filesystem safety checks. This could cause serious harm to your system! This is used in cases where bypass is needed to unblock customers.                                                                                                                                                                               |
+| `--insecure`                 | `ENVBUILDER_INSECURE`                 |         | Bypass TLS verification when cloning and pulling from container registries.                                                                                                                                                                                                                                                          |
+| `--ignore-paths`             | `ENVBUILDER_IGNORE_PATHS`             |         | The comma separated list of paths to ignore when building the workspace.                                                                                                                                                                                                                                                             |
+| `--skip-rebuild`             | `ENVBUILDER_SKIP_REBUILD`             |         | Skip building if the MagicFile exists. This is used to skip building when a container is restarting. e.g. docker stop -> docker start This value can always be set to true - even if the container is being started for the first time.                                                                                              |
+| `--git-url`                  | `ENVBUILDER_GIT_URL`                  |         | The URL of a Git repository containing a Devcontainer or Docker image to clone. This is optional.                                                                                                                                                                                                                                    |
+| `--git-clone-depth`          | `ENVBUILDER_GIT_CLONE_DEPTH`          |         | The depth to use when cloning the Git repository.                                                                                                                                                                                                                                                                                    |
+| `--git-clone-single-branch`  | `ENVBUILDER_GIT_CLONE_SINGLE_BRANCH`  |         | Clone only a single branch of the Git repository.                                                                                                                                                                                                                                                                                    |
+| `--git-username`             | `ENVBUILDER_GIT_USERNAME`             |         | The username to use for Git authentication. This is optional.                                                                                                                                                                                                                                                                        |
+| `--git-password`             | `ENVBUILDER_GIT_PASSWORD`             |         | The password to use for Git authentication. This is optional.                                                                                                                                                                                                                                                                        |
+| `--git-ssh-private-key-path` | `ENVBUILDER_GIT_SSH_PRIVATE_KEY_PATH` |         | Path to an SSH private key to be used for Git authentication.                                                                                                                                                                                                                                                                        |
+| `--git-http-proxy-url`       | `ENVBUILDER_GIT_HTTP_PROXY_URL`       |         | The URL for the HTTP proxy. This is optional.                                                                                                                                                                                                                                                                                        |
+| `--workspace-folder`         | `ENVBUILDER_WORKSPACE_FOLDER`         |         | The path to the workspace folder that will be built. This is optional.                                                                                                                                                                                                                                                               |
+| `--ssl-cert-base64`          | `ENVBUILDER_SSL_CERT_BASE64`          |         | The content of an SSL cert file. This is useful for self-signed certificates.                                                                                                                                                                                                                                                        |
+| `--export-env-file`          | `ENVBUILDER_EXPORT_ENV_FILE`          |         | Optional file path to a .env file where envbuilder will dump environment variables from devcontainer.json and the built container image.                                                                                                                                                                                             |
+| `--post-start-script-path`   | `ENVBUILDER_POST_START_SCRIPT_PATH`   |         | The path to a script that will be created by envbuilder based on the postStartCommand in devcontainer.json, if any is specified (otherwise the script is not created). If this is set, the specified InitCommand should check for the presence of this script and execute it after successful startup.                               |
+| `--coder-agent-url`          | `CODER_AGENT_URL`                     |         | URL of the Coder deployment. If CODER_AGENT_TOKEN is also set, logs from envbuilder will be forwarded here and will be visible in the workspace build logs.                                                                                                                                                                          |
+| `--coder-agent-token`        | `CODER_AGENT_TOKEN`                   |         | Authentication token for a Coder agent. If this is set, then CODER_AGENT_URL must also be set.                                                                                                                                                                                                                                       |
+| `--coder-agent-subsystem`    | `CODER_AGENT_SUBSYSTEM`               |         | Coder agent subsystems to report when forwarding logs. The envbuilder subsystem is always included.                                                                                                                                                                                                                                  |
+
+<!--- END docsgen --->
+
+> > > > > > > main

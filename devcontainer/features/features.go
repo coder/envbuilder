@@ -65,7 +65,7 @@ func extractFromImage(fs billy.Filesystem, directory, reference string) error {
 		path := filepath.Join(directory, header.Name)
 		switch header.Typeflag {
 		case tar.TypeDir:
-			err = fs.MkdirAll(path, 0755)
+			err = fs.MkdirAll(path, 0o755)
 			if err != nil {
 				return fmt.Errorf("mkdir %s: %w", path, err)
 			}
@@ -126,7 +126,7 @@ func Extract(fs billy.Filesystem, devcontainerDir, directory, reference string) 
 	if ok {
 		// For some reason the filesystem abstraction doesn't support chmod.
 		// https://github.com/src-d/go-billy/issues/56
-		err = chmodder.Chmod(installScriptPath, 0755)
+		err = chmodder.Chmod(installScriptPath, 0o755)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("chmod install.sh: %w", err)
@@ -162,7 +162,6 @@ func Extract(fs billy.Filesystem, devcontainerDir, directory, reference string) 
 		return nil, errors.New(`devcontainer-feature.json: name is required`)
 	}
 
-	spec.Directory = directory
 	return spec, nil
 }
 
@@ -188,13 +187,11 @@ type Spec struct {
 	Keywords         []string          `json:"keywords"`
 	Options          map[string]Option `json:"options"`
 	ContainerEnv     map[string]string `json:"containerEnv"`
-
-	Directory string `json:"-"`
 }
 
 // Extract unpacks the feature from the image and returns a set of lines
 // that should be appended to a Dockerfile to install the feature.
-func (s *Spec) Compile(featureName, containerUser, remoteUser string, useBuildContexts bool, options map[string]any) (string, string, error) {
+func (s *Spec) Compile(featureRef, featureName, featureDir, containerUser, remoteUser string, useBuildContexts bool, options map[string]any) (string, string, error) {
 	// TODO not sure how we figure out _(REMOTE|CONTAINER)_USER_HOME
 	// as per the feature spec.
 	// See https://containers.dev/implementors/features/#user-env-var
@@ -221,8 +218,8 @@ func (s *Spec) Compile(featureName, containerUser, remoteUser string, useBuildCo
 	sort.Strings(runDirective)
 	// See https://containers.dev/implementors/features/#invoking-installsh
 	if useBuildContexts {
-		fromDirective = "FROM scratch AS envbuilder_feature_" + featureName + "\nCOPY --from=" + featureName + " / /\n"
-		runDirective = append([]string{"RUN", "--mount=type=bind,from=envbuilder_feature_" + featureName + ",target=/envbuilder-features/" + featureName + ",rw"}, runDirective...)
+		fromDirective = "FROM scratch AS envbuilder_feature_" + featureName + "\nCOPY --from=" + featureRef + " / /\n"
+		runDirective = append([]string{"RUN", "--mount=type=bind,from=envbuilder_feature_" + featureName + ",target=" + featureDir + ",rw"}, runDirective...)
 	} else {
 		runDirective = append([]string{"RUN"}, runDirective...)
 	}
@@ -242,11 +239,7 @@ func (s *Spec) Compile(featureName, containerUser, remoteUser string, useBuildCo
 	if comment != "" {
 		lines = append(lines, comment)
 	}
-	if useBuildContexts {
-		lines = append(lines, "WORKDIR /envbuilder-features/"+featureName)
-	} else {
-		lines = append(lines, "WORKDIR "+s.Directory)
-	}
+	lines = append(lines, "WORKDIR "+featureDir)
 	envKeys := make([]string, 0, len(s.ContainerEnv))
 	for key := range s.ContainerEnv {
 		envKeys = append(envKeys, key)
