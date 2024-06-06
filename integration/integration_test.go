@@ -680,7 +680,10 @@ func TestContainerEnv(t *testing.T) {
 
 	output := execContainer(t, ctr, "cat /env")
 	require.Contains(t, strings.TrimSpace(output),
-		`FROM_CONTAINER_ENV=bar
+		`DEVCONTAINER=true
+DEVCONTAINER_CONFIG=/workspaces/empty/.devcontainer/devcontainer.json
+ENVBUILDER=true
+FROM_CONTAINER_ENV=bar
 FROM_DOCKERFILE=foo
 FROM_REMOTE_ENV=baz
 PATH=/usr/local/bin:/bin:/go/bin:/opt
