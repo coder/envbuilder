@@ -25,7 +25,6 @@ import (
 	"syscall"
 	"time"
 
-	dcontext "github.com/distribution/distribution/v3/context"
 	"github.com/kballard/go-shellquote"
 	"github.com/mattn/go-isatty"
 
@@ -356,13 +355,7 @@ func Run(ctx context.Context, options Options) error {
 				},
 			},
 		}
-
-		// Disable all logging from the registry...
-		l := logrus.New()
-		l.SetOutput(io.Discard)
-		entry := logrus.NewEntry(l)
-		dcontext.SetDefaultLogger(entry)
-		ctx = dcontext.WithLogger(ctx, entry)
+		cfg.Log.Level = "error"
 
 		// Spawn an in-memory registry to cache built layers...
 		registry := handlers.NewApp(ctx, cfg)
