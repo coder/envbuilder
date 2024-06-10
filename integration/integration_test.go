@@ -93,6 +93,74 @@ func TestInitScriptInitCommand(t *testing.T) {
 	require.NoError(t, ctx.Err(), "init script did not execute for legacy env vars")
 }
 
+func TestUidGid(t *testing.T) {
+	t.Parallel()
+	t.Run("MultiStage", func(t *testing.T) {
+		t.Parallel()
+
+		dockerFile := fmt.Sprintf(`FROM %s AS builder
+RUN mkdir -p /myapp/somedir \
+&& touch /myapp/somedir/somefile \
+&& chown 123:123 /myapp/somedir \
+&& chown 321:321 /myapp/somedir/somefile
+ 
+FROM %s
+COPY --from=builder /myapp /myapp
+RUN printf "%%s\n" \
+			"0 0 /myapp/" \
+			"123 123 /myapp/somedir" \
+			"321 321 /myapp/somedir/somefile" \
+			> /tmp/expected \
+&& stat -c "%%u %%g %%n" \
+			/myapp/ \
+			/myapp/somedir \
+			/myapp/somedir/somefile \
+			> /tmp/got \
+&& diff -u /tmp/got /tmp/expected`, testImageAlpine, testImageAlpine)
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": dockerFile,
+			},
+		})
+		_, err := runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.NoError(t, err)
+	})
+
+	t.Run("SingleStage", func(t *testing.T) {
+		t.Parallel()
+
+		dockerFile := fmt.Sprintf(`FROM %s
+RUN mkdir -p /myapp/somedir \
+&& touch /myapp/somedir/somefile \
+&& chown 123:123 /myapp/somedir \
+&& chown 321:321 /myapp/somedir/somefile \
+&& printf "%%s\n" \
+			"0 0 /myapp/" \
+			"123 123 /myapp/somedir" \
+			"321 321 /myapp/somedir/somefile" \
+			> /tmp/expected \
+&& stat -c "%%u %%g %%n" \
+			/myapp/ \
+			/myapp/somedir \
+			/myapp/somedir/somefile \
+			> /tmp/got \
+&& diff -u /tmp/got /tmp/expected`, testImageAlpine)
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": dockerFile,
+			},
+		})
+		_, err := runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.NoError(t, err)
+	})
+}
+
 func TestForceSafe(t *testing.T) {
 	t.Parallel()
 
@@ -477,7 +545,7 @@ func TestBuildStopStartCached(t *testing.T) {
 	err = cli.ContainerStop(ctx, ctr, container.StopOptions{})
 	require.NoError(t, err)
 
-	err = cli.ContainerStart(ctx, ctr, types.ContainerStartOptions{})
+	err = cli.ContainerStart(ctx, ctr, container.StartOptions{})
 	require.NoError(t, err)
 
 	logChan, _ := streamContainerLogs(t, cli, ctr)
@@ -612,7 +680,10 @@ func TestContainerEnv(t *testing.T) {
 
 	output := execContainer(t, ctr, "cat /env")
 	require.Contains(t, strings.TrimSpace(output),
-		`FROM_CONTAINER_ENV=bar
+		`DEVCONTAINER=true
+DEVCONTAINER_CONFIG=/workspaces/empty/.devcontainer/devcontainer.json
+ENVBUILDER=true
+FROM_CONTAINER_ENV=bar
 FROM_DOCKERFILE=foo
 FROM_REMOTE_ENV=baz
 PATH=/usr/local/bin:/bin:/go/bin:/opt
@@ -993,7 +1064,7 @@ func cleanOldEnvbuilders() {
 		panic(err)
 	}
 	defer cli.Close()
-	ctrs, err := cli.ContainerList(ctx, types.ContainerListOptions{
+	ctrs, err := cli.ContainerList(ctx, container.ListOptions{
 		Filters: filters.NewArgs(filters.KeyValuePair{
 			Key:   "label",
 			Value: testContainerLabel,
@@ -1003,7 +1074,7 @@ func cleanOldEnvbuilders() {
 		panic(err)
 	}
 	for _, ctr := range ctrs {
-		cli.ContainerRemove(ctx, ctr.ID, types.ContainerRemoveOptions{
+		cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
 			Force: true,
 		})
 	}
@@ -1036,12 +1107,12 @@ func runEnvbuilder(t *testing.T, options options) (string, error) {
 	}, nil, nil, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		cli.ContainerRemove(ctx, ctr.ID, types.ContainerRemoveOptions{
+		cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
 			RemoveVolumes: true,
 			Force:         true,
 		})
 	})
-	err = cli.ContainerStart(ctx, ctr.ID, types.ContainerStartOptions{})
+	err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
 	require.NoError(t, err)
 
 	logChan, errChan := streamContainerLogs(t, cli, ctr.ID)
@@ -1082,9 +1153,9 @@ func execContainer(t *testing.T, containerID, command string) string {
 
 func streamContainerLogs(t *testing.T, cli *client.Client, containerID string) (chan string, chan error) {
 	ctx := context.Background()
-	err := cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
+	err := cli.ContainerStart(ctx, containerID, container.StartOptions{})
 	require.NoError(t, err)
-	rawLogs, err := cli.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{
+	rawLogs, err := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,

@@ -23,7 +23,7 @@ docker run -it --rm \
     -e ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder \
     -e ENVBUILDER_DEVCONTAINER_DIR=/workspaces/envbuilder/examples/docker/01_dood \
     -e ENVBUILDER_INIT_SCRIPT=bash \
-    -v /var/run/docker.socket:/var/run/docker.socket \
+    -v /var/run/docker.sock:/var/run/docker.sock \
     ghcr.io/coder/envbuilder:latest
 ```
 

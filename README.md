@@ -22,15 +22,15 @@ Build development environments from a Dockerfile on Docker, Kubernetes, and Open
 
 ## Quickstart
 
-The easiest way to get started is to run the `envbuilder` Docker container that clones a repository, builds the image from a Dockerfile, and runs the `$INIT_SCRIPT` in the freshly built container.
+The easiest way to get started is to run the `envbuilder` Docker container that clones a repository, builds the image from a Dockerfile, and runs the `$ENVBUILDER_INIT_SCRIPT` in the freshly built container.
 
 > `/tmp/envbuilder` directory persists demo data between commands. You can choose a different directory.
 
 ```bash
 docker run -it --rm \
     -v /tmp/envbuilder:/workspaces \
-    -e GIT_URL=https://github.com/coder/envbuilder-starter-devcontainer \
-    -e INIT_SCRIPT=bash \
+    -e ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder-starter-devcontainer \
+    -e ENVBUILDER_INIT_SCRIPT=bash \
     ghcr.io/coder/envbuilder
 ```
 
@@ -51,14 +51,14 @@ Exit the container, and re-run the `docker run` command... after the build compl
 > Envbuilder performs destructive filesystem operations! To guard against accidental data
 > loss, it will refuse to run if it detects that KANIKO_DIR is not set to a specific value.
 > If you need to bypass this behavior for any reason, you can bypass this safety check by setting
-> `FORCE_SAFE=true`.
+> `ENVBUILDER_FORCE_SAFE=true`.
 
 ### Git Branch Selection
 
-Choose a branch using `GIT_URL` with a _ref/heads_ reference. For instance:
+Choose a branch using `ENVBUILDER_GIT_URL` with a _ref/heads_ reference. For instance:
 
 ```
-GIT_URL=https://github.com/coder/envbuilder-starter-devcontainer/#refs/heads/my-feature-branch
+ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder-starter-devcontainer/#refs/heads/my-feature-branch
 ```
 
 ## Container Registry Authentication
@@ -77,7 +77,7 @@ After you have a configuration that resembles the following:
 }
 ```
 
-`base64` encode the JSON and provide it to envbuilder as the `DOCKER_CONFIG_BASE64` environment variable.
+`base64` encode the JSON and provide it to envbuilder as the `ENVBUILDER_DOCKER_CONFIG_BASE64` environment variable.
 
 Alternatively, if running `envbuilder` in Kubernetes, you can create an `ImagePullSecret` and
 pass it into the pod as a volume mount. This example will work for all registries.
@@ -131,7 +131,7 @@ ewoJImF1dGhzIjogewoJCSJodHRwczovL2luZGV4LmRvY2tlci5pby92MS8iOiB7CgkJCSJhdXRoIjog
 Provide the encoded JSON config to envbuilder:
 
 ```env
-DOCKER_CONFIG_BASE64=ewoJImF1dGhzIjogewoJCSJodHRwczovL2luZGV4LmRvY2tlci5pby92MS8iOiB7CgkJCSJhdXRoIjogImJhc2U2NCBlbmNvZGVkIHRva2VuIgoJCX0KCX0KfQo=
+ENVBUILDER_DOCKER_CONFIG_BASE64=ewoJImF1dGhzIjogewoJCSJodHRwczovL2luZGV4LmRvY2tlci5pby92MS8iOiB7CgkJCSJhdXRoIjogImJhc2U2NCBlbmNvZGVkIHRva2VuIgoJCX0KCX0KfQo=
 ```
 
 ### Docker-in-Docker
@@ -145,17 +145,17 @@ Two methods of authentication are supported:
 
 ### HTTP Authentication
 
-If the `GIT_URL` supplied starts with `http://` or `https://`, envbuilder will
-supply HTTP basic authentication using `GIT_USERNAME` and `GIT_PASSWORD`, if set.
+If `ENVBUILDER_GIT_URL` starts with `http://` or `https://`, envbuilder will
+authenticate with `ENVBUILDER_GIT_USERNAME` and `ENVBUILDER_GIT_PASSWORD`, if set.
 
 For access token-based authentication, follow the following schema (if empty, there's no need to provide the field):
 
-| Provider     | `GIT_USERNAME` | `GIT_PASSWORD` |
-| ------------ | -------------- | -------------- |
-| GitHub       | [access-token] |                |
-| GitLab       | oauth2         | [access-token] |
-| BitBucket    | x-token-auth   | [access-token] |
-| Azure DevOps | [access-token] |                |
+| Provider     | `ENVBUILDER_GIT_USERNAME` | `ENVBUILDER_GIT_PASSWORD` |
+| ------------ | ------------------------- | ------------------------- |
+| GitHub       | [access-token]            |                           |
+| GitLab       | oauth2                    | [access-token]            |
+| BitBucket    | x-token-auth              | [access-token]            |
+| Azure DevOps | [access-token]            |                           |
 
 If using envbuilder inside of [Coder](https://github.com/coder/coder), you can use the `coder_external_auth` Terraform resource to automatically provide this token on workspace creation:
 
@@ -166,27 +166,27 @@ data "coder_external_auth" "github" {
 
 resource "docker_container" "dev" {
     env = [
-        GIT_USERNAME = data.coder_external_auth.github.access_token,
+        ENVBUILDER_GIT_USERNAME = data.coder_external_auth.github.access_token,
     ]
 }
 ```
 
 ### SSH Authentication
 
-If the `GIT_URL` supplied does not start with `http://` or `https://`,
+If `ENVBUILDER_GIT_URL` does not start with `http://` or `https://`,
 envbuilder will assume SSH authentication. You have the following options:
 
-1. Public/Private key authentication: set `GIT_SSH_KEY_PATH` to the path of an
+1. Public/Private key authentication: set `ENVBUILDER_GIT_SSH_KEY_PATH` to the path of an
    SSH private key mounted inside the container. Envbuilder will use this SSH
    key to authenticate. Example:
 
    ```bash
     docker run -it --rm \
       -v /tmp/envbuilder:/workspaces \
-      -e GIT_URL=git@example.com:path/to/private/repo.git \
-      -e GIT_SSH_KEY_PATH=/.ssh/id_rsa \
+      -e ENVBUILDER_GIT_URL=git@example.com:path/to/private/repo.git \
+      -e ENVBUILDER_INIT_SCRIPT=bash \
+      -e ENVBUILDER_GIT_SSH_KEY_PATH=/.ssh/id_rsa \
       -v /home/user/id_rsa:/.ssh/id_rsa \
-      -e INIT_SCRIPT=bash \
       ghcr.io/coder/envbuilder
    ```
 
@@ -195,8 +195,8 @@ envbuilder will assume SSH authentication. You have the following options:
   ```bash
     docker run -it --rm \
       -v /tmp/envbuilder:/workspaces \
-      -e GIT_URL=git@example.com:path/to/private/repo.git \
-      -e INIT_SCRIPT=bash \
+      -e ENVBUILDER_GIT_URL=git@example.com:path/to/private/repo.git \
+      -e ENVBUILDER_INIT_SCRIPT=bash \
       -e SSH_AUTH_SOCK=/tmp/ssh-auth-sock \
       -v $SSH_AUTH_SOCK:/tmp/ssh-auth-sock \
       ghcr.io/coder/envbuilder
@@ -209,18 +209,18 @@ envbuilder will assume SSH authentication. You have the following options:
 
 ## Layer Caching
 
-Cache layers in a container registry to speed up builds. To enable caching, [authenticate with your registry](#container-registry-authentication) and set the `CACHE_REPO` environment variable.
+Cache layers in a container registry to speed up builds. To enable caching, [authenticate with your registry](#container-registry-authentication) and set the `ENVBUILDER_CACHE_REPO` environment variable.
 
 ```bash
 CACHE_REPO=ghcr.io/coder/repo-cache
 ```
 
-To experiment without setting up a registry, use `LAYER_CACHE_DIR`:
+To experiment without setting up a registry, use `ENVBUILDER_LAYER_CACHE_DIR`:
 
 ```bash
 docker run -it --rm \
   -v /tmp/envbuilder-cache:/cache \
-  -e LAYER_CACHE_DIR=/cache
+  -e ENVBUILDER_LAYER_CACHE_DIR=/cache
   ...
 ```
 
@@ -243,7 +243,7 @@ docker run --rm \
 # Run envbuilder with the local image cache.
 docker run -it --rm \
   -v /tmp/kaniko-cache:/image-cache:ro \
-  -e BASE_IMAGE_CACHE_DIR=/image-cache
+  -e ENVBUILDER_BASE_IMAGE_CACHE_DIR=/image-cache
 ```
 
 In Kubernetes, you can pre-populate a persistent volume with the same warmer image, then mount it into many workspaces with the [`ReadOnlyMany` access mode](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes).
@@ -252,38 +252,57 @@ A sample script to pre-fetch a number of images can be viewed [here](./examples/
 
 ## Setup Script
 
-The `SETUP_SCRIPT` environment variable dynamically configures the user and init command (PID 1) after the container build process.
+The `ENVBUILDER_SETUP_SCRIPT` environment variable dynamically configures the user and init command (PID 1) after the container build process.
 
 > [!NOTE]
-> `TARGET_USER` is passed to the setup script to specify who will execute `INIT_COMMAND` (e.g., `code`).
+> `TARGET_USER` is passed to the setup script to specify who will execute `ENVBUILDER_INIT_COMMAND` (e.g., `code`).
 
 Write the following to `$ENVBUILDER_ENV` to shape the container's init process:
 
-- `TARGET_USER`: Identifies the `INIT_COMMAND` executor (e.g.`root`).
-- `INIT_COMMAND`: Defines the command executed by `TARGET_USER` (e.g. `/bin/bash`).
-- `INIT_ARGS`: Arguments provided to `INIT_COMMAND` (e.g. `-c 'sleep infinity'`).
+- `TARGET_USER`: Identifies the `ENVBUILDER_INIT_COMMAND` executor (e.g.`root`).
+- `ENVBUILDER_INIT_COMMAND`: Defines the command executed by `TARGET_USER` (e.g. `/bin/bash`).
+- `ENVBUILDER_INIT_ARGS`: Arguments provided to `ENVBUILDER_INIT_COMMAND` (e.g. `-c 'sleep infinity'`).
 
 ```bash
 # init.sh - change the init if systemd exists
 if command -v systemd >/dev/null; then
   echo "Hey 👋 $TARGET_USER"
-  echo INIT_COMMAND=systemd >> $ENVBUILDER_ENV
+  echo ENVBUILDER_INIT_COMMAND=systemd >> $ENVBUILDER_ENV
 else
-  echo INIT_COMMAND=bash >> $ENVBUILDER_ENV
+  echo ENVBUILDER_INIT_COMMAND=bash >> $ENVBUILDER_ENV
 fi
 
 # run envbuilder with the setup script
 docker run -it --rm \
   -v ./:/some-dir \
-  -e SETUP_SCRIPT=/some-dir/init.sh \
+  -e ENVBUILDER_SETUP_SCRIPT=/some-dir/init.sh \
   ...
 ```
 
 ## Custom Certificates
 
-- [`SSL_CERT_FILE`](https://go.dev/src/crypto/x509/root_unix.go#L19): Specifies the path to an SSL certificate.
-- [`SSL_CERT_DIR`](https://go.dev/src/crypto/x509/root_unix.go#L25): Identifies which directory to check for SSL certificate files.
-- `SSL_CERT_BASE64`: Specifies a base64-encoded SSL certificate that will be added to the global certificate pool on start.
+- [`ENVBUILDER_SSL_CERT_FILE`](https://go.dev/src/crypto/x509/root_unix.go#L19): Specifies the path to an SSL certificate.
+- [`ENVBUILDER_SSL_CERT_DIR`](https://go.dev/src/crypto/x509/root_unix.go#L25): Identifies which directory to check for SSL certificate files.
+- `ENVBUILDER_SSL_CERT_BASE64`: Specifies a base64-encoded SSL certificate that will be added to the global certificate pool on start.
+
+## Unsupported features
+
+### Development Containers
+
+The table keeps track of features we would love to implement. Feel free to [create a new issue](https://github.com/coder/envbuilder/issues/new) if you want Envbuilder to support it.
+
+| Name                     | Description                                                                                                  | Known issues                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| Volume mounts            | Volumes are used to persist data and share directories between the host and container.                       | [#220](https://github.com/coder/envbuilder/issues/220) |
+| Port forwarding          | Port forwarding allows exposing container ports to the host, making services accessible.                     | [#48](https://github.com/coder/envbuilder/issues/48)   |
+| Script init & Entrypoint | `init` adds a tiny init process to the container and `entrypoint` sets a script to run at container startup. | [#221](https://github.com/coder/envbuilder/issues/221) |
+| Customizations           | Product specific properties, for instance: _VS Code_ `settings` and `extensions`.                            | [#43](https://github.com/coder/envbuilder/issues/43)   |
+
+### Devfile
+
+> [Devfiles](https://devfile.io/) automate and simplify development process by adopting the existing devfiles that are available in the [public community registry](https://registry.devfile.io/viewer).
+
+Issue: [#113](https://github.com/coder/envbuilder/issues/113)
 
 # Local Development
 
@@ -293,7 +312,7 @@ On MacOS or Windows systems, we recommend either using a VM or the provided `.de
 
 **Additional Requirements:**
 
-- `go 1.21`
+- `go 1.22`
 - `make`
 - Docker daemon (for running tests)
 
@@ -329,7 +348,7 @@ On MacOS or Windows systems, we recommend either using a VM or the provided `.de
 | `--insecure` | `ENVBUILDER_INSECURE` |  | Bypass TLS verification when cloning and pulling from container registries. |
 | `--ignore-paths` | `ENVBUILDER_IGNORE_PATHS` |  | The comma separated list of paths to ignore when building the workspace. |
 | `--skip-rebuild` | `ENVBUILDER_SKIP_REBUILD` |  | Skip building if the MagicFile exists. This is used to skip building when a container is restarting. e.g. docker stop -> docker start This value can always be set to true - even if the container is being started for the first time. |
-| `--git-url` | `ENVBUILDER_GIT_URL` |  | The URL of the Git repository to clone. This is optional. |
+| `--git-url` | `ENVBUILDER_GIT_URL` |  | The URL of a Git repository containing a Devcontainer or Docker image to clone. This is optional. |
 | `--git-clone-depth` | `ENVBUILDER_GIT_CLONE_DEPTH` |  | The depth to use when cloning the Git repository. |
 | `--git-clone-single-branch` | `ENVBUILDER_GIT_CLONE_SINGLE_BRANCH` |  | Clone only a single branch of the Git repository. |
 | `--git-username` | `ENVBUILDER_GIT_USERNAME` |  | The username to use for Git authentication. This is optional. |

@@ -27,7 +27,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	t.Run("devcontainers.json is missing", func(t *testing.T) {
+	t.Run("devcontainer.json is missing", func(t *testing.T) {
 		t.Parallel()
 
 		// given
