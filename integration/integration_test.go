@@ -1369,34 +1369,6 @@ func streamContainerLogs(t *testing.T, cli *client.Client, containerID string) (
 	return logChan, errChan
 }
 
-func requireContainerLog(t *testing.T, ctrID, needle string) {
-	t.Helper()
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		cli.Close()
-	})
-	ctx := context.Background()
-	rawLogs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
-		ShowStdout: true,
-		ShowStderr: true,
-		Follow:     true,
-		Timestamps: false,
-	})
-	require.NoError(t, err)
-	defer rawLogs.Close()
-	scanner := bufio.NewScanner(rawLogs)
-	var found bool
-	for scanner.Scan() {
-		haystack := scanner.Text()
-		if strings.Contains(haystack, needle) {
-			found = true
-			break
-		}
-	}
-	require.True(t, found, "did not find expected log %q", needle)
-}
-
 func envbuilderEnv(env string, value string) string {
 	return fmt.Sprintf("%s=%s", envbuilder.WithEnvPrefix(env), value)
 }
