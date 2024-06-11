@@ -34,6 +34,8 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -985,6 +987,84 @@ COPY %s .`, testImageAlpine, inclFile)
 			}
 		})
 	}
+}
+
+func TestPushImage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Push", func(t *testing.T) {
+		t.Parallel()
+
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf("FROM %s\nRUN date --utc > /root/date.txt", testImageAlpine),
+				".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t)
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+		}})
+		require.NoError(t, err)
+
+		// Then: the image should be pushed
+		_, err = remote.Image(ref)
+		require.NoError(t, err, "expected image to be present after build + push")
+	})
+
+	t.Run("PushErr", func(t *testing.T) {
+		t.Parallel()
+
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf("FROM %s\nRUN date --utc > /root/date.txt", testImageAlpine),
+				".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			},
+		})
+
+		// Given: registry is not set up (in this case, not a registry)
+		notRegSrv := httptest.NewServer(http.NotFoundHandler())
+		notRegURL := strings.TrimPrefix(notRegSrv.URL, "http://") + "/test"
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_, err := runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", notRegURL),
+		}})
+		// Then: should fail with a descriptive error
+		require.ErrorContains(t, err, "unexpected status code 404 Not Found")
+	})
+}
+
+func setupInMemoryRegistry(t *testing.T) string {
+	t.Helper()
+	tempDir := t.TempDir()
+	testReg := registry.New(registry.WithBlobHandler(registry.NewDiskBlobHandler(tempDir)))
+	regSrv := httptest.NewServer(testReg)
+	t.Cleanup(func() { regSrv.Close() })
+	regSrvURL, err := url.Parse(regSrv.URL)
+	require.NoError(t, err)
+	return fmt.Sprintf("localhost:%s", regSrvURL.Port())
 }
 
 // TestMain runs before all tests to build the envbuilder image.
