@@ -15,11 +15,12 @@ permissions:
   contents: read
   deployments: none
   issues: none
-  packages: none
   pull-requests: none
   repository-projects: none
   security-events: none
   statuses: none
+  # Necessary to push docker images to ghcr.io.
+  packages: write
 
 # Cancel in-progress runs for pull requests when developers push
 # additional changes
@@ -67,3 +68,49 @@ jobs:
 
       - name: Check format
         run: ./scripts/check_fmt.sh
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Needed to get older tags
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "~1.22"
+
+      - name: Login to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # do not push images for pull requests
+      - name: Build
+        if: github.event_name == 'pull_request'
+        run: |
+          VERSION=$(./scripts/version.sh)-dev-$(git rev-parse --short HEAD)
+          BASE=ghcr.io/coder/envbuilder-preview
+
+          ./scripts/build.sh \
+            --arch=amd64 \
+            --base=$BASE \
+            --tag=$VERSION
+
+      - name: Build and Push
+        if: github.ref == 'refs/heads/main'
+        run: |
+          VERSION=$(./scripts/version.sh)-dev-$(git rev-parse --short HEAD)
+          BASE=ghcr.io/coder/envbuilder-preview
+
+          ./scripts/build.sh \
+            --arch=amd64 \
+            --arch=arm64 \
+            --arch=arm \
+            --base=$BASE \
+            --tag=$VERSION \
+            --push

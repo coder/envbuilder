@@ -25,7 +25,6 @@ import (
 	"syscall"
 	"time"
 
-	dcontext "github.com/distribution/distribution/v3/context"
 	"github.com/kballard/go-shellquote"
 	"github.com/mattn/go-isatty"
 
@@ -262,11 +261,15 @@ func Run(ctx context.Context, options Options) error {
 	var (
 		buildParams *devcontainer.Compiled
 		scripts     devcontainer.LifecycleScripts
+
+		devcontainerPath string
 	)
 	if options.DockerfilePath == "" {
 		// Only look for a devcontainer if a Dockerfile wasn't specified.
 		// devcontainer is a standard, so it's reasonable to be the default.
-		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(options)
+		var devcontainerDir string
+		var err error
+		devcontainerPath, devcontainerDir, err = findDevcontainerJSON(options)
 		if err != nil {
 			options.Logger(notcodersdk.LogLevelError, "Failed to locate devcontainer.json: %s", err.Error())
 			options.Logger(notcodersdk.LogLevelError, "Falling back to the default image...")
@@ -355,13 +358,7 @@ func Run(ctx context.Context, options Options) error {
 				},
 			},
 		}
-
-		// Disable all logging from the registry...
-		l := logrus.New()
-		l.SetOutput(io.Discard)
-		entry := logrus.NewEntry(l)
-		dcontext.SetDefaultLogger(entry)
-		ctx = dcontext.WithLogger(ctx, entry)
+		cfg.Log.Level = "error"
 
 		// Spawn an in-memory registry to cache built layers...
 		registry := handlers.NewApp(ctx, cfg)
@@ -696,6 +693,13 @@ func Run(ctx context.Context, options Options) error {
 	}
 	maps.Copy(containerEnv, buildParams.ContainerEnv)
 	maps.Copy(remoteEnv, buildParams.RemoteEnv)
+
+	// Set Envbuilder runtime markers
+	containerEnv["ENVBUILDER"] = "true"
+	if devcontainerPath != "" {
+		containerEnv["DEVCONTAINER"] = "true"
+		containerEnv["DEVCONTAINER_CONFIG"] = devcontainerPath
+	}
 
 	for _, env := range []map[string]string{containerEnv, remoteEnv} {
 		envKeys := make([]string, 0, len(env))

@@ -310,7 +310,7 @@ func (o *Options) CLI() serpent.OptionSet {
 			Flag:        "git-url",
 			Env:         WithEnvPrefix("GIT_URL"),
 			Value:       serpent.StringOf(&o.GitURL),
-			Description: "The URL of the Git repository to clone. This is optional.",
+			Description: "The URL of a Git repository containing a Devcontainer or Docker image to clone. This is optional.",
 		},
 		{
 			Flag:        "git-clone-depth",

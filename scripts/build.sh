@@ -41,7 +41,6 @@ if [ -z "$BUILDER_EXISTS" ]; then
   docker buildx create --use --platform=linux/arm64,linux/amd64,linux/arm/v7 --name $BUILDER_NAME
 else
   echo "Builder $BUILDER_NAME already exists. Using it."
-  docker buildx use $BUILDER_NAME
 fi
 
 # Ensure the builder is bootstrapped and ready to use
@@ -63,7 +62,7 @@ else
   args+=( --load )
 fi
 
-docker buildx build "${args[@]}" -t $base:$tag -t $base:latest -f Dockerfile .
+docker buildx build --builder $BUILDER_NAME "${args[@]}" -t $base:$tag -t $base:latest -f Dockerfile .
 
 # Check if archs contains the current. If so, then output a message!
 if [[ -z "${CI:-}" ]] && [[ " ${archs[@]} " =~ " ${current} " ]]; then

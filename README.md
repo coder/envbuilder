@@ -285,6 +285,25 @@ docker run -it --rm \
 - [`ENVBUILDER_SSL_CERT_DIR`](https://go.dev/src/crypto/x509/root_unix.go#L25): Identifies which directory to check for SSL certificate files.
 - `ENVBUILDER_SSL_CERT_BASE64`: Specifies a base64-encoded SSL certificate that will be added to the global certificate pool on start.
 
+## Unsupported features
+
+### Development Containers
+
+The table keeps track of features we would love to implement. Feel free to [create a new issue](https://github.com/coder/envbuilder/issues/new) if you want Envbuilder to support it.
+
+| Name                     | Description                                                                                                  | Known issues                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| Volume mounts            | Volumes are used to persist data and share directories between the host and container.                       | [#220](https://github.com/coder/envbuilder/issues/220) |
+| Port forwarding          | Port forwarding allows exposing container ports to the host, making services accessible.                     | [#48](https://github.com/coder/envbuilder/issues/48)   |
+| Script init & Entrypoint | `init` adds a tiny init process to the container and `entrypoint` sets a script to run at container startup. | [#221](https://github.com/coder/envbuilder/issues/221) |
+| Customizations           | Product specific properties, for instance: _VS Code_ `settings` and `extensions`.                            | [#43](https://github.com/coder/envbuilder/issues/43)   |
+
+### Devfile
+
+> [Devfiles](https://devfile.io/) automate and simplify development process by adopting the existing devfiles that are available in the [public community registry](https://registry.devfile.io/viewer).
+
+Issue: [#113](https://github.com/coder/envbuilder/issues/113)
+
 # Local Development
 
 Building `envbuilder` currently **requires** a Linux system.
@@ -329,7 +348,7 @@ On MacOS or Windows systems, we recommend either using a VM or the provided `.de
 | `--insecure` | `ENVBUILDER_INSECURE` |  | Bypass TLS verification when cloning and pulling from container registries. |
 | `--ignore-paths` | `ENVBUILDER_IGNORE_PATHS` |  | The comma separated list of paths to ignore when building the workspace. |
 | `--skip-rebuild` | `ENVBUILDER_SKIP_REBUILD` |  | Skip building if the MagicFile exists. This is used to skip building when a container is restarting. e.g. docker stop -> docker start This value can always be set to true - even if the container is being started for the first time. |
-| `--git-url` | `ENVBUILDER_GIT_URL` |  | The URL of the Git repository to clone. This is optional. |
+| `--git-url` | `ENVBUILDER_GIT_URL` |  | The URL of a Git repository containing a Devcontainer or Docker image to clone. This is optional. |
 | `--git-clone-depth` | `ENVBUILDER_GIT_CLONE_DEPTH` |  | The depth to use when cloning the Git repository. |
 | `--git-clone-single-branch` | `ENVBUILDER_GIT_CLONE_SINGLE_BRANCH` |  | Clone only a single branch of the Git repository. |
 | `--git-username` | `ENVBUILDER_GIT_USERNAME` |  | The username to use for Git authentication. This is optional. |
