@@ -79,8 +79,8 @@ OPTIONS:
           customers.
 
       --get-cached-image bool, $ENVBUILDER_GET_CACHED_IMAGE
-          Flag to determine if the cached image is available, and if it is, to
-          return it.
+          Print the digest of the cached image, if available.Exits with an error
+          if not found.
 
       --git-clone-depth int, $ENVBUILDER_GIT_CLONE_DEPTH
           The depth to use when cloning the Git repository.
@@ -134,8 +134,8 @@ OPTIONS:
           successful startup.
 
       --push-image bool, $ENVBUILDER_PUSH_IMAGE
-          Flag to determine if the image should be pushed to the container
-          registry. This option implies reproducible builds.
+          Push the built image to a remote registry.This option forces a
+          reproducible build.
 
       --setup-script string, $ENVBUILDER_SETUP_SCRIPT
           The script to run before the init script. It runs as the root user
