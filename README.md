@@ -343,6 +343,6 @@ On MacOS or Windows systems, we recommend either using a VM or the provided `.de
 | `--coder-agent-url` | `CODER_AGENT_URL` |  | URL of the Coder deployment. If CODER_AGENT_TOKEN is also set, logs from envbuilder will be forwarded here and will be visible in the workspace build logs. |
 | `--coder-agent-token` | `CODER_AGENT_TOKEN` |  | Authentication token for a Coder agent. If this is set, then CODER_AGENT_URL must also be set. |
 | `--coder-agent-subsystem` | `CODER_AGENT_SUBSYSTEM` |  | Coder agent subsystems to report when forwarding logs. The envbuilder subsystem is always included. |
-| `--push-image` | `ENVBUILDER_PUSH_IMAGE` |  | Flag to determine if the image should be pushed to the container registry. This option implies reproducible builds. |
-| `--get-cached-image` | `ENVBUILDER_GET_CACHED_IMAGE` |  | Flag to determine if the cached image is available, and if it is, to return it. |
+| `--push-image` | `ENVBUILDER_PUSH_IMAGE` |  | Push the built image to a remote registry.This option forces a reproducible build. |
+| `--get-cached-image` | `ENVBUILDER_GET_CACHED_IMAGE` |  | Print the digest of the cached image, if available.Exits with an error if not found. |
 <!--- END docsgen --->

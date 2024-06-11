@@ -406,15 +406,15 @@ func (o *Options) CLI() serpent.OptionSet {
 			Flag:  "push-image",
 			Env:   WithEnvPrefix("PUSH_IMAGE"),
 			Value: serpent.BoolOf(&o.PushImage),
-			Description: "Flag to determine if the image should be pushed to " +
-				"the container registry. This option implies reproducible builds.",
+			Description: "Push the built image to a remote registry." +
+				"This option forces a reproducible build.",
 		},
 		{
 			Flag:  "get-cached-image",
 			Env:   WithEnvPrefix("GET_CACHED_IMAGE"),
 			Value: serpent.BoolOf(&o.GetCachedImage),
-			Description: "Flag to determine if the cached image is available, " +
-				"and if it is, to return it.",
+			Description: "Print the digest of the cached image, if available." +
+				"Exits with an error if not found.",
 		},
 	}
 

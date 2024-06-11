@@ -99,6 +99,9 @@ func Run(ctx context.Context, options Options) error {
 	if options.InitCommand == "" {
 		options.InitCommand = "/bin/sh"
 	}
+	if options.CacheRepo == "" && options.PushImage {
+		return fmt.Errorf("--cache-repo must be set when using --push-image!")
+	}
 	// Default to the shell!
 	initArgs := []string{"-c", options.InitScript}
 	if options.InitArgs != "" {
@@ -528,18 +531,16 @@ func Run(ctx context.Context, options Options) error {
 		}
 
 		if options.GetCachedImage {
-			endStage := startStage("🏗️ Building fake image...")
-			image, err := executor.DoFakeBuild(opts)
+			endStage := startStage("🏗️ Checking for cached image...")
+			image, err := executor.DoCacheProbe(opts)
 			if err != nil {
-				logrus.Infof("unable to build fake image: %s", err)
-				os.Exit(1)
+				return nil, xerrors.Errorf("unable to get cached image: %w", err)
 			}
-			endStage("🏗️ Built fake image!")
 			digest, err := image.Digest()
 			if err != nil {
-				return nil, xerrors.Errorf("image digest: %w", err)
+				return nil, xerrors.Errorf("get cached image digest: %w", err)
 			}
-
+			endStage("🏗️ Found cached image!")
 			_, _ = fmt.Fprintf(os.Stdout, "%s@%s\n", options.CacheRepo, digest.String())
 			os.Exit(0)
 		}
