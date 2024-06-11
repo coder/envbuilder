@@ -1101,6 +1101,72 @@ func TestPushImage(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("CacheAndPushMultistage", func(t *testing.T) {
+		// Currently fails with:
+		//         /home/coder/src/coder/envbuilder/integration/integration_test.go:1417: "error: unable to get cached image: error fake building stage: failed to optimize instructions: failed to get files used from context: failed to get fileinfo for /.envbuilder/0/root/date.txt: lstat /.envbuilder/0/root/date.txt: no such file or directory"
+		// /home/coder/src/coder/envbuilder/integration/integration_test.go:1156:
+		// Error Trace:	/home/coder/src/coder/envbuilder/integration/integration_test.go:1156
+		// Error:      	Received unexpected error:
+		// error: unable to get cached image: error fake building stage: failed to optimize instructions: failed to get files used from context: failed to get fileinfo for /.envbuilder/0/root/date.txt: lstat /.envbuilder/0/root/date.txt: no such file or directory
+		// Test:       	TestPushImage/CacheAndPushMultistage
+		t.Skip("TODO: https://github.com/coder/envbuilder/issues/230")
+		t.Parallel()
+
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": fmt.Sprintf(`FROM %s AS a
+RUN date --utc > /root/date.txt
+FROM %s as b
+COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t)
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.ErrorContains(t, err, "not supported in fake build")
+		// Then: it should fail to build the image and nothing should be pushed
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		ctrID, err := runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("PUSH_IMAGE", "1"),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.NoError(t, err)
+		// Then: The file copied from stage a should be present
+		out := execContainer(t, ctrID, "cat /date.txt")
+		require.NotEmpty(t, out)
+
+		// Then: the image should be pushed
+		_, err = remote.Image(ref)
+		require.NoError(t, err, "expected image to be present after build + push")
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.NoError(t, err)
+	})
+
 	t.Run("PushImageRequiresCache", func(t *testing.T) {
 		t.Parallel()
 
