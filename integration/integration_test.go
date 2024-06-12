@@ -776,7 +776,7 @@ func TestPrivateRegistry(t *testing.T) {
 		t.Parallel()
 		// Even if something goes wrong with auth,
 		// the pull will fail as "scratch" is a reserved name.
-		image := setupPassthroughRegistry(t, "scratch", &registryAuth{
+		image := setupPassthroughRegistry(t, "scratch", &setupPassthroughRegistryOptions{
 			Username: "user",
 			Password: "test",
 		})
@@ -795,7 +795,7 @@ func TestPrivateRegistry(t *testing.T) {
 	})
 	t.Run("Auth", func(t *testing.T) {
 		t.Parallel()
-		image := setupPassthroughRegistry(t, "envbuilder-test-alpine:latest", &registryAuth{
+		image := setupPassthroughRegistry(t, "envbuilder-test-alpine:latest", &setupPassthroughRegistryOptions{
 			Username: "user",
 			Password: "test",
 		})
@@ -827,7 +827,7 @@ func TestPrivateRegistry(t *testing.T) {
 		t.Parallel()
 		// Even if something goes wrong with auth,
 		// the pull will fail as "scratch" is a reserved name.
-		image := setupPassthroughRegistry(t, "scratch", &registryAuth{
+		image := setupPassthroughRegistry(t, "scratch", &setupPassthroughRegistryOptions{
 			Username: "user",
 			Password: "banana",
 		})
@@ -857,38 +857,43 @@ func TestPrivateRegistry(t *testing.T) {
 	})
 }
 
-type registryAuth struct {
+type setupPassthroughRegistryOptions struct {
 	Username string
 	Password string
+	Upstream string
 }
 
-func setupPassthroughRegistry(t *testing.T, image string, auth *registryAuth) string {
+func setupPassthroughRegistry(t *testing.T, image string, opts *setupPassthroughRegistryOptions) string {
 	t.Helper()
-	dockerURL, err := url.Parse("http://localhost:5000")
+	if opts.Upstream == "" {
+		// Default to local test registry
+		opts.Upstream = "http://localhost:5000"
+	}
+	upstreamURL, err := url.Parse(opts.Upstream)
 	require.NoError(t, err)
-	proxy := httputil.NewSingleHostReverseProxy(dockerURL)
+	proxy := httputil.NewSingleHostReverseProxy(upstreamURL)
 
 	// The Docker registry uses short-lived JWTs to authenticate
 	// anonymously to pull images. To test our MITM auth, we need to
 	// generate a JWT for the proxy to use.
-	registry, err := name.NewRegistry("localhost:5000")
+	registry, err := name.NewRegistry(upstreamURL.Host)
 	require.NoError(t, err)
 	proxy.Transport, err = transport.NewWithContext(context.Background(), registry, authn.Anonymous, http.DefaultTransport, []string{})
 	require.NoError(t, err)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Host = "localhost:5000"
-		r.URL.Host = "localhost:5000"
-		r.URL.Scheme = "http"
+		r.Host = upstreamURL.Host
+		r.URL.Host = upstreamURL.Host
+		r.URL.Scheme = upstreamURL.Scheme
 
-		if auth != nil {
+		if opts != nil {
 			user, pass, ok := r.BasicAuth()
 			if !ok {
 				w.Header().Set("WWW-Authenticate", "Basic realm=\"Access to the staging site\", charset=\"UTF-8\"")
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
-			if user != auth.Username || pass != auth.Password {
+			if user != opts.Username || pass != opts.Password {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -1008,7 +1013,7 @@ func TestPushImage(t *testing.T) {
 		})
 
 		// Given: an empty registry
-		testReg := setupInMemoryRegistry(t)
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
 		testRepo := testReg + "/test"
 		ref, err := name.ParseReference(testRepo + ":latest")
 		require.NoError(t, err)
@@ -1062,7 +1067,7 @@ func TestPushImage(t *testing.T) {
 		})
 
 		// Given: an empty registry
-		testReg := setupInMemoryRegistry(t)
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
 		testRepo := testReg + "/test"
 		ref, err := name.ParseReference(testRepo + ":latest")
 		require.NoError(t, err)
@@ -1101,6 +1106,130 @@ func TestPushImage(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("CacheAndPushAuth", func(t *testing.T) {
+		t.Parallel()
+
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf("FROM %s\nRUN date --utc > /root/date.txt", testImageAlpine),
+				".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			},
+		})
+
+		// Given: an empty registry
+		opts := setupInMemoryRegistryOpts{
+			Username: "testing",
+			Password: "testing",
+		}
+		remoteAuthOpt := remote.WithAuth(&authn.Basic{Username: opts.Username, Password: opts.Password})
+		testReg := setupInMemoryRegistry(t, opts)
+		testRepo := testReg + "/test"
+		regAuthJSON, err := json.Marshal(envbuilder.DockerConfig{
+			AuthConfigs: map[string]clitypes.AuthConfig{
+				testRepo: {
+					Username: opts.Username,
+					Password: opts.Password,
+				},
+			},
+		})
+		require.NoError(t, err)
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref, remoteAuthOpt)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+		}})
+		require.ErrorContains(t, err, "error probing build cache: uncached command")
+		// Then: it should fail to build the image and nothing should be pushed
+		_, err = remote.Image(ref, remoteAuthOpt)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("PUSH_IMAGE", "1"),
+			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString(regAuthJSON)),
+		}})
+		require.NoError(t, err)
+
+		// Then: the image should be pushed
+		_, err = remote.Image(ref, remoteAuthOpt)
+		require.NoError(t, err, "expected image to be present after build + push")
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString(regAuthJSON)),
+		}})
+		require.NoError(t, err)
+	})
+
+	t.Run("CacheAndPushAuthFail", func(t *testing.T) {
+		t.Parallel()
+
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf("FROM %s\nRUN date --utc > /root/date.txt", testImageAlpine),
+				".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			},
+		})
+
+		// Given: an empty registry
+		opts := setupInMemoryRegistryOpts{
+			Username: "testing",
+			Password: "testing",
+		}
+		remoteAuthOpt := remote.WithAuth(&authn.Basic{Username: opts.Username, Password: opts.Password})
+		testReg := setupInMemoryRegistry(t, opts)
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref, remoteAuthOpt)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+		}})
+		require.ErrorContains(t, err, "error probing build cache: uncached command")
+		// Then: it should fail to build the image and nothing should be pushed
+		_, err = remote.Image(ref, remoteAuthOpt)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("PUSH_IMAGE", "1"),
+		}})
+		// Then: it should fail with an Unauthorized error
+		require.ErrorContains(t, err, "401 Unauthorized", "expected unauthorized error using no auth when cache repo requires it")
+
+		// Then: the image should not be pushed
+		_, err = remote.Image(ref, remoteAuthOpt)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+	})
+
 	t.Run("CacheAndPushMultistage", func(t *testing.T) {
 		// Currently fails with:
 		//         /home/coder/src/coder/envbuilder/integration/integration_test.go:1417: "error: unable to get cached image: error fake building stage: failed to optimize instructions: failed to get files used from context: failed to get fileinfo for /.envbuilder/0/root/date.txt: lstat /.envbuilder/0/root/date.txt: no such file or directory"
@@ -1122,7 +1251,7 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 		})
 
 		// Given: an empty registry
-		testReg := setupInMemoryRegistry(t)
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
 		testRepo := testReg + "/test"
 		ref, err := name.ParseReference(testRepo + ":latest")
 		require.NoError(t, err)
@@ -1224,11 +1353,17 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 	})
 }
 
-func setupInMemoryRegistry(t *testing.T) string {
+type setupInMemoryRegistryOpts struct {
+	Username string
+	Password string
+}
+
+func setupInMemoryRegistry(t *testing.T, opts setupInMemoryRegistryOpts) string {
 	t.Helper()
 	tempDir := t.TempDir()
-	testReg := registry.New(registry.WithBlobHandler(registry.NewDiskBlobHandler(tempDir)))
-	regSrv := httptest.NewServer(testReg)
+	regHandler := registry.New(registry.WithBlobHandler(registry.NewDiskBlobHandler(tempDir)))
+	authHandler := gittest.BasicAuthMW(opts.Username, opts.Password)(regHandler)
+	regSrv := httptest.NewServer(authHandler)
 	t.Cleanup(func() { regSrv.Close() })
 	regSrvURL, err := url.Parse(regSrv.URL)
 	require.NoError(t, err)
