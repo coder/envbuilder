@@ -1021,7 +1021,7 @@ func TestPushImage(t *testing.T) {
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 		}})
-		require.ErrorContains(t, err, "not supported in fake build")
+		require.ErrorContains(t, err, "error probing build cache: uncached command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
@@ -1075,7 +1075,7 @@ func TestPushImage(t *testing.T) {
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 		}})
-		require.ErrorContains(t, err, "not supported in fake build")
+		require.ErrorContains(t, err, "error probing build cache: uncached command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
@@ -1136,7 +1136,7 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		}})
-		require.ErrorContains(t, err, "not supported in fake build")
+		require.ErrorContains(t, err, "error probing build cache: uncached command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
