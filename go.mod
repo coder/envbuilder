@@ -6,7 +6,7 @@ toolchain go1.22.3
 
 // There are a few options we need added to Kaniko!
 // See: https://github.com/GoogleContainerTools/kaniko/compare/main...coder:kaniko:main
-replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20240524082248-9d0d55902c34
+replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20240612094751-9d2f7eaa733c
 
 require (
 	cdr.dev/slog v1.6.2-0.20240126064726-20367d4aede6
@@ -105,7 +105,6 @@ require (
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/docker/libtrust v0.0.0-20150114040149-fa567046d9b1 // indirect
 	github.com/ePirat/docker-credential-gitlabci v1.0.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -118,7 +117,6 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/gomodule/redigo v1.8.9 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/gorilla/handlers v1.5.1 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect

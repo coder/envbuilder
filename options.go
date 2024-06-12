@@ -138,6 +138,13 @@ type Options struct {
 	// CoderAgentSubsystem is the Coder agent subsystems to report when forwarding
 	// logs. The envbuilder subsystem is always included.
 	CoderAgentSubsystem []string
+
+	// PushImage is a flag to determine if the image should be pushed to the
+	// container registry. This option implies reproducible builds.
+	PushImage bool
+	// GetCachedImage is a flag to determine if the cached image is available,
+	// and if it is, to return it.
+	GetCachedImage bool
 }
 
 const envPrefix = "ENVBUILDER_"
@@ -394,6 +401,20 @@ func (o *Options) CLI() serpent.OptionSet {
 			Value: serpent.StringArrayOf(&o.CoderAgentSubsystem),
 			Description: "Coder agent subsystems to report when forwarding logs. " +
 				"The envbuilder subsystem is always included.",
+		},
+		{
+			Flag:  "push-image",
+			Env:   WithEnvPrefix("PUSH_IMAGE"),
+			Value: serpent.BoolOf(&o.PushImage),
+			Description: "Push the built image to a remote registry. " +
+				"This option forces a reproducible build.",
+		},
+		{
+			Flag:  "get-cached-image",
+			Env:   WithEnvPrefix("GET_CACHED_IMAGE"),
+			Value: serpent.BoolOf(&o.GetCachedImage),
+			Description: "Print the digest of the cached image, if available. " +
+				"Exits with an error if not found.",
 		},
 	}
 

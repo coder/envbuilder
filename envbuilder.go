@@ -98,6 +98,9 @@ func Run(ctx context.Context, options Options) error {
 	if options.InitCommand == "" {
 		options.InitCommand = "/bin/sh"
 	}
+	if options.CacheRepo == "" && options.PushImage {
+		return fmt.Errorf("--cache-repo must be set when using --push-image")
+	}
 	// Default to the shell!
 	initArgs := []string{"-c", options.InitScript}
 	if options.InitArgs != "" {
@@ -118,11 +121,11 @@ func Run(ctx context.Context, options Options) error {
 		options.WorkspaceFolder = f
 	}
 
-	stageNumber := 1
+	stageNumber := 0
 	startStage := func(format string, args ...any) func(format string, args ...any) {
 		now := time.Now()
-		stageNum := stageNumber
 		stageNumber++
+		stageNum := stageNumber
 		options.Logger(notcodersdk.LogLevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
 
 		return func(format string, args ...any) {
@@ -341,7 +344,7 @@ func Run(ctx context.Context, options Options) error {
 
 	HijackLogrus(func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
-			options.Logger(notcodersdk.LogLevelInfo, "#2: %s", color.HiBlackString(line))
+			options.Logger(notcodersdk.LogLevelInfo, "#%d: %s", stageNumber, color.HiBlackString(line))
 		}
 	})
 
@@ -471,20 +474,24 @@ func Run(ctx context.Context, options Options) error {
 			cacheTTL = time.Hour * 24 * time.Duration(options.CacheTTLDays)
 		}
 
-		endStage := startStage("🏗️ Building image...")
 		// At this point we have all the context, we can now build!
 		registryMirror := []string{}
 		if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
 			registryMirror = strings.Split(val, ";")
 		}
-		image, err := executor.DoBuild(&config.KanikoOptions{
+		var destinations []string
+		if options.CacheRepo != "" {
+			destinations = append(destinations, options.CacheRepo)
+		}
+		opts := &config.KanikoOptions{
 			// Boilerplate!
 			CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
 			SnapshotMode:      "redo",
 			RunV2:             true,
 			RunStdout:         stdoutWriter,
 			RunStderr:         stderrWriter,
-			Destinations:      []string{"local"},
+			Destinations:      destinations,
+			NoPush:            !options.PushImage || len(destinations) == 0,
 			CacheRunLayers:    true,
 			CacheCopyLayers:   true,
 			CompressedCaching: true,
@@ -515,11 +522,40 @@ func Run(ctx context.Context, options Options) error {
 				RegistryMirrors: registryMirror,
 			},
 			SrcContext: buildParams.BuildContext,
-		})
+
+			// For cached image utilization, produce reproducible builds.
+			Reproducible: options.PushImage,
+		}
+
+		if options.GetCachedImage {
+			endStage := startStage("🏗️ Checking for cached image...")
+			image, err := executor.DoCacheProbe(opts)
+			if err != nil {
+				return nil, xerrors.Errorf("get cached image: %w", err)
+			}
+			digest, err := image.Digest()
+			if err != nil {
+				return nil, xerrors.Errorf("get cached image digest: %w", err)
+			}
+			endStage("🏗️ Found cached image!")
+			_, _ = fmt.Fprintf(os.Stdout, "%s@%s\n", options.CacheRepo, digest.String())
+			os.Exit(0)
+		}
+
+		endStage := startStage("🏗️ Building image...")
+		image, err := executor.DoBuild(opts)
 		if err != nil {
-			return nil, err
+			return nil, xerrors.Errorf("do build: %w", err)
 		}
 		endStage("🏗️ Built image!")
+		if options.PushImage {
+			endStage = startStage("🏗️ Pushing image...")
+			if err := executor.DoPush(image, opts); err != nil {
+				return nil, xerrors.Errorf("do push: %w", err)
+			}
+			endStage("🏗️ Pushed image!")
+		}
+
 		return image, err
 	}
 

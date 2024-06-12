@@ -34,6 +34,8 @@ import (
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -985,6 +987,252 @@ COPY %s .`, testImageAlpine, inclFile)
 			}
 		})
 	}
+}
+
+func TestPushImage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("CacheWithoutPush", func(t *testing.T) {
+		t.Parallel()
+
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf("FROM %s\nRUN date --utc > /root/date.txt", testImageAlpine),
+				".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t)
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+		}})
+		require.ErrorContains(t, err, "error probing build cache: uncached command")
+		// Then: it should fail to build the image and nothing should be pushed
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+		}})
+		require.NoError(t, err)
+
+		// Then: the image tag should not be present, only the layers
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "MANIFEST_UNKNOWN", "expected image to not be present before build + push")
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+		}})
+		require.NoError(t, err)
+	})
+
+	t.Run("CacheAndPush", func(t *testing.T) {
+		t.Parallel()
+
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf("FROM %s\nRUN date --utc > /root/date.txt", testImageAlpine),
+				".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t)
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+		}})
+		require.ErrorContains(t, err, "error probing build cache: uncached command")
+		// Then: it should fail to build the image and nothing should be pushed
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("PUSH_IMAGE", "1"),
+		}})
+		require.NoError(t, err)
+
+		// Then: the image should be pushed
+		_, err = remote.Image(ref)
+		require.NoError(t, err, "expected image to be present after build + push")
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+		}})
+		require.NoError(t, err)
+	})
+
+	t.Run("CacheAndPushMultistage", func(t *testing.T) {
+		// Currently fails with:
+		//         /home/coder/src/coder/envbuilder/integration/integration_test.go:1417: "error: unable to get cached image: error fake building stage: failed to optimize instructions: failed to get files used from context: failed to get fileinfo for /.envbuilder/0/root/date.txt: lstat /.envbuilder/0/root/date.txt: no such file or directory"
+		// /home/coder/src/coder/envbuilder/integration/integration_test.go:1156:
+		// Error Trace:	/home/coder/src/coder/envbuilder/integration/integration_test.go:1156
+		// Error:      	Received unexpected error:
+		// error: unable to get cached image: error fake building stage: failed to optimize instructions: failed to get files used from context: failed to get fileinfo for /.envbuilder/0/root/date.txt: lstat /.envbuilder/0/root/date.txt: no such file or directory
+		// Test:       	TestPushImage/CacheAndPushMultistage
+		t.Skip("TODO: https://github.com/coder/envbuilder/issues/230")
+		t.Parallel()
+
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				"Dockerfile": fmt.Sprintf(`FROM %s AS a
+RUN date --utc > /root/date.txt
+FROM %s as b
+COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t)
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.ErrorContains(t, err, "error probing build cache: uncached command")
+		// Then: it should fail to build the image and nothing should be pushed
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		ctrID, err := runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("PUSH_IMAGE", "1"),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.NoError(t, err)
+		// Then: The file copied from stage a should be present
+		out := execContainer(t, ctrID, "cat /date.txt")
+		require.NotEmpty(t, out)
+
+		// Then: the image should be pushed
+		_, err = remote.Image(ref)
+		require.NoError(t, err, "expected image to be present after build + push")
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		_, err = runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.NoError(t, err)
+	})
+
+	t.Run("PushImageRequiresCache", func(t *testing.T) {
+		t.Parallel()
+
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf("FROM %s\nRUN date --utc > /root/date.txt", testImageAlpine),
+				".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			},
+		})
+
+		// When: we run envbuilder with PUSH_IMAGE set but no cache repo set
+		_, err := runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("PUSH_IMAGE", "1"),
+		}})
+
+		// Then: Envbuilder should fail explicitly, as it does not make sense to
+		// specify PUSH_IMAGE
+		require.ErrorContains(t, err, "--cache-repo must be set when using --push-image")
+	})
+
+	t.Run("PushErr", func(t *testing.T) {
+		t.Parallel()
+
+		srv := createGitServer(t, gitServerOptions{
+			files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf("FROM %s\nRUN date --utc > /root/date.txt", testImageAlpine),
+				".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			},
+		})
+
+		// Given: registry is not set up (in this case, not a registry)
+		notRegSrv := httptest.NewServer(http.NotFoundHandler())
+		notRegURL := strings.TrimPrefix(notRegSrv.URL, "http://") + "/test"
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_, err := runEnvbuilder(t, options{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", notRegURL),
+			envbuilderEnv("PUSH_IMAGE", "1"),
+		}})
+
+		// Then: envbuilder should fail with a descriptive error
+		require.ErrorContains(t, err, "failed to push to destination")
+	})
+}
+
+func setupInMemoryRegistry(t *testing.T) string {
+	t.Helper()
+	tempDir := t.TempDir()
+	testReg := registry.New(registry.WithBlobHandler(registry.NewDiskBlobHandler(tempDir)))
+	regSrv := httptest.NewServer(testReg)
+	t.Cleanup(func() { regSrv.Close() })
+	regSrvURL, err := url.Parse(regSrv.URL)
+	require.NoError(t, err)
+	return fmt.Sprintf("localhost:%s", regSrvURL.Port())
 }
 
 // TestMain runs before all tests to build the envbuilder image.

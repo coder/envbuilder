@@ -78,6 +78,10 @@ OPTIONS:
           your system! This is used in cases where bypass is needed to unblock
           customers.
 
+      --get-cached-image bool, $ENVBUILDER_GET_CACHED_IMAGE
+          Print the digest of the cached image, if available. Exits with an
+          error if not found.
+
       --git-clone-depth int, $ENVBUILDER_GIT_CLONE_DEPTH
           The depth to use when cloning the Git repository.
 
@@ -129,6 +133,10 @@ OPTIONS:
           the script is not created). If this is set, the specified InitCommand
           should check for the presence of this script and execute it after
           successful startup.
+
+      --push-image bool, $ENVBUILDER_PUSH_IMAGE
+          Push the built image to a remote registry. This option forces a
+          reproducible build.
 
       --setup-script string, $ENVBUILDER_SETUP_SCRIPT
           The script to run before the init script. It runs as the root user
