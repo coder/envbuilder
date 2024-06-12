@@ -297,6 +297,7 @@ The table keeps track of features we would love to implement. Feel free to [crea
 | Port forwarding          | Port forwarding allows exposing container ports to the host, making services accessible.                     | [#48](https://github.com/coder/envbuilder/issues/48)   |
 | Script init & Entrypoint | `init` adds a tiny init process to the container and `entrypoint` sets a script to run at container startup. | [#221](https://github.com/coder/envbuilder/issues/221) |
 | Customizations           | Product specific properties, for instance: _VS Code_ `settings` and `extensions`.                            | [#43](https://github.com/coder/envbuilder/issues/43)   |
+| Multi-Stage Builds       | Multi-stage builds allow you to optimize Dockerfiles while keeping them easy to read and maintain.           | [#231](https://github.com/coder/envbuilder/issues/231) |
 
 ### Devfile
 
