@@ -1354,6 +1354,45 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 	})
 }
 
+func TestEmbedBinaryImage(t *testing.T) {
+	t.Parallel()
+
+	srv := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/Dockerfile": fmt.Sprintf("FROM %s\nRUN date --utc > /root/date.txt", testImageAlpine),
+			".devcontainer/devcontainer.json": `{
+			"name": "Test",
+			"build": {
+				"dockerfile": "Dockerfile"
+			},
+		}`,
+		},
+	})
+
+	testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+	testRepo := testReg + "/test"
+	ref, err := name.ParseReference(testRepo + ":latest")
+	require.NoError(t, err)
+
+	_, err = runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("CACHE_REPO", testRepo),
+		envbuilderEnv("PUSH_IMAGE", "1"),
+	}})
+	require.NoError(t, err)
+
+	_, err = remote.Image(ref)
+	require.NoError(t, err, "expected image to be present after build + push")
+
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("FALLBACK_IMAGE", ref.String()),
+	}})
+	require.NoError(t, err)
+
+	out := execContainer(t, ctr, "[[ -f \"/.envbuilder/bin/envbuilder\" ]] && echo \"exists\"")
+	require.Equal(t, "exists", strings.TrimSpace(out))
+}
+
 type setupInMemoryRegistryOpts struct {
 	Username string
 	Password string
