@@ -99,7 +99,7 @@ func Run(ctx context.Context, options Options) error {
 		options.InitCommand = "/bin/sh"
 	}
 	if options.CacheRepo == "" && options.PushImage {
-		return fmt.Errorf("--cache-repo must be set when using --push-image!")
+		return fmt.Errorf("--cache-repo must be set when using --push-image")
 	}
 	// Default to the shell!
 	initArgs := []string{"-c", options.InitScript}
@@ -531,7 +531,7 @@ func Run(ctx context.Context, options Options) error {
 			endStage := startStage("🏗️ Checking for cached image...")
 			image, err := executor.DoCacheProbe(opts)
 			if err != nil {
-				return nil, xerrors.Errorf("unable to get cached image: %w", err)
+				return nil, xerrors.Errorf("get cached image: %w", err)
 			}
 			digest, err := image.Digest()
 			if err != nil {

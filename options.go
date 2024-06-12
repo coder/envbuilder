@@ -406,7 +406,7 @@ func (o *Options) CLI() serpent.OptionSet {
 			Flag:  "push-image",
 			Env:   WithEnvPrefix("PUSH_IMAGE"),
 			Value: serpent.BoolOf(&o.PushImage),
-			Description: "Push the built image to a remote registry." +
+			Description: "Push the built image to a remote registry. " +
 				"This option forces a reproducible build.",
 		},
 		{
