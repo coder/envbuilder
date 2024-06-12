@@ -413,7 +413,7 @@ func (o *Options) CLI() serpent.OptionSet {
 			Flag:  "get-cached-image",
 			Env:   WithEnvPrefix("GET_CACHED_IMAGE"),
 			Value: serpent.BoolOf(&o.GetCachedImage),
-			Description: "Print the digest of the cached image, if available." +
+			Description: "Print the digest of the cached image, if available. " +
 				"Exits with an error if not found.",
 		},
 	}
