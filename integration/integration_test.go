@@ -1354,6 +1354,48 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 	})
 }
 
+func TestDirectives(t *testing.T) {
+	t.Parallel()
+
+	srv := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/entrypoint.sh": "#!/bin/sh\necho 'Hello, world!'",
+			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\n" +
+				"RUN addgroup -S coder && adduser -S coder -G coder \n" +
+				"USER coder\n" +
+				"WORKDIR /app\n" +
+				"ENTRYPOINT [\"./entrypoint.sh\"]",
+			".devcontainer/devcontainer.json": `{
+			"name": "Test",
+			"build": {
+				"dockerfile": "Dockerfile"
+			},
+		}`,
+		},
+	})
+
+	testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+	testRepo := testReg + "/test"
+	ref, err := name.ParseReference(testRepo + ":latest")
+	require.NoError(t, err)
+
+	_, err = runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("CACHE_REPO", testRepo),
+		envbuilderEnv("PUSH_IMAGE", "1"),
+	}})
+	require.NoError(t, err)
+
+	image, err := remote.Image(ref)
+	require.NoError(t, err, "expected image to be present after build + push")
+	configFile, err := image.ConfigFile()
+	require.NoError(t, err, "expected image to return a config file")
+
+	require.Equal(t, configFile.Config.User, "root", "value does not match any of the possible root user values.")
+	require.Equal(t, configFile.Config.WorkingDir, "/", "expected image to have root working directory")
+	require.Equal(t, configFile.Config.Entrypoint, []string{"/.envbuilder/bin/envbuilder"}, "expected image to have envbuilder entrypoint")
+}
+
 type setupInMemoryRegistryOpts struct {
 	Username string
 	Password string
