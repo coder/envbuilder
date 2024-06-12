@@ -24,6 +24,7 @@ import (
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer/features"
 	"github.com/coder/envbuilder/testutil/gittest"
+	"github.com/coder/envbuilder/testutil/mwtest"
 	"github.com/coder/envbuilder/testutil/registrytest"
 	clitypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types"
@@ -1362,7 +1363,7 @@ func setupInMemoryRegistry(t *testing.T, opts setupInMemoryRegistryOpts) string 
 	t.Helper()
 	tempDir := t.TempDir()
 	regHandler := registry.New(registry.WithBlobHandler(registry.NewDiskBlobHandler(tempDir)))
-	authHandler := gittest.BasicAuthMW(opts.Username, opts.Password)(regHandler)
+	authHandler := mwtest.BasicAuthMW(opts.Username, opts.Password)(regHandler)
 	regSrv := httptest.NewServer(authHandler)
 	t.Cleanup(func() { regSrv.Close() })
 	regSrvURL, err := url.Parse(regSrv.URL)
@@ -1409,7 +1410,7 @@ type gitServerOptions struct {
 func createGitServer(t *testing.T, opts gitServerOptions) *httptest.Server {
 	t.Helper()
 	if opts.authMW == nil {
-		opts.authMW = gittest.BasicAuthMW(opts.username, opts.password)
+		opts.authMW = mwtest.BasicAuthMW(opts.username, opts.password)
 	}
 	commits := make([]gittest.CommitFunc, 0)
 	for path, content := range opts.files {
