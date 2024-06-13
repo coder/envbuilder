@@ -1354,7 +1354,7 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 	})
 }
 
-func TestDirectives(t *testing.T) {
+func TestDefaultDirectivesOnPushedImage(t *testing.T) {
 	t.Parallel()
 
 	srv := createGitServer(t, gitServerOptions{

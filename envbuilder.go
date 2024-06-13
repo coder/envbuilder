@@ -342,11 +342,13 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
-	// Make sure the Dockerfile is using the correct directives to run envbuilder
-	buildParams.DockerfileContent = buildParams.DockerfileContent + "\n" +
-		"USER root \n" +
-		"WORKDIR / \n" +
-		"ENTRYPOINT [\"/.envbuilder/bin/envbuilder\"]"
+	if options.PushImage {
+		// Make sure the Dockerfile is using the correct directives to run envbuilder
+		buildParams.DockerfileContent = buildParams.DockerfileContent + "\n" +
+			"USER root \n" +
+			"WORKDIR / \n" +
+			"ENTRYPOINT [\"/.envbuilder/bin/envbuilder\"]"
+	}
 
 	HijackLogrus(func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
