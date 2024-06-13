@@ -342,6 +342,11 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
+	if options.PushImage {
+		buildParams.DockerfileContent = buildParams.DockerfileContent + "\n" +
+			"COPY .envbuilder .envbuilder"
+	}
+
 	HijackLogrus(func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
 			options.Logger(notcodersdk.LogLevelInfo, "#%d: %s", stageNumber, color.HiBlackString(line))
@@ -521,7 +526,7 @@ func Run(ctx context.Context, options Options) error {
 				// https://github.com/coder/envbuilder/pull/114
 				RegistryMirrors: registryMirror,
 			},
-			SrcContext: buildParams.BuildContext,
+			SrcContext: "/",
 
 			// For cached image utilization, produce reproducible builds.
 			Reproducible: options.PushImage,
