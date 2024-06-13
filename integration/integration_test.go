@@ -30,6 +30,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -1370,7 +1371,7 @@ func TestEmbedBinaryImage(t *testing.T) {
 	})
 
 	testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
-	testRepo := testReg + "/test"
+	testRepo := testReg + "/test-embed-binary-image"
 	ref, err := name.ParseReference(testRepo + ":latest")
 	require.NoError(t, err)
 
@@ -1384,13 +1385,42 @@ func TestEmbedBinaryImage(t *testing.T) {
 	_, err = remote.Image(ref)
 	require.NoError(t, err, "expected image to be present after build + push")
 
-	ctr, err := runEnvbuilder(t, options{env: []string{
-		envbuilderEnv("FALLBACK_IMAGE", ref.String()),
-	}})
+	ctx := context.Background()
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		cli.Close()
+	})
+
+	// Pull the image we just built
+	rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = rc.Close() })
+	_, err = io.ReadAll(rc)
 	require.NoError(t, err)
 
-	out := execContainer(t, ctr, "[[ -f \"/.envbuilder/bin/envbuilder\" ]] && echo \"exists\"")
+	// Run it
+	ctr, err := cli.ContainerCreate(ctx, &container.Config{
+		Image: ref.String(),
+		Cmd:   []string{"sleep", "infinity"},
+		Labels: map[string]string{
+			testContainerLabel: "true",
+		},
+	}, nil, nil, nil, "")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+			RemoveVolumes: true,
+			Force:         true,
+		})
+	})
+	err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
+	require.NoError(t, err)
+
+	out := execContainer(t, ctr.ID, "[[ -f \"/.envbuilder/bin/envbuilder\" ]] && echo \"exists\"")
 	require.Equal(t, "exists", strings.TrimSpace(out))
+	out = execContainer(t, ctr.ID, "cat /root/date.txt")
+	require.NotEmpty(t, strings.TrimSpace(out))
 }
 
 type setupInMemoryRegistryOpts struct {
