@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"maps"
 	"net"
 	"net/http"
@@ -27,7 +28,6 @@ import (
 
 	"github.com/kballard/go-shellquote"
 	"github.com/mattn/go-isatty"
-	cp "github.com/otiai10/copy"
 
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
@@ -345,13 +345,17 @@ func Run(ctx context.Context, options Options) error {
 
 	if options.PushImage {
 		// Copy the envbuilder binary into the build context.
-		binPath := filepath.Join(MagicDir, "bin", "envbuilder")
-		err := cp.Copy(binPath, filepath.Join(buildParams.BuildContext, binPath))
-		if err != nil {
-			return err
-		}
 		buildParams.DockerfileContent = buildParams.DockerfileContent + "\n" +
-			"COPY " + binPath + " " + binPath
+			fmt.Sprintf("COPY %s %s", ".envbuilder", "/.envbuilder")
+
+		log.Println("FIXME show me the Dockerfile now: " + buildParams.DockerfileContent)
+
+		binPath := filepath.Join(MagicDir, "bin", "envbuilder")
+		dst := filepath.Join(buildParams.BuildContext, binPath)
+		err := copyFile(binPath, dst)
+		if err != nil {
+			return fmt.Errorf("aaa : %v", err)
+		}
 	}
 
 	HijackLogrus(func(entry *logrus.Entry) {
@@ -1170,4 +1174,22 @@ func maybeDeleteFilesystem(log LoggerFunc, force bool) error {
 	}
 
 	return util.DeleteFilesystem()
+}
+
+func copyFile(src, dst string) error {
+	content, err := os.ReadFile(src)
+	if err != nil {
+		return xerrors.Errorf("read file failed: %w", err)
+	}
+
+	err = os.MkdirAll(filepath.Dir(dst), 0755)
+	if err != nil {
+		return xerrors.Errorf("mkdir all failed: %w", err)
+	}
+
+	err = os.WriteFile(dst, content, 0644)
+	if err != nil {
+		return xerrors.Errorf("write file failed: %w", err)
+	}
+	return nil
 }
