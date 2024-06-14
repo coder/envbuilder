@@ -27,6 +27,7 @@ import (
 
 	"github.com/kballard/go-shellquote"
 	"github.com/mattn/go-isatty"
+	cp "github.com/otiai10/copy"
 
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
@@ -343,8 +344,14 @@ func Run(ctx context.Context, options Options) error {
 	}
 
 	if options.PushImage {
+		// Copy the envbuilder binary into the build context.
+		binPath := filepath.Join(MagicDir, "bin", "envbuilder")
+		err := cp.Copy(binPath, filepath.Join(buildParams.BuildContext, binPath))
+		if err != nil {
+			return err
+		}
 		buildParams.DockerfileContent = buildParams.DockerfileContent + "\n" +
-			"COPY .envbuilder .envbuilder"
+			"COPY " + binPath + " " + binPath
 	}
 
 	HijackLogrus(func(entry *logrus.Entry) {
@@ -526,7 +533,7 @@ func Run(ctx context.Context, options Options) error {
 				// https://github.com/coder/envbuilder/pull/114
 				RegistryMirrors: registryMirror,
 			},
-			SrcContext: "/",
+			SrcContext: buildParams.BuildContext,
 
 			// For cached image utilization, produce reproducible builds.
 			Reproducible: options.PushImage,
