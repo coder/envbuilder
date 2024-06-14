@@ -1387,7 +1387,7 @@ USER test
 	require.NoError(t, err)
 
 	output := execContainer(t, ctr, "stat -c %u:%g /home/test/")
-	require.Equal(t, "1000:1000", strings.TrimSpace(output))
+	require.Equal(t, "1001:1001", strings.TrimSpace(output))
 }
 
 type setupInMemoryRegistryOpts struct {
@@ -1544,7 +1544,7 @@ func runEnvbuilder(t *testing.T, options options) (string, error) {
 	}, nil, nil, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+		_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
 			RemoveVolumes: true,
 			Force:         true,
 		})
