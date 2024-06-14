@@ -1356,6 +1356,40 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 	})
 }
 
+func TestChownHomedir(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	srv := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			".devcontainer/Dockerfile": fmt.Sprintf(`FROM %s
+RUN useradd test \
+  --create-home \
+  --shell=/bin/bash \
+  --uid=1001 \
+  --user-group
+USER test
+`, testImageUbuntu), // Note: this isn't reproducible with Alpine for some reason.
+		},
+	})
+
+	// Run envbuilder with a Docker volume mounted to homedir
+	volName := fmt.Sprintf("%s%d-home", t.Name(), time.Now().Unix())
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+	}, volumes: map[string]string{volName: "/home/test"}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "stat -c %u:%g /home/test/")
+	require.Equal(t, "1000:1000", strings.TrimSpace(output))
+}
+
 type setupInMemoryRegistryOpts struct {
 	Username string
 	Password string
