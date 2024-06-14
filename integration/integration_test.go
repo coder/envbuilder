@@ -30,6 +30,8 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -1465,8 +1467,9 @@ func cleanOldEnvbuilders() {
 }
 
 type options struct {
-	binds []string
-	env   []string
+	binds   []string
+	env     []string
+	volumes map[string]string
 }
 
 // runEnvbuilder starts the envbuilder container with the given environment
@@ -1479,6 +1482,21 @@ func runEnvbuilder(t *testing.T, options options) (string, error) {
 	t.Cleanup(func() {
 		cli.Close()
 	})
+	mounts := make([]mount.Mount, 0)
+	for volName, volPath := range options.volumes {
+		mounts = append(mounts, mount.Mount{
+			Type:   mount.TypeVolume,
+			Source: volName,
+			Target: volPath,
+		})
+		_, err = cli.VolumeCreate(ctx, volume.CreateOptions{
+			Name: volName,
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = cli.VolumeRemove(ctx, volName, true)
+		})
+	}
 	ctr, err := cli.ContainerCreate(ctx, &container.Config{
 		Image: "envbuilder:latest",
 		Env:   options.env,
@@ -1488,6 +1506,7 @@ func runEnvbuilder(t *testing.T, options options) (string, error) {
 	}, &container.HostConfig{
 		NetworkMode: container.NetworkMode("host"),
 		Binds:       options.binds,
+		Mounts:      mounts,
 	}, nil, nil, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
