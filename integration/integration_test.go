@@ -1362,6 +1362,7 @@ func TestDefaultDirectivesOnPushedImage(t *testing.T) {
 			".devcontainer/entrypoint.sh": "#!/bin/sh\necho 'Hello, world!'",
 			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\n" +
 				"RUN addgroup -S coder && adduser -S coder -G coder \n" +
+				// These should be overridden by the default directives
 				"USER coder\n" +
 				"WORKDIR /app\n" +
 				"ENTRYPOINT [\"./entrypoint.sh\"]",
