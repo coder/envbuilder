@@ -15,6 +15,7 @@ import (
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/internal/notcodersdk"
 	"github.com/coder/envbuilder/testutil/gittest"
+	"github.com/coder/envbuilder/testutil/mwtest"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
@@ -82,7 +83,7 @@ func TestCloneRepo(t *testing.T) {
 			t.Run("AlreadyCloned", func(t *testing.T) {
 				srvFS := memfs.New()
 				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
-				authMW := gittest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
+				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
 				clientFS := memfs.New()
 				// A repo already exists!
@@ -101,7 +102,7 @@ func TestCloneRepo(t *testing.T) {
 				t.Parallel()
 				srvFS := memfs.New()
 				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
-				authMW := gittest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
+				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
 				clientFS := memfs.New()
 
@@ -134,7 +135,7 @@ func TestCloneRepo(t *testing.T) {
 				t.Parallel()
 				srvFS := memfs.New()
 				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
-				authMW := gittest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
+				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
 
 				authURL, err := url.Parse(srv.URL)
