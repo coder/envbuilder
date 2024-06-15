@@ -146,11 +146,11 @@ Two methods of authentication are supported:
 ### HTTP Authentication
 
 If `ENVBUILDER_GIT_URL` starts with `http://` or `https://`, envbuilder will
-authenticate with `ENVBUILDER_GIT_USERNAME` and `ENVBUILDER_GIT_PASSWORD`, if set.
+authenticate with `GIT_USERNAME` and `GIT_PASSWORD`, if set.
 
 For access token-based authentication, follow the following schema (if empty, there's no need to provide the field):
 
-| Provider     | `ENVBUILDER_GIT_USERNAME` | `ENVBUILDER_GIT_PASSWORD` |
+| Provider     | `GIT_USERNAME` | `GIT_PASSWORD` |
 | ------------ | ------------------------- | ------------------------- |
 | GitHub       | [access-token]            |                           |
 | GitLab       | oauth2                    | [access-token]            |
