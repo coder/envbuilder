@@ -87,16 +87,17 @@ func TestCompileWithFeatures(t *testing.T) {
 	dc, err := devcontainer.Parse([]byte(raw))
 	require.NoError(t, err)
 	fs := memfs.New()
-	params, err := dc.Compile(fs, "", magicDir, "", "", false, os.LookupEnv)
-	require.NoError(t, err)
 
-	// We have to SHA because we get a different MD5 every time!
 	featureOneMD5 := md5.Sum([]byte(featureOne))
 	featureOneDir := fmt.Sprintf("/.envbuilder/features/one-%x", featureOneMD5[:4])
 	featureTwoMD5 := md5.Sum([]byte(featureTwo))
 	featureTwoDir := fmt.Sprintf("/.envbuilder/features/two-%x", featureTwoMD5[:4])
 
-	require.Equal(t, `FROM localhost:5000/envbuilder-test-codercom-code-server:latest
+	t.Run("WithoutBuildContexts", func(t *testing.T) {
+		params, err := dc.Compile(fs, "", magicDir, "", "", false, os.LookupEnv)
+		require.NoError(t, err)
+
+		require.Equal(t, `FROM localhost:5000/envbuilder-test-codercom-code-server:latest
 
 USER root
 # Rust tomato - Example description!
@@ -108,6 +109,38 @@ WORKDIR `+featureTwoDir+`
 ENV POTATO=example
 RUN VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 USER 1000`, params.DockerfileContent)
+	})
+
+	t.Run("WithBuildContexts", func(t *testing.T) {
+		params, err := dc.Compile(fs, "", magicDir, "", "", true, os.LookupEnv)
+		require.NoError(t, err)
+
+		registryHost := strings.TrimPrefix(registry, "http://")
+
+		require.Equal(t, `FROM scratch AS envbuilder_feature_one
+COPY --from=`+registryHost+`/coder/one / /
+
+FROM scratch AS envbuilder_feature_two
+COPY --from=`+registryHost+`/coder/two / /
+
+FROM localhost:5000/envbuilder-test-codercom-code-server:latest
+
+USER root
+# Rust tomato - Example description!
+WORKDIR `+featureOneDir+`
+ENV TOMATO=example
+RUN --mount=type=bind,from=envbuilder_feature_one,target=`+featureOneDir+`,rw _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
+# Go potato - Example description!
+WORKDIR `+featureTwoDir+`
+ENV POTATO=example
+RUN --mount=type=bind,from=envbuilder_feature_two,target=`+featureTwoDir+`,rw VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
+USER 1000`, params.DockerfileContent)
+
+		require.Equal(t, map[string]string{
+			registryHost + "/coder/one": featureOneDir,
+			registryHost + "/coder/two": featureTwoDir,
+		}, params.FeatureContexts)
+	})
 }
 
 func TestCompileDevContainer(t *testing.T) {

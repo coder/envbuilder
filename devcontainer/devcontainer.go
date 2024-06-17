@@ -295,7 +295,7 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		}
 		featureDirectives = append(featureDirectives, directive)
 		if useBuildContexts {
-			featureContexts[featureName] = featureDir
+			featureContexts[featureRef] = featureDir
 			lines = append(lines, fromDirective)
 		}
 	}
