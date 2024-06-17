@@ -1069,6 +1069,7 @@ func unsetOptionsEnv() {
 			continue
 		}
 		// Do not strip options that do not have the magic prefix!
+		// For example, CODER_AGENT_URL, CODER_AGENT_TOKEN, CODER_AGENT_SUBSYSTEM.
 		if !strings.HasPrefix(opt.Env, envPrefix) {
 			continue
 		}
