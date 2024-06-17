@@ -695,6 +695,46 @@ PATH=/usr/local/bin:/bin:/go/bin:/opt
 REMOTE_BAR=bar`)
 }
 
+func TestUnsetOptionsEnv(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	srv := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\nENV FROM_DOCKERFILE=foo",
+		},
+	})
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		"GIT_URL", srv.URL,
+		envbuilderEnv("GIT_PASSWORD", "supersecret"),
+		"GIT_PASSWORD", "supersecret",
+		envbuilderEnv("INIT_SCRIPT", "env > /root/env.txt && sleep infinity"),
+		"INIT_SCRIPT", "env > /root/env.txt && sleep infinity",
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /root/env.txt")
+	var os envbuilder.Options
+	for _, s := range strings.Split(strings.TrimSpace(output), "\n") {
+		for _, o := range os.CLI() {
+			if strings.HasPrefix(s, o.Env) {
+				assert.Fail(t, "environment variable should be stripped when running init script", s)
+			}
+			optWithoutPrefix := strings.TrimPrefix(o.Env, envbuilder.WithEnvPrefix(""))
+			if strings.HasPrefix(s, optWithoutPrefix) {
+				assert.Fail(t, "environment variable should be stripped when running init script", s)
+			}
+		}
+	}
+}
+
 func TestLifecycleScripts(t *testing.T) {
 	t.Parallel()
 

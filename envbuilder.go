@@ -18,7 +18,6 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -1064,16 +1063,19 @@ func createPostStartScript(path string, postStartCommand devcontainer.LifecycleS
 // unsetOptionsEnv unsets all environment variables that are used
 // to configure the options.
 func unsetOptionsEnv() {
-	val := reflect.ValueOf(&Options{}).Elem()
-	typ := val.Type()
-
-	for i := 0; i < val.NumField(); i++ {
-		fieldTyp := typ.Field(i)
-		env := fieldTyp.Tag.Get("env")
-		if env == "" {
+	var o Options
+	for _, opt := range o.CLI() {
+		if opt.Env == "" {
 			continue
 		}
-		os.Unsetenv(env)
+		// Do not strip options that do not have the magic prefix!
+		// For example, CODER_AGENT_URL, CODER_AGENT_TOKEN, CODER_AGENT_SUBSYSTEM.
+		if !strings.HasPrefix(opt.Env, envPrefix) {
+			continue
+		}
+		// Strip both with and without prefix.
+		os.Unsetenv(opt.Env)
+		os.Unsetenv(strings.TrimPrefix(opt.Env, envPrefix))
 	}
 }
 
