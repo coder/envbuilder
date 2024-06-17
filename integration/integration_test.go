@@ -712,14 +712,25 @@ func TestUnsetOptionsEnv(t *testing.T) {
 	})
 	ctr, err := runEnvbuilder(t, options{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
+		"GIT_URL", srv.URL,
+		envbuilderEnv("GIT_PASSWORD", "supersecret"),
+		"GIT_PASSWORD", "supersecret",
 		envbuilderEnv("INIT_SCRIPT", "env > /root/env.txt && sleep infinity"),
+		"INIT_SCRIPT", "env > /root/env.txt && sleep infinity",
 	}})
 	require.NoError(t, err)
 
 	output := execContainer(t, ctr, "cat /root/env.txt")
+	var os envbuilder.Options
 	for _, s := range strings.Split(strings.TrimSpace(output), "\n") {
-		if strings.HasPrefix(s, envbuilder.WithEnvPrefix("")) {
-			assert.Fail(t, "environment variable should be stripped when running init script", s)
+		for _, o := range os.CLI() {
+			if strings.HasPrefix(s, o.Env) {
+				assert.Fail(t, "environment variable should be stripped when running init script", s)
+			}
+			optWithoutPrefix := strings.TrimPrefix(o.Env, envbuilder.WithEnvPrefix(""))
+			if strings.HasPrefix(s, optWithoutPrefix) {
+				assert.Fail(t, "environment variable should be stripped when running init script", s)
+			}
 		}
 	}
 }

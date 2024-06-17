@@ -1068,6 +1068,11 @@ func unsetOptionsEnv() {
 		if opt.Env == "" {
 			continue
 		}
+		// Do not strip options that do not have the magic prefix!
+		if !strings.HasPrefix(opt.Env, envPrefix) {
+			continue
+		}
+		// Strip both with and without prefix.
 		os.Unsetenv(opt.Env)
 		os.Unsetenv(strings.TrimPrefix(opt.Env, envPrefix))
 	}
