@@ -24,6 +24,10 @@ import (
 
 const magicDir = "/.envbuilder"
 
+func stubLookupEnv(string) (string, bool) {
+	return "", false
+}
+
 func TestParse(t *testing.T) {
 	t.Parallel()
 	raw := `{
@@ -94,7 +98,7 @@ func TestCompileWithFeatures(t *testing.T) {
 	featureTwoDir := fmt.Sprintf("/.envbuilder/features/two-%x", featureTwoMD5[:4])
 
 	t.Run("WithoutBuildContexts", func(t *testing.T) {
-		params, err := dc.Compile(fs, "", magicDir, "", "", false, os.LookupEnv)
+		params, err := dc.Compile(fs, "", magicDir, "", "", false, stubLookupEnv)
 		require.NoError(t, err)
 
 		require.Equal(t, `FROM localhost:5000/envbuilder-test-codercom-code-server:latest
@@ -112,7 +116,7 @@ USER 1000`, params.DockerfileContent)
 	})
 
 	t.Run("WithBuildContexts", func(t *testing.T) {
-		params, err := dc.Compile(fs, "", magicDir, "", "", true, os.LookupEnv)
+		params, err := dc.Compile(fs, "", magicDir, "", "", true, stubLookupEnv)
 		require.NoError(t, err)
 
 		registryHost := strings.TrimPrefix(registry, "http://")
@@ -151,7 +155,7 @@ func TestCompileDevContainer(t *testing.T) {
 		dc := &devcontainer.Spec{
 			Image: "localhost:5000/envbuilder-test-ubuntu:latest",
 		}
-		params, err := dc.Compile(fs, "", magicDir, "", "", false, os.LookupEnv)
+		params, err := dc.Compile(fs, "", magicDir, "", "", false, stubLookupEnv)
 		require.NoError(t, err)
 		require.Equal(t, filepath.Join(magicDir, "Dockerfile"), params.DockerfilePath)
 		require.Equal(t, magicDir, params.BuildContext)
@@ -177,7 +181,7 @@ func TestCompileDevContainer(t *testing.T) {
 		_, err = io.WriteString(file, "FROM localhost:5000/envbuilder-test-ubuntu:latest")
 		require.NoError(t, err)
 		_ = file.Close()
-		params, err := dc.Compile(fs, dcDir, magicDir, "", "/var/workspace", false, os.LookupEnv)
+		params, err := dc.Compile(fs, dcDir, magicDir, "", "/var/workspace", false, stubLookupEnv)
 		require.NoError(t, err)
 		require.Equal(t, "ARG1=value1", params.BuildArgs[0])
 		require.Equal(t, "ARG2=workspace", params.BuildArgs[1])
