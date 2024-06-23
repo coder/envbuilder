@@ -24,6 +24,10 @@ import (
 
 const magicDir = "/.envbuilder"
 
+func stubLookupEnv(string) (string, bool) {
+	return "", false
+}
+
 func TestParse(t *testing.T) {
 	t.Parallel()
 	raw := `{
@@ -87,16 +91,17 @@ func TestCompileWithFeatures(t *testing.T) {
 	dc, err := devcontainer.Parse([]byte(raw))
 	require.NoError(t, err)
 	fs := memfs.New()
-	params, err := dc.Compile(fs, "", magicDir, "", "", false, os.LookupEnv)
-	require.NoError(t, err)
 
-	// We have to SHA because we get a different MD5 every time!
 	featureOneMD5 := md5.Sum([]byte(featureOne))
 	featureOneDir := fmt.Sprintf("/.envbuilder/features/one-%x", featureOneMD5[:4])
 	featureTwoMD5 := md5.Sum([]byte(featureTwo))
 	featureTwoDir := fmt.Sprintf("/.envbuilder/features/two-%x", featureTwoMD5[:4])
 
-	require.Equal(t, `FROM localhost:5000/envbuilder-test-codercom-code-server:latest
+	t.Run("WithoutBuildContexts", func(t *testing.T) {
+		params, err := dc.Compile(fs, "", magicDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+
+		require.Equal(t, `FROM localhost:5000/envbuilder-test-codercom-code-server:latest
 
 USER root
 # Rust tomato - Example description!
@@ -108,6 +113,38 @@ WORKDIR `+featureTwoDir+`
 ENV POTATO=example
 RUN VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 USER 1000`, params.DockerfileContent)
+	})
+
+	t.Run("WithBuildContexts", func(t *testing.T) {
+		params, err := dc.Compile(fs, "", magicDir, "", "", true, stubLookupEnv)
+		require.NoError(t, err)
+
+		registryHost := strings.TrimPrefix(registry, "http://")
+
+		require.Equal(t, `FROM scratch AS envbuilder_feature_one
+COPY --from=`+registryHost+`/coder/one / /
+
+FROM scratch AS envbuilder_feature_two
+COPY --from=`+registryHost+`/coder/two / /
+
+FROM localhost:5000/envbuilder-test-codercom-code-server:latest
+
+USER root
+# Rust tomato - Example description!
+WORKDIR `+featureOneDir+`
+ENV TOMATO=example
+RUN --mount=type=bind,from=envbuilder_feature_one,target=`+featureOneDir+`,rw _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
+# Go potato - Example description!
+WORKDIR `+featureTwoDir+`
+ENV POTATO=example
+RUN --mount=type=bind,from=envbuilder_feature_two,target=`+featureTwoDir+`,rw VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
+USER 1000`, params.DockerfileContent)
+
+		require.Equal(t, map[string]string{
+			registryHost + "/coder/one": featureOneDir,
+			registryHost + "/coder/two": featureTwoDir,
+		}, params.FeatureContexts)
+	})
 }
 
 func TestCompileDevContainer(t *testing.T) {
@@ -118,7 +155,7 @@ func TestCompileDevContainer(t *testing.T) {
 		dc := &devcontainer.Spec{
 			Image: "localhost:5000/envbuilder-test-ubuntu:latest",
 		}
-		params, err := dc.Compile(fs, "", magicDir, "", "", false, os.LookupEnv)
+		params, err := dc.Compile(fs, "", magicDir, "", "", false, stubLookupEnv)
 		require.NoError(t, err)
 		require.Equal(t, filepath.Join(magicDir, "Dockerfile"), params.DockerfilePath)
 		require.Equal(t, magicDir, params.BuildContext)
@@ -144,7 +181,7 @@ func TestCompileDevContainer(t *testing.T) {
 		_, err = io.WriteString(file, "FROM localhost:5000/envbuilder-test-ubuntu:latest")
 		require.NoError(t, err)
 		_ = file.Close()
-		params, err := dc.Compile(fs, dcDir, magicDir, "", "/var/workspace", false, os.LookupEnv)
+		params, err := dc.Compile(fs, dcDir, magicDir, "", "/var/workspace", false, stubLookupEnv)
 		require.NoError(t, err)
 		require.Equal(t, "ARG1=value1", params.BuildArgs[0])
 		require.Equal(t, "ARG2=workspace", params.BuildArgs[1])

@@ -18,7 +18,6 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -779,13 +778,34 @@ func Run(ctx context.Context, options Options) error {
 		//
 		// We need to change the ownership of the files to the user that will
 		// be running the init script.
-		filepath.Walk(options.WorkspaceFolder, func(path string, info os.FileInfo, err error) error {
+		if chownErr := filepath.Walk(options.WorkspaceFolder, func(path string, _ os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
 			return os.Chown(path, userInfo.uid, userInfo.gid)
-		})
-		endStage("👤 Updated the ownership of the workspace!")
+		}); chownErr != nil {
+			options.Logger(notcodersdk.LogLevelError, "chown %q: %s", userInfo.user.HomeDir, chownErr.Error())
+			endStage("⚠️ Failed to the ownership of the workspace, you may need to fix this manually!")
+		} else {
+			endStage("👤 Updated the ownership of the workspace!")
+		}
+	}
+
+	// We may also need to update the ownership of the user homedir.
+	// Skip this step if the user is root.
+	if userInfo.uid != 0 {
+		endStage := startStage("🔄 Updating ownership of %s...", userInfo.user.HomeDir)
+		if chownErr := filepath.Walk(userInfo.user.HomeDir, func(path string, _ fs.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			return os.Chown(path, userInfo.uid, userInfo.gid)
+		}); chownErr != nil {
+			options.Logger(notcodersdk.LogLevelError, "chown %q: %s", userInfo.user.HomeDir, chownErr.Error())
+			endStage("⚠️ Failed to update ownership of %s, you may need to fix this manually!", userInfo.user.HomeDir)
+		} else {
+			endStage("🏡 Updated ownership of %s!", userInfo.user.HomeDir)
+		}
 	}
 
 	err = os.MkdirAll(options.WorkspaceFolder, 0o755)
@@ -1063,16 +1083,19 @@ func createPostStartScript(path string, postStartCommand devcontainer.LifecycleS
 // unsetOptionsEnv unsets all environment variables that are used
 // to configure the options.
 func unsetOptionsEnv() {
-	val := reflect.ValueOf(&Options{}).Elem()
-	typ := val.Type()
-
-	for i := 0; i < val.NumField(); i++ {
-		fieldTyp := typ.Field(i)
-		env := fieldTyp.Tag.Get("env")
-		if env == "" {
+	var o Options
+	for _, opt := range o.CLI() {
+		if opt.Env == "" {
 			continue
 		}
-		os.Unsetenv(env)
+		// Do not strip options that do not have the magic prefix!
+		// For example, CODER_AGENT_URL, CODER_AGENT_TOKEN, CODER_AGENT_SUBSYSTEM.
+		if !strings.HasPrefix(opt.Env, envPrefix) {
+			continue
+		}
+		// Strip both with and without prefix.
+		os.Unsetenv(opt.Env)
+		os.Unsetenv(strings.TrimPrefix(opt.Env, envPrefix))
 	}
 }
 

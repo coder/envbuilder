@@ -31,6 +31,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/go-git/go-billy/v5/memfs"
@@ -692,6 +694,46 @@ FROM_DOCKERFILE=foo
 FROM_REMOTE_ENV=baz
 PATH=/usr/local/bin:/bin:/go/bin:/opt
 REMOTE_BAR=bar`)
+}
+
+func TestUnsetOptionsEnv(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	srv := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\nENV FROM_DOCKERFILE=foo",
+		},
+	})
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		"GIT_URL", srv.URL,
+		envbuilderEnv("GIT_PASSWORD", "supersecret"),
+		"GIT_PASSWORD", "supersecret",
+		envbuilderEnv("INIT_SCRIPT", "env > /root/env.txt && sleep infinity"),
+		"INIT_SCRIPT", "env > /root/env.txt && sleep infinity",
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /root/env.txt")
+	var os envbuilder.Options
+	for _, s := range strings.Split(strings.TrimSpace(output), "\n") {
+		for _, o := range os.CLI() {
+			if strings.HasPrefix(s, o.Env) {
+				assert.Fail(t, "environment variable should be stripped when running init script", s)
+			}
+			optWithoutPrefix := strings.TrimPrefix(o.Env, envbuilder.WithEnvPrefix(""))
+			if strings.HasPrefix(s, optWithoutPrefix) {
+				assert.Fail(t, "environment variable should be stripped when running init script", s)
+			}
+		}
+	}
 }
 
 func TestLifecycleScripts(t *testing.T) {
@@ -1423,6 +1465,40 @@ func TestEmbedBinaryImage(t *testing.T) {
 	require.NotEmpty(t, strings.TrimSpace(out))
 }
 
+func TestChownHomedir(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	srv := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			".devcontainer/Dockerfile": fmt.Sprintf(`FROM %s
+RUN useradd test \
+  --create-home \
+  --shell=/bin/bash \
+  --uid=1001 \
+  --user-group
+USER test
+`, testImageUbuntu), // Note: this isn't reproducible with Alpine for some reason.
+		},
+	})
+
+	// Run envbuilder with a Docker volume mounted to homedir
+	volName := fmt.Sprintf("%s%d-home", t.Name(), time.Now().Unix())
+	ctr, err := runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+	}, volumes: map[string]string{volName: "/home/test"}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "stat -c %u:%g /home/test/")
+	require.Equal(t, "1001:1001", strings.TrimSpace(output))
+}
+
 type setupInMemoryRegistryOpts struct {
 	Username string
 	Password string
@@ -1534,8 +1610,9 @@ func cleanOldEnvbuilders() {
 }
 
 type options struct {
-	binds []string
-	env   []string
+	binds   []string
+	env     []string
+	volumes map[string]string
 }
 
 // runEnvbuilder starts the envbuilder container with the given environment
@@ -1548,6 +1625,21 @@ func runEnvbuilder(t *testing.T, options options) (string, error) {
 	t.Cleanup(func() {
 		cli.Close()
 	})
+	mounts := make([]mount.Mount, 0)
+	for volName, volPath := range options.volumes {
+		mounts = append(mounts, mount.Mount{
+			Type:   mount.TypeVolume,
+			Source: volName,
+			Target: volPath,
+		})
+		_, err = cli.VolumeCreate(ctx, volume.CreateOptions{
+			Name: volName,
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = cli.VolumeRemove(ctx, volName, true)
+		})
+	}
 	ctr, err := cli.ContainerCreate(ctx, &container.Config{
 		Image: "envbuilder:latest",
 		Env:   options.env,
@@ -1557,10 +1649,11 @@ func runEnvbuilder(t *testing.T, options options) (string, error) {
 	}, &container.HostConfig{
 		NetworkMode: container.NetworkMode("host"),
 		Binds:       options.binds,
+		Mounts:      mounts,
 	}, nil, nil, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+		_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
 			RemoveVolumes: true,
 			Force:         true,
 		})
