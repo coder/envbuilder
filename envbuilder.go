@@ -1209,12 +1209,12 @@ func copyFile(src, dst string) error {
 		return xerrors.Errorf("read file failed: %w", err)
 	}
 
-	err = os.MkdirAll(filepath.Dir(dst), 0755)
+	err = os.MkdirAll(filepath.Dir(dst), 0o755)
 	if err != nil {
 		return xerrors.Errorf("mkdir all failed: %w", err)
 	}
 
-	err = os.WriteFile(dst, content, 0644)
+	err = os.WriteFile(dst, content, 0o644)
 	if err != nil {
 		return xerrors.Errorf("write file failed: %w", err)
 	}
