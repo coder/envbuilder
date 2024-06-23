@@ -6,7 +6,7 @@ toolchain go1.22.3
 
 // There are a few options we need added to Kaniko!
 // See: https://github.com/GoogleContainerTools/kaniko/compare/main...coder:kaniko:main
-replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20240612094751-9d2f7eaa733c
+replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko c36d9e29c8b540658ba4f56e534c0fc9f1d9e691
 
 require (
 	cdr.dev/slog v1.6.2-0.20240126064726-20367d4aede6
