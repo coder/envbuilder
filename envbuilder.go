@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"maps"
 	"net"
 	"net/http"
@@ -343,21 +342,6 @@ func Run(ctx context.Context, options Options) error {
 		}
 	}
 
-	if options.PushImage {
-		// Copy the envbuilder binary into the build context.
-		buildParams.DockerfileContent = buildParams.DockerfileContent + "\n" +
-			fmt.Sprintf("COPY %s %s", ".envbuilder", "/.envbuilder")
-
-		log.Println("FIXME show me the Dockerfile now: " + buildParams.DockerfileContent)
-
-		binPath := filepath.Join(MagicDir, "bin", "envbuilder")
-		dst := filepath.Join(buildParams.BuildContext, binPath)
-		err := copyFile(binPath, dst)
-		if err != nil {
-			return fmt.Errorf("aaa : %v", err)
-		}
-	}
-
 	HijackLogrus(func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
 			options.Logger(notcodersdk.LogLevelInfo, "#%d: %s", stageNumber, color.HiBlackString(line))
@@ -421,7 +405,27 @@ func Run(ctx context.Context, options Options) error {
 		util.AddToDefaultIgnoreList(util.IgnoreListEntry{
 			Path:            ignorePath,
 			PrefixMatchOnly: false,
+			AllowedPaths:    map[string]struct{}{},
 		})
+	}
+
+	// In order to allow 'resuming' envbuilder, embed the binary into the image
+	// if it is being pushed
+	if options.PushImage {
+		exePath, err := os.Executable()
+		if err != nil {
+			return xerrors.Errorf("get exe path: %w", err)
+		}
+		// Add an exception for the current running binary in kaniko ignore list
+		if err := util.AddAllowedPathToDefaultIgnoreList(exePath); err != nil {
+			return xerrors.Errorf("add exe path to ignore list: %w", err)
+		}
+		// Copy the envbuilder binary into the build context.
+		buildParams.DockerfileContent += fmt.Sprintf("\nCOPY %s %s", exePath, exePath)
+		dst := filepath.Join(buildParams.BuildContext, exePath)
+		if err := copyFile(exePath, dst); err != nil {
+			return xerrors.Errorf("copy running binary to build context: %w", err)
+		}
 	}
 
 	// temp move of all ro mounts
