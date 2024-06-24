@@ -18,7 +18,7 @@ require (
 	github.com/containerd/containerd v1.7.15
 	github.com/distribution/distribution/v3 v3.0.0-alpha.1
 	github.com/docker/cli v26.1.0+incompatible
-	github.com/docker/docker v26.1.0+incompatible
+	github.com/docker/docker v27.0.0+incompatible
 	github.com/fatih/color v1.17.0
 	github.com/gliderlabs/ssh v0.3.7
 	github.com/go-git/go-billy/v5 v5.5.0
