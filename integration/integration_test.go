@@ -1138,8 +1138,19 @@ func TestPushImage(t *testing.T) {
 		require.NoError(t, err)
 
 		// Then: the image should be pushed
-		_, err = remote.Image(ref)
+		img, err := remote.Image(ref)
 		require.NoError(t, err, "expected image to be present after build + push")
+
+		// Then: the image should have its directives replaced with those required
+		// to run envbuilder automatically
+		configFile, err := img.ConfigFile()
+		require.NoError(t, err, "expected image to return a config file")
+
+		assert.Equal(t, "root", configFile.Config.User, "user must be root")
+		assert.Equal(t, "/", configFile.Config.WorkingDir, "workdir must be /")
+		if assert.Len(t, configFile.Config.Entrypoint, 1) {
+			assert.Equal(t, "/.envbuilder/bin/envbuilder", configFile.Config.Entrypoint[0], "incorrect entrypoint")
+		}
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
 		_, err = runEnvbuilder(t, options{env: []string{
@@ -1163,8 +1174,8 @@ func TestPushImage(t *testing.T) {
 
 		// When: we run the image we just built
 		ctr, err := cli.ContainerCreate(ctx, &container.Config{
-			Image: ref.String(),
-			Cmd:   []string{"sleep", "infinity"},
+			Image:      ref.String(),
+			Entrypoint: []string{"sleep", "infinity"},
 			Labels: map[string]string{
 				testContainerLabel: "true",
 			},
@@ -1180,8 +1191,8 @@ func TestPushImage(t *testing.T) {
 		require.NoError(t, err)
 
 		// Then: the envbuilder binary exists in the image!
-		out := execContainer(t, ctr.ID, "[[ -f \"/.envbuilder/bin/envbuilder\" ]] && echo \"exists\"")
-		require.Equal(t, "exists", strings.TrimSpace(out))
+		out := execContainer(t, ctr.ID, "/.envbuilder/bin/envbuilder --help")
+		require.Regexp(t, `(?s)^USAGE:\s+envbuilder`, strings.TrimSpace(out))
 		out = execContainer(t, ctr.ID, "cat /root/date.txt")
 		require.NotEmpty(t, strings.TrimSpace(out))
 	})
