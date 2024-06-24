@@ -131,13 +131,13 @@ FROM localhost:5000/envbuilder-test-codercom-code-server:latest
 
 USER root
 # Rust tomato - Example description!
-WORKDIR `+featureOneDir+`
+WORKDIR /.envbuilder/features/one
 ENV TOMATO=example
-RUN --mount=type=bind,from=envbuilder_feature_one,target=`+featureOneDir+`,rw _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
+RUN --mount=type=bind,from=envbuilder_feature_one,target=/.envbuilder/features/one,rw _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 # Go potato - Example description!
-WORKDIR `+featureTwoDir+`
+WORKDIR /.envbuilder/features/two
 ENV POTATO=example
-RUN --mount=type=bind,from=envbuilder_feature_two,target=`+featureTwoDir+`,rw VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
+RUN --mount=type=bind,from=envbuilder_feature_two,target=/.envbuilder/features/two,rw VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 USER 1000`, params.DockerfileContent)
 
 		require.Equal(t, map[string]string{
