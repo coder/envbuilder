@@ -30,6 +30,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
@@ -1394,6 +1395,74 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 		// Then: envbuilder should fail with a descriptive error
 		require.ErrorContains(t, err, "failed to push to destination")
 	})
+}
+
+func TestEmbedBinaryImage(t *testing.T) {
+	t.Parallel()
+
+	srv := createGitServer(t, gitServerOptions{
+		files: map[string]string{
+			".devcontainer/Dockerfile": fmt.Sprintf("FROM %s\nRUN date --utc > /root/date.txt", testImageAlpine),
+			".devcontainer/devcontainer.json": `{
+			"name": "Test",
+			"build": {
+				"dockerfile": "Dockerfile"
+			},
+		}`,
+		},
+	})
+
+	testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+	testRepo := testReg + "/test-embed-binary-image"
+	ref, err := name.ParseReference(testRepo + ":latest")
+	require.NoError(t, err)
+
+	_, err = runEnvbuilder(t, options{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("CACHE_REPO", testRepo),
+		envbuilderEnv("PUSH_IMAGE", "1"),
+	}})
+	require.NoError(t, err)
+
+	_, err = remote.Image(ref)
+	require.NoError(t, err, "expected image to be present after build + push")
+
+	ctx := context.Background()
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		cli.Close()
+	})
+
+	// Pull the image we just built
+	rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = rc.Close() })
+	_, err = io.ReadAll(rc)
+	require.NoError(t, err)
+
+	// Run it
+	ctr, err := cli.ContainerCreate(ctx, &container.Config{
+		Image: ref.String(),
+		Cmd:   []string{"sleep", "infinity"},
+		Labels: map[string]string{
+			testContainerLabel: "true",
+		},
+	}, nil, nil, nil, "")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+			RemoveVolumes: true,
+			Force:         true,
+		})
+	})
+	err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
+	require.NoError(t, err)
+
+	out := execContainer(t, ctr.ID, "[[ -f \"/.envbuilder/bin/envbuilder\" ]] && echo \"exists\"")
+	require.Equal(t, "exists", strings.TrimSpace(out))
+	out = execContainer(t, ctr.ID, "cat /root/date.txt")
+	require.NotEmpty(t, strings.TrimSpace(out))
 }
 
 func TestChownHomedir(t *testing.T) {

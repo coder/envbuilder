@@ -126,8 +126,8 @@ github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGX
 github.com/cockroachdb/datadriven v0.0.0-20200714090401-bf6692d28da5/go.mod h1:h6jFvWxBdQXxjopDMZyH2UVceIRfR84bdzbkoKrsWNo=
 github.com/cockroachdb/errors v1.2.4/go.mod h1:rQD95gz6FARkaKkQXUksEje/d9a6wBJoCr5oaCLELYA=
 github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f/go.mod h1:i/u985jwjWRlyHXQbwatDASoW0RMlZ/3i9yJHE2xLkI=
-github.com/coder/kaniko v0.0.0-20240612094751-9d2f7eaa733c h1:m/cK7QW+IIydq+7zmuGesY1k6CEZlKooSF+KtIcXke8=
-github.com/coder/kaniko v0.0.0-20240612094751-9d2f7eaa733c/go.mod h1:YMK7BlxerzLlMwihGxNWUaFoN9LXCij4P+w/8/fNlcM=
+github.com/coder/kaniko v0.0.0-20240624091120-7208a49f5b15 h1:Rne2frxrqtLEQ/v4f/wS550Yp/WXLCRFzDuxg8b9woM=
+github.com/coder/kaniko v0.0.0-20240624091120-7208a49f5b15/go.mod h1:YMK7BlxerzLlMwihGxNWUaFoN9LXCij4P+w/8/fNlcM=
 github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0 h1:3A0ES21Ke+FxEM8CXx9n47SZOKOpgSE1bbJzlE4qPVs=
 github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0/go.mod h1:5UuS2Ts+nTToAMeOjNlnHFkPahrtDkmpydBen/3wgZc=
 github.com/coder/retry v1.5.1 h1:iWu8YnD8YqHs3XwqrqsjoBTAVqT9ml6z9ViJ2wlMiqc=
