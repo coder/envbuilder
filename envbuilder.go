@@ -404,7 +404,7 @@ func Run(ctx context.Context, options Options) error {
 		util.AddToDefaultIgnoreList(util.IgnoreListEntry{
 			Path:            ignorePath,
 			PrefixMatchOnly: false,
-			AllowedPaths:    map[string]struct{}{},
+			AllowedPaths:    nil,
 		})
 	}
 
