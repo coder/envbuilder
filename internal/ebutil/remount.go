@@ -1,6 +1,7 @@
 package ebutil
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,6 +45,16 @@ func tempRemount(m mounter, logf func(notcodersdk.LogLevel, string, ...any), bas
 		return func() error { return nil }, fmt.Errorf("get mounts: %w", err)
 	}
 
+	libDir, err := getLibDir(m)
+	if err != nil {
+		return func() error { return nil }, fmt.Errorf("get lib directory: %w", err)
+	}
+
+	libsSymlinks, err := getLibsSymlinks(m, libDir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return func() error { return nil }, fmt.Errorf("read lib symlinks: %w", err)
+	}
+
 	// temp move of all ro mounts
 	mounts := map[string]string{}
 	var restoreOnce sync.Once
@@ -51,8 +62,19 @@ func tempRemount(m mounter, logf func(notcodersdk.LogLevel, string, ...any), bas
 	// closer to attempt to restore original mount points
 	restore = func() error {
 		restoreOnce.Do(func() {
+			if len(mounts) == 0 {
+				return
+			}
+
+			newLibDir, err := getLibDir(m)
+			if err != nil {
+				merr = multierror.Append(merr, fmt.Errorf("get new lib directory: %w", err))
+				return
+			}
+
 			for orig, moved := range mounts {
-				if err := remount(m, moved, orig); err != nil {
+				logf(notcodersdk.LogLevelTrace, "restore mount %s", orig)
+				if err := remount(m, moved, orig, newLibDir, libsSymlinks); err != nil {
 					merr = multierror.Append(merr, fmt.Errorf("restore mount: %w", err))
 				}
 			}
@@ -77,7 +99,8 @@ outer:
 
 		src := mountInfo.MountPoint
 		dest := filepath.Join(base, src)
-		if err := remount(m, src, dest); err != nil {
+		logf(notcodersdk.LogLevelTrace, "temp remount %s", src)
+		if err := remount(m, src, dest, libDir, libsSymlinks); err != nil {
 			return restore, fmt.Errorf("temp remount: %w", err)
 		}
 
@@ -87,33 +110,51 @@ outer:
 	return restore, nil
 }
 
-func remount(m mounter, src, dest string) error {
+func remount(m mounter, src, dest, libDir string, libsSymlinks map[string][]string) error {
 	stat, err := m.Stat(src)
 	if err != nil {
 		return fmt.Errorf("stat %s: %w", src, err)
 	}
+
 	var destDir string
 	if stat.IsDir() {
 		destDir = dest
 	} else {
 		destDir = filepath.Dir(dest)
+		if destDir == usrLibDir || destDir == usrLibMultiarchDir {
+			// Restore mount to libDir
+			destDir = libDir
+			dest = filepath.Join(destDir, stat.Name())
+		}
 	}
+
 	if err := m.MkdirAll(destDir, 0o750); err != nil {
 		return fmt.Errorf("ensure path: %w", err)
 	}
+
 	if !stat.IsDir() {
 		f, err := m.OpenFile(dest, os.O_CREATE, 0o640)
 		if err != nil {
 			return fmt.Errorf("ensure file path: %w", err)
 		}
-		defer f.Close()
+		f.Close()
+
+		if symlinks, ok := libsSymlinks[stat.Name()]; ok {
+			srcDir := filepath.Dir(src)
+			if err := moveLibSymlinks(m, symlinks, srcDir, destDir); err != nil {
+				return err
+			}
+		}
 	}
+
 	if err := m.Mount(src, dest, "bind", syscall.MS_BIND, ""); err != nil {
 		return fmt.Errorf("bind mount %s => %s: %w", src, dest, err)
 	}
+
 	if err := m.Unmount(src, 0); err != nil {
 		return fmt.Errorf("unmount orig src %s: %w", src, err)
 	}
+
 	return nil
 }
 
@@ -131,6 +172,12 @@ type mounter interface {
 	Mount(string, string, string, uintptr, string) error
 	// Unmount wraps syscall.Unmount
 	Unmount(string, int) error
+	// ReadDir wraps os.ReadDir
+	ReadDir(string) ([]os.DirEntry, error)
+	// EvalSymlinks wraps filepath.EvalSymlinks
+	EvalSymlinks(string) (string, error)
+	// Rename wraps os.Rename
+	Rename(string, string) error
 }
 
 // realMounter implements mounter and actually does the thing.
@@ -160,4 +207,16 @@ func (m *realMounter) OpenFile(name string, flag int, perm os.FileMode) (*os.Fil
 
 func (m *realMounter) Stat(path string) (os.FileInfo, error) {
 	return os.Stat(path)
+}
+
+func (m *realMounter) ReadDir(name string) ([]os.DirEntry, error) {
+	return os.ReadDir(name)
+}
+
+func (m *realMounter) EvalSymlinks(path string) (string, error) {
+	return filepath.EvalSymlinks(path)
+}
+
+func (m *realMounter) Rename(oldpath, newpath string) error {
+	return os.Rename(oldpath, newpath)
 }
