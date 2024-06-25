@@ -218,6 +218,8 @@ func (s *Spec) Compile(featureRef, featureName, featureDir, containerUser, remot
 	sort.Strings(runDirective)
 	// See https://containers.dev/implementors/features/#invoking-installsh
 	if useBuildContexts {
+		// Use a deterministic target directory to make the resulting Dockerfile cacheable
+		featureDir = "/.envbuilder/features/" + featureName
 		fromDirective = "FROM scratch AS envbuilder_feature_" + featureName + "\nCOPY --from=" + featureRef + " / /\n"
 		runDirective = append([]string{"RUN", "--mount=type=bind,from=envbuilder_feature_" + featureName + ",target=" + featureDir + ",rw"}, runDirective...)
 	} else {

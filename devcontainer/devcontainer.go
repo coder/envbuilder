@@ -256,11 +256,11 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 			ok         bool
 		)
 		if _, featureRef, ok = strings.Cut(featureRefRaw, "./"); !ok {
-			featureRefParsed, err := name.NewTag(featureRefRaw)
+			featureRefParsed, err := name.ParseReference(featureRefRaw)
 			if err != nil {
 				return "", nil, fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
 			}
-			featureRef = featureRefParsed.Repository.Name()
+			featureRef = featureRefParsed.Context().Name()
 		}
 
 		featureOpts := map[string]any{}

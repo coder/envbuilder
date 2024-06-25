@@ -115,6 +115,6 @@ func TestCompile(t *testing.T) {
 		fromDirective, runDirective, err := spec.Compile("coder/test:latest", "test", "/.envbuilder/feature/test-d8e8fc", "containerUser", "remoteUser", true, nil)
 		require.NoError(t, err)
 		require.Equal(t, "FROM scratch AS envbuilder_feature_test\nCOPY --from=coder/test:latest / /", strings.TrimSpace(fromDirective))
-		require.Equal(t, "WORKDIR /.envbuilder/feature/test-d8e8fc\nRUN --mount=type=bind,from=envbuilder_feature_test,target=/.envbuilder/feature/test-d8e8fc,rw _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(runDirective))
+		require.Equal(t, "WORKDIR /.envbuilder/features/test\nRUN --mount=type=bind,from=envbuilder_feature_test,target=/.envbuilder/features/test,rw _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(runDirective))
 	})
 }
