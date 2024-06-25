@@ -1138,8 +1138,19 @@ func TestPushImage(t *testing.T) {
 		require.NoError(t, err)
 
 		// Then: the image should be pushed
-		_, err = remote.Image(ref)
+		img, err := remote.Image(ref)
 		require.NoError(t, err, "expected image to be present after build + push")
+
+		// Then: the image should have its directives replaced with those required
+		// to run envbuilder automatically
+		configFile, err := img.ConfigFile()
+		require.NoError(t, err, "expected image to return a config file")
+
+		assert.Equal(t, "root", configFile.Config.User, "user must be root")
+		assert.Equal(t, "/", configFile.Config.WorkingDir, "workdir must be /")
+		if assert.Len(t, configFile.Config.Entrypoint, 1) {
+			assert.Equal(t, "/.envbuilder/bin/envbuilder", configFile.Config.Entrypoint[0], "incorrect entrypoint")
+		}
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
 		_, err = runEnvbuilder(t, options{env: []string{
@@ -1148,6 +1159,42 @@ func TestPushImage(t *testing.T) {
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 		}})
 		require.NoError(t, err)
+
+		// When: we pull the image we just built
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer cli.Close()
+		rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = rc.Close() })
+		_, err = io.ReadAll(rc)
+		require.NoError(t, err)
+
+		// When: we run the image we just built
+		ctr, err := cli.ContainerCreate(ctx, &container.Config{
+			Image:      ref.String(),
+			Entrypoint: []string{"sleep", "infinity"},
+			Labels: map[string]string{
+				testContainerLabel: "true",
+			},
+		}, nil, nil, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+				RemoveVolumes: true,
+				Force:         true,
+			})
+		})
+		err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
+		require.NoError(t, err)
+
+		// Then: the envbuilder binary exists in the image!
+		out := execContainer(t, ctr.ID, "/.envbuilder/bin/envbuilder --help")
+		require.Regexp(t, `(?s)^USAGE:\s+envbuilder`, strings.TrimSpace(out))
+		out = execContainer(t, ctr.ID, "cat /root/date.txt")
+		require.NotEmpty(t, strings.TrimSpace(out))
 	})
 
 	t.Run("CacheAndPushAuth", func(t *testing.T) {
@@ -1395,74 +1442,6 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 		// Then: envbuilder should fail with a descriptive error
 		require.ErrorContains(t, err, "failed to push to destination")
 	})
-}
-
-func TestEmbedBinaryImage(t *testing.T) {
-	t.Parallel()
-
-	srv := createGitServer(t, gitServerOptions{
-		files: map[string]string{
-			".devcontainer/Dockerfile": fmt.Sprintf("FROM %s\nRUN date --utc > /root/date.txt", testImageAlpine),
-			".devcontainer/devcontainer.json": `{
-			"name": "Test",
-			"build": {
-				"dockerfile": "Dockerfile"
-			},
-		}`,
-		},
-	})
-
-	testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
-	testRepo := testReg + "/test-embed-binary-image"
-	ref, err := name.ParseReference(testRepo + ":latest")
-	require.NoError(t, err)
-
-	_, err = runEnvbuilder(t, options{env: []string{
-		envbuilderEnv("GIT_URL", srv.URL),
-		envbuilderEnv("CACHE_REPO", testRepo),
-		envbuilderEnv("PUSH_IMAGE", "1"),
-	}})
-	require.NoError(t, err)
-
-	_, err = remote.Image(ref)
-	require.NoError(t, err, "expected image to be present after build + push")
-
-	ctx := context.Background()
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		cli.Close()
-	})
-
-	// Pull the image we just built
-	rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = rc.Close() })
-	_, err = io.ReadAll(rc)
-	require.NoError(t, err)
-
-	// Run it
-	ctr, err := cli.ContainerCreate(ctx, &container.Config{
-		Image: ref.String(),
-		Cmd:   []string{"sleep", "infinity"},
-		Labels: map[string]string{
-			testContainerLabel: "true",
-		},
-	}, nil, nil, nil, "")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
-			RemoveVolumes: true,
-			Force:         true,
-		})
-	})
-	err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
-	require.NoError(t, err)
-
-	out := execContainer(t, ctr.ID, "[[ -f \"/.envbuilder/bin/envbuilder\" ]] && echo \"exists\"")
-	require.Equal(t, "exists", strings.TrimSpace(out))
-	out = execContainer(t, ctr.ID, "cat /root/date.txt")
-	require.NotEmpty(t, strings.TrimSpace(out))
 }
 
 func TestChownHomedir(t *testing.T) {

@@ -420,7 +420,11 @@ func Run(ctx context.Context, options Options) error {
 			return xerrors.Errorf("add exe path to ignore list: %w", err)
 		}
 		// Copy the envbuilder binary into the build context.
-		buildParams.DockerfileContent += fmt.Sprintf("\nCOPY %s %s", exePath, exePath)
+		buildParams.DockerfileContent += fmt.Sprintf(`
+COPY --chmod=0755 %s %s
+USER root
+WORKDIR /
+ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		dst := filepath.Join(buildParams.BuildContext, exePath)
 		if err := copyFile(exePath, dst); err != nil {
 			return xerrors.Errorf("copy running binary to build context: %w", err)
