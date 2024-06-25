@@ -88,7 +88,17 @@ outer:
 }
 
 func remount(m mounter, src, dest string) error {
-	if err := m.MkdirAll(dest, 0o750); err != nil {
+	stat, err := m.Stat(src)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", src, err)
+	}
+	var dest_dir string
+	if stat.IsDir() {
+		dest_dir = dest
+	} else {
+		dest_dir = filepath.Dir(dest)
+	}
+	if err := m.MkdirAll(dest_dir, 0o750); err != nil {
 		return fmt.Errorf("ensure path: %w", err)
 	}
 	if err := m.Mount(src, dest, "bind", syscall.MS_BIND, ""); err != nil {
@@ -110,6 +120,8 @@ type mounter interface {
 	Mount(string, string, string, uintptr, string) error
 	// Unmount wraps syscall.Unmount
 	Unmount(string, int) error
+	// Stat wraps os.Stat
+	Stat(string) (os.FileInfo, error)
 }
 
 // realMounter implements mounter and actually does the thing.
@@ -131,4 +143,8 @@ func (m *realMounter) GetMounts() ([]*procfs.MountInfo, error) {
 
 func (m *realMounter) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
+}
+
+func (m *realMounter) Stat(path string) (os.FileInfo, error) {
+	return os.Stat(path)
 }

@@ -85,6 +85,21 @@ func (mr *MockmounterMockRecorder) Mount(arg0, arg1, arg2, arg3, arg4 any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Mount", reflect.TypeOf((*Mockmounter)(nil).Mount), arg0, arg1, arg2, arg3, arg4)
 }
 
+// Stat mocks base method.
+func (m *Mockmounter) Stat(arg0 string) (os.FileInfo, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Stat", arg0)
+	ret0, _ := ret[0].(os.FileInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Stat indicates an expected call of Stat.
+func (mr *MockmounterMockRecorder) Stat(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stat", reflect.TypeOf((*Mockmounter)(nil).Stat), arg0)
+}
+
 // Unmount mocks base method.
 func (m *Mockmounter) Unmount(arg0 string, arg1 int) error {
 	m.ctrl.T.Helper()
