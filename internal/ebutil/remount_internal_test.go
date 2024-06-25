@@ -53,10 +53,12 @@ func Test_tempRemount(t *testing.T) {
 		mm.EXPECT().GetMounts().Return(mounts, nil)
 		mm.EXPECT().Stat("/usr/bin/utility").Return(&fakeFileInfo{isDir: false}, nil)
 		mm.EXPECT().MkdirAll("/.test/usr/bin", os.FileMode(0o750)).Times(1).Return(nil)
+		mm.EXPECT().OpenFile("/.test/usr/bin/utility", os.O_CREATE, os.FileMode(0o640)).Times(1).Return(new(os.File), nil)
 		mm.EXPECT().Mount("/usr/bin/utility", "/.test/usr/bin/utility", "bind", uintptr(syscall.MS_BIND), "").Times(1).Return(nil)
 		mm.EXPECT().Unmount("/usr/bin/utility", 0).Times(1).Return(nil)
 		mm.EXPECT().Stat("/.test/usr/bin/utility").Return(&fakeFileInfo{isDir: false}, nil)
 		mm.EXPECT().MkdirAll("/usr/bin", os.FileMode(0o750)).Times(1).Return(nil)
+		mm.EXPECT().OpenFile("/usr/bin/utility", os.O_CREATE, os.FileMode(0o640)).Times(1).Return(new(os.File), nil)
 		mm.EXPECT().Mount("/.test/usr/bin/utility", "/usr/bin/utility", "bind", uintptr(syscall.MS_BIND), "").Times(1).Return(nil)
 		mm.EXPECT().Unmount("/.test/usr/bin/utility", 0).Times(1).Return(nil)
 

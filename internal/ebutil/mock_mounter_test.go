@@ -85,6 +85,21 @@ func (mr *MockmounterMockRecorder) Mount(arg0, arg1, arg2, arg3, arg4 any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Mount", reflect.TypeOf((*Mockmounter)(nil).Mount), arg0, arg1, arg2, arg3, arg4)
 }
 
+// OpenFile mocks base method.
+func (m *Mockmounter) OpenFile(arg0 string, arg1 int, arg2 os.FileMode) (*os.File, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "OpenFile", arg0, arg1, arg2)
+	ret0, _ := ret[0].(*os.File)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// OpenFile indicates an expected call of OpenFile.
+func (mr *MockmounterMockRecorder) OpenFile(arg0, arg1, arg2 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenFile", reflect.TypeOf((*Mockmounter)(nil).OpenFile), arg0, arg1, arg2)
+}
+
 // Stat mocks base method.
 func (m *Mockmounter) Stat(arg0 string) (os.FileInfo, error) {
 	m.ctrl.T.Helper()
