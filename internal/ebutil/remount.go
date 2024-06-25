@@ -92,13 +92,13 @@ func remount(m mounter, src, dest string) error {
 	if err != nil {
 		return fmt.Errorf("stat %s: %w", src, err)
 	}
-	var dest_dir string
+	var destDir string
 	if stat.IsDir() {
-		dest_dir = dest
+		destDir = dest
 	} else {
-		dest_dir = filepath.Dir(dest)
+		destDir = filepath.Dir(dest)
 	}
-	if err := m.MkdirAll(dest_dir, 0o750); err != nil {
+	if err := m.MkdirAll(destDir, 0o750); err != nil {
 		return fmt.Errorf("ensure path: %w", err)
 	}
 	if err := m.Mount(src, dest, "bind", syscall.MS_BIND, ""); err != nil {
