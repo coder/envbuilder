@@ -433,7 +433,9 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 
 	// temp move of all ro mounts
 	tempRemountDest := filepath.Join("/", MagicDir, "mnt")
-	ignorePrefixes := []string{tempRemountDest, "/proc", "/sys"}
+	// ignorePrefixes is a superset of ignorePaths that we pass to kaniko's
+	// IgnoreList.
+	ignorePrefixes := append([]string{"/proc", "/sys"}, ignorePaths...)
 	restoreMounts, err := ebutil.TempRemount(options.Logger, tempRemountDest, ignorePrefixes...)
 	defer func() { // restoreMounts should never be nil
 		if err := restoreMounts(); err != nil {
