@@ -394,11 +394,14 @@ func Run(ctx context.Context, options Options) error {
 	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
 	ignorePaths := append([]string{
 		MagicDir,
-		options.LayerCacheDir,
 		options.WorkspaceFolder,
 		// See: https://github.com/coder/envbuilder/issues/37
 		"/etc/resolv.conf",
 	}, options.IgnorePaths...)
+
+	if options.LayerCacheDir != "" {
+		ignorePaths = append(ignorePaths, options.LayerCacheDir)
+	}
 
 	for _, ignorePath := range ignorePaths {
 		util.AddToDefaultIgnoreList(util.IgnoreListEntry{
@@ -433,7 +436,9 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 
 	// temp move of all ro mounts
 	tempRemountDest := filepath.Join("/", MagicDir, "mnt")
-	ignorePrefixes := []string{tempRemountDest, "/proc", "/sys"}
+	// ignorePrefixes is a superset of ignorePaths that we pass to kaniko's
+	// IgnoreList.
+	ignorePrefixes := append([]string{"/proc", "/sys"}, ignorePaths...)
 	restoreMounts, err := ebutil.TempRemount(options.Logger, tempRemountDest, ignorePrefixes...)
 	defer func() { // restoreMounts should never be nil
 		if err := restoreMounts(); err != nil {

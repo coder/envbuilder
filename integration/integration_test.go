@@ -41,6 +41,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -402,19 +403,37 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 		},
 	})
 	dir := t.TempDir()
-	err := os.WriteFile(filepath.Join(dir, "secret"), []byte("test"), 0o644)
-	require.NoError(t, err)
-	ctr, err := runEnvbuilder(t, options{
-		env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		},
-		binds: []string{fmt.Sprintf("%s:/var/run/secrets", dir)},
-	})
+	secretVal := uuid.NewString()
+	err := os.WriteFile(filepath.Join(dir, "secret"), []byte(secretVal), 0o644)
 	require.NoError(t, err)
 
-	output := execContainer(t, ctr, "echo hello")
-	require.Equal(t, "hello", strings.TrimSpace(output))
+	t.Run("ReadWrite", func(t *testing.T) {
+		ctr, err := runEnvbuilder(t, options{
+			env: []string{
+				envbuilderEnv("GIT_URL", srv.URL),
+				envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			},
+			binds: []string{fmt.Sprintf("%s:/var/run/secrets:rw", dir)},
+		})
+		require.NoError(t, err)
+
+		output := execContainer(t, ctr, "cat /var/run/secrets/secret")
+		require.Equal(t, secretVal, strings.TrimSpace(output))
+	})
+
+	t.Run("ReadOnly", func(t *testing.T) {
+		ctr, err := runEnvbuilder(t, options{
+			env: []string{
+				envbuilderEnv("GIT_URL", srv.URL),
+				envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			},
+			binds: []string{fmt.Sprintf("%s:/var/run/secrets:ro", dir)},
+		})
+		require.NoError(t, err)
+
+		output := execContainer(t, ctr, "cat /var/run/secrets/secret")
+		require.Equal(t, secretVal, strings.TrimSpace(output))
+	})
 }
 
 func TestBuildWithSetupScript(t *testing.T) {

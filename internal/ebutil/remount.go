@@ -88,8 +88,25 @@ outer:
 }
 
 func remount(m mounter, src, dest string) error {
-	if err := m.MkdirAll(dest, 0o750); err != nil {
+	stat, err := m.Stat(src)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", src, err)
+	}
+	var destDir string
+	if stat.IsDir() {
+		destDir = dest
+	} else {
+		destDir = filepath.Dir(dest)
+	}
+	if err := m.MkdirAll(destDir, 0o750); err != nil {
 		return fmt.Errorf("ensure path: %w", err)
+	}
+	if !stat.IsDir() {
+		f, err := m.OpenFile(dest, os.O_CREATE, 0o640)
+		if err != nil {
+			return fmt.Errorf("ensure file path: %w", err)
+		}
+		defer f.Close()
 	}
 	if err := m.Mount(src, dest, "bind", syscall.MS_BIND, ""); err != nil {
 		return fmt.Errorf("bind mount %s => %s: %w", src, dest, err)
@@ -104,8 +121,12 @@ func remount(m mounter, src, dest string) error {
 type mounter interface {
 	// GetMounts wraps procfs.GetMounts
 	GetMounts() ([]*procfs.MountInfo, error)
+	// Stat wraps os.Stat
+	Stat(string) (os.FileInfo, error)
 	// MkdirAll wraps os.MkdirAll
 	MkdirAll(string, os.FileMode) error
+	// OpenFile wraps os.OpenFile
+	OpenFile(string, int, os.FileMode) (*os.File, error)
 	// Mount wraps syscall.Mount
 	Mount(string, string, string, uintptr, string) error
 	// Unmount wraps syscall.Unmount
@@ -131,4 +152,12 @@ func (m *realMounter) GetMounts() ([]*procfs.MountInfo, error) {
 
 func (m *realMounter) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
+}
+
+func (m *realMounter) OpenFile(name string, flag int, perm os.FileMode) (*os.File, error) {
+	return os.OpenFile(name, flag, perm)
+}
+
+func (m *realMounter) Stat(path string) (os.FileInfo, error) {
+	return os.Stat(path)
 }
