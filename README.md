@@ -226,7 +226,30 @@ docker run -it --rm \
 
 Each layer is stored in the registry as a separate image. The image tag is the hash of the layer's contents. The image digest is the hash of the image tag. The image digest is used to pull the layer from the registry.
 
-The performance improvement of builds depends on the complexity of your Dockerfile. For [`coder/coder`](https://github.com/coder/coder/blob/main/.devcontainer/Dockerfile), uncached builds take 36m while cached builds take 40s (~98% improvement).
+The performance improvement of builds depends on the complexity of your
+Dockerfile. For
+[`coder/coder`](https://github.com/coder/coder/blob/main/.devcontainer/Dockerfile),
+uncached builds take 36m while cached builds take 40s (~98% improvement).
+
+## Pushing the built image
+
+Set `ENVBUILDER_PUSH_IMAGE=1` to push the entire image to the cache repo
+in addition to individual layers. `ENVBUILDER_CACHE_REPO` **must** be set in
+order for this to work.
+
+> **Note:** this option forces Envbuilder to perform a "reproducible" build.
+> This will force timestamps for all newly added files to be set to the start of the UNIX epoch.
+
+## Probe Layer Cache
+
+To check for the presence of a pre-built image, set
+`ENVBUILDER_GET_CACHED_IMAGE=1`. Instead of building the image, this will
+perform a "dry-run" build of the image, consulting `ENVBUILDER_CACHE_REPO` for
+each layer.
+
+If any layer is found not to be present in the cache repo, envbuilder
+will exit with an error. Otherwise, the image will be emitted in the log output prefixed with the string
+`ENVBUILDER_CACHED_IMAGE=...`.
 
 ## Image Caching
 
