@@ -566,7 +566,7 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 				return nil, xerrors.Errorf("get cached image digest: %w", err)
 			}
 			endStage("🏗️ Found cached image!")
-			_, _ = fmt.Fprintf(os.Stdout, "%s@%s\n", options.CacheRepo, digest.String())
+			_, _ = fmt.Fprintf(os.Stdout, "ENVBUILDER_CACHED_IMAGE=%s@%s\n", options.CacheRepo, digest.String())
 			os.Exit(0)
 		}
 
