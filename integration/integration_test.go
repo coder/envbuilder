@@ -1172,19 +1172,30 @@ func TestPushImage(t *testing.T) {
 		}
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		_, err = runEnvbuilder(t, options{env: []string{
+		ctrID, err := runEnvbuilder(t, options{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 		}})
 		require.NoError(t, err)
 
-		// When: we pull the image we just built
+		// Then: the cached image ref should be emitted in the container logs
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 		require.NoError(t, err)
 		defer cli.Close()
+		logs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
+			ShowStdout: true,
+			ShowStderr: true,
+		})
+		require.NoError(t, err)
+		defer logs.Close()
+		logBytes, err := io.ReadAll(logs)
+		require.NoError(t, err)
+		require.Regexp(t, `ENVBUILDER_CACHED_IMAGE=(\S+)`, string(logBytes))
+
+		// When: we pull the image we just built
 		rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = rc.Close() })
