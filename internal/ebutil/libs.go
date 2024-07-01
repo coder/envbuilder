@@ -7,17 +7,25 @@ import (
 	"path/filepath"
 )
 
-// Based on https://github.com/NVIDIA/libnvidia-container/blob/v1.15.0/src/common.h#L29
+// Container runtimes like NVIDIA mount individual libraries into the container
+// (e.g. `<libname>.so.<driver_version>`) and create symlinks for them
+// (e.g. `<libname>.so.1`). This code helps with finding the right library
+// directory for the target Linux distribution as well as locating the symlinks.
+//
+// Please see [#143 (comment)] for further details.
+//
+// [#143 (comment)]: https://github.com/coder/envbuilder/issues/143#issuecomment-2192405828
 
+// Based on https://github.com/NVIDIA/libnvidia-container/blob/v1.15.0/src/common.h#L29
 const usrLibDir = "/usr/lib64"
 
 const debianVersionFile = "/etc/debian_version"
 
-// getLibDir returns the library directory. It returns a multiarch directory if
-// the distribution is Debian or a derivative.
+// libraryDirectoryPath returns the library directory. It returns a multiarch
+// directory if the distribution is Debian or a derivative.
 //
 // Based on https://github.com/NVIDIA/libnvidia-container/blob/v1.15.0/src/nvc_container.c#L152-L165
-func getLibDir(m mounter) (string, error) {
+func libraryDirectoryPath(m mounter) (string, error) {
 	// Debian and its derivatives use a multiarch directory scheme.
 	if _, err := m.Stat(debianVersionFile); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("check if debian: %w", err)
@@ -28,9 +36,10 @@ func getLibDir(m mounter) (string, error) {
 	return usrLibDir, nil
 }
 
-// getLibsSymlinks returns the stats for all library symlinks if the library
-// directory exists.
-func getLibsSymlinks(m mounter, libDir string) (map[string][]string, error) {
+// libraryDirectorySymlinks returns a mapping of each library (basename) with a
+// list of their symlinks (basename). Libraries with no symlinks do not appear
+// in the mapping.
+func libraryDirectorySymlinks(m mounter, libDir string) (map[string][]string, error) {
 	des, err := m.ReadDir(libDir)
 	if err != nil {
 		return nil, fmt.Errorf("read directory %s: %w", libDir, err)
@@ -54,7 +63,6 @@ func getLibsSymlinks(m mounter, libDir string) (map[string][]string, error) {
 		}
 
 		path = filepath.Base(path)
-
 		if _, ok := libsSymlinks[path]; !ok {
 			libsSymlinks[path] = make([]string, 0, 1)
 		}

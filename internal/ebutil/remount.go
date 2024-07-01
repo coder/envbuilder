@@ -45,12 +45,12 @@ func tempRemount(m mounter, logf func(notcodersdk.LogLevel, string, ...any), bas
 		return func() error { return nil }, fmt.Errorf("get mounts: %w", err)
 	}
 
-	libDir, err := getLibDir(m)
+	libDir, err := libraryDirectoryPath(m)
 	if err != nil {
 		return func() error { return nil }, fmt.Errorf("get lib directory: %w", err)
 	}
 
-	libsSymlinks, err := getLibsSymlinks(m, libDir)
+	libsSymlinks, err := libraryDirectorySymlinks(m, libDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return func() error { return nil }, fmt.Errorf("read lib symlinks: %w", err)
 	}
@@ -66,7 +66,7 @@ func tempRemount(m mounter, logf func(notcodersdk.LogLevel, string, ...any), bas
 				return
 			}
 
-			newLibDir, err := getLibDir(m)
+			newLibDir, err := libraryDirectoryPath(m)
 			if err != nil {
 				merr = multierror.Append(merr, fmt.Errorf("get new lib directory: %w", err))
 				return
@@ -137,6 +137,7 @@ func remount(m mounter, src, dest, libDir string, libsSymlinks map[string][]stri
 		if err != nil {
 			return fmt.Errorf("ensure file path: %w", err)
 		}
+		// This ensure the file is created, it will not be used. It can be closed immediately.
 		f.Close()
 
 		if symlinks, ok := libsSymlinks[stat.Name()]; ok {
@@ -154,7 +155,6 @@ func remount(m mounter, src, dest, libDir string, libsSymlinks map[string][]stri
 	if err := m.Unmount(src, 0); err != nil {
 		return fmt.Errorf("unmount orig src %s: %w", src, err)
 	}
-
 	return nil
 }
 

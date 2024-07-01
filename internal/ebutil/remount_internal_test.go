@@ -17,9 +17,8 @@ import (
 )
 
 var expectedLibMultiarchDir = map[string]string{
-	"amd64":   "/usr/lib/x86_64-linux-gnu",
-	"arm64":   "/usr/lib/aarch64-linux-gnu",
-	"ppc64le": "/usr/lib/powerpc64le-linux-gnu",
+	"amd64": "/usr/lib/x86_64-linux-gnu",
+	"arm64": "/usr/lib/aarch64-linux-gnu",
 }
 
 func Test_tempRemount(t *testing.T) {
