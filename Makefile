@@ -5,6 +5,7 @@ GO_SRC_FILES := $(shell find . -type f -name '*.go' -not -name '*_test.go')
 GO_TEST_FILES := $(shell find . -type f -not -name '*.go' -name '*_test.go')
 GOLDEN_FILES := $(shell find . -type f -name '*.golden')
 SHELL_SRC_FILES := $(shell find . -type f -name '*.sh')
+GOLANGCI_LINT_VERSION := v1.59.1
 
 fmt: $(shell find . -type f -name '*.go')
 	go run mvdan.cc/gofumpt@v0.6.0 -l -w .
@@ -14,6 +15,7 @@ lint: lint/go lint/shellcheck
 
 .PHONY: lint/go
 lint/go: $(GO_SRC_FILES)
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	golangci-lint run
 
 .PHONY: lint/shellcheck
