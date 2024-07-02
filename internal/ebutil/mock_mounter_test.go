@@ -42,6 +42,21 @@ func (m *Mockmounter) EXPECT() *MockmounterMockRecorder {
 	return m.recorder
 }
 
+// EvalSymlinks mocks base method.
+func (m *Mockmounter) EvalSymlinks(arg0 string) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EvalSymlinks", arg0)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// EvalSymlinks indicates an expected call of EvalSymlinks.
+func (mr *MockmounterMockRecorder) EvalSymlinks(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EvalSymlinks", reflect.TypeOf((*Mockmounter)(nil).EvalSymlinks), arg0)
+}
+
 // GetMounts mocks base method.
 func (m *Mockmounter) GetMounts() ([]*procfs.MountInfo, error) {
 	m.ctrl.T.Helper()
@@ -98,6 +113,35 @@ func (m *Mockmounter) OpenFile(arg0 string, arg1 int, arg2 os.FileMode) (*os.Fil
 func (mr *MockmounterMockRecorder) OpenFile(arg0, arg1, arg2 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "OpenFile", reflect.TypeOf((*Mockmounter)(nil).OpenFile), arg0, arg1, arg2)
+}
+
+// ReadDir mocks base method.
+func (m *Mockmounter) ReadDir(arg0 string) ([]os.DirEntry, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ReadDir", arg0)
+	ret0, _ := ret[0].([]os.DirEntry)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ReadDir indicates an expected call of ReadDir.
+func (mr *MockmounterMockRecorder) ReadDir(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReadDir", reflect.TypeOf((*Mockmounter)(nil).ReadDir), arg0)
+}
+
+// Rename mocks base method.
+func (m *Mockmounter) Rename(arg0, arg1 string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Rename", arg0, arg1)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Rename indicates an expected call of Rename.
+func (mr *MockmounterMockRecorder) Rename(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Rename", reflect.TypeOf((*Mockmounter)(nil).Rename), arg0, arg1)
 }
 
 // Stat mocks base method.
