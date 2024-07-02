@@ -57,8 +57,11 @@ func envbuilderCmd() serpent.Command {
 					},
 				}
 				var flushAndClose func(ctx context.Context) error
+				// nolint: staticcheck // FIXME: https://github.com/coder/envbuilder/issues/260
 				sendLogs, flushAndClose = notcodersdk.LogsSender(notcodersdk.ExternalLogSourceID, client.PatchLogs, slog.Logger{})
-				defer flushAndClose(inv.Context())
+				defer func() {
+					_ = flushAndClose(inv.Context())
+				}()
 
 				// This adds the envbuilder subsystem.
 				// If telemetry is enabled in a Coder deployment,
@@ -66,19 +69,21 @@ func envbuilderCmd() serpent.Command {
 				// envbuilder usage.
 				if !slices.Contains(options.CoderAgentSubsystem, string(notcodersdk.AgentSubsystemEnvbuilder)) {
 					options.CoderAgentSubsystem = append(options.CoderAgentSubsystem, string(notcodersdk.AgentSubsystemEnvbuilder))
-					os.Setenv("CODER_AGENT_SUBSYSTEM", strings.Join(options.CoderAgentSubsystem, ","))
+					_ = os.Setenv("CODER_AGENT_SUBSYSTEM", strings.Join(options.CoderAgentSubsystem, ","))
 				}
 			}
 
 			options.Logger = func(level notcodersdk.LogLevel, format string, args ...interface{}) {
 				output := fmt.Sprintf(format, args...)
-				fmt.Fprintln(inv.Stderr, output)
+				_, _ = fmt.Fprintln(inv.Stderr, output)
 				if sendLogs != nil {
-					sendLogs(inv.Context(), notcodersdk.Log{
+					if err := sendLogs(inv.Context(), notcodersdk.Log{
 						CreatedAt: time.Now(),
 						Output:    output,
 						Level:     level,
-					})
+					}); err != nil {
+						_, _ = fmt.Fprintf(inv.Stderr, "failed to send logs: %s\n", err.Error())
+					}
 				}
 			}
 

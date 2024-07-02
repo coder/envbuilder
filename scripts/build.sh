@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-cd $(dirname "${BASH_SOURCE[0]}")
+cd "$(dirname "${BASH_SOURCE[0]}")"
 set -euo pipefail
 
 archs=()
@@ -48,13 +48,13 @@ docker buildx inspect --bootstrap &> /dev/null
 
 for arch in "${archs[@]}"; do
   echo "Building for $arch..."
-  GOARCH=$arch CGO_ENABLED=0 go build -o ./envbuilder-$arch ../cmd/envbuilder &
+  GOARCH=$arch CGO_ENABLED=0 go build -o "./envbuilder-${arch}" ../cmd/envbuilder &
 done
 wait
 
 args=()
 for arch in "${archs[@]}"; do
-  args+=( --platform linux/$arch )
+  args+=( --platform "linux/${arch}" )
 done
 if [ "$push" = true ]; then
   args+=( --push )
@@ -62,10 +62,10 @@ else
   args+=( --load )
 fi
 
-docker buildx build --builder $BUILDER_NAME "${args[@]}" -t $base:$tag -t $base:latest -f Dockerfile .
+docker buildx build --builder $BUILDER_NAME "${args[@]}" -t "${base}:${tag}" -t "${base}:latest" -f Dockerfile .
 
 # Check if archs contains the current. If so, then output a message!
-if [[ -z "${CI:-}" ]] && [[ " ${archs[@]} " =~ " ${current} " ]]; then
-  docker tag $base:$tag envbuilder:latest
+if [[ -z "${CI:-}" ]] && [[ " ${archs[*]} " =~ ${current} ]]; then
+  docker tag "${base}:${tag}" envbuilder:latest
   echo "Tagged $current as envbuilder:latest!"
 fi
