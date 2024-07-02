@@ -44,16 +44,6 @@ func New(t *testing.T) string {
 	return srv.URL
 }
 
-type logrusFormatter struct {
-	callback func(entry *logrus.Entry)
-	empty    []byte
-}
-
-func (f *logrusFormatter) Format(entry *logrus.Entry) ([]byte, error) {
-	f.callback(entry)
-	return f.empty, nil
-}
-
 // WriteContainer uploads a container to the registry server.
 // It returns the reference to the uploaded container.
 func WriteContainer(t *testing.T, serverURL, containerRef, mediaType string, files map[string]any) string {

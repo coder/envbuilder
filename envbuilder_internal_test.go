@@ -52,7 +52,8 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		fs := memfs.New()
 		err := fs.MkdirAll("/workspace/.devcontainer", 0o600)
 		require.NoError(t, err)
-		fs.Create("/workspace/.devcontainer/devcontainer.json")
+		_, err = fs.Create("/workspace/.devcontainer/devcontainer.json")
+		require.NoError(t, err)
 
 		// when
 		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
@@ -73,7 +74,8 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		fs := memfs.New()
 		err := fs.MkdirAll("/workspace/experimental-devcontainer", 0o600)
 		require.NoError(t, err)
-		fs.Create("/workspace/experimental-devcontainer/devcontainer.json")
+		_, err = fs.Create("/workspace/experimental-devcontainer/devcontainer.json")
+		require.NoError(t, err)
 
 		// when
 		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
@@ -95,7 +97,8 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		fs := memfs.New()
 		err := fs.MkdirAll("/workspace/.devcontainer", 0o600)
 		require.NoError(t, err)
-		fs.Create("/workspace/.devcontainer/experimental.json")
+		_, err = fs.Create("/workspace/.devcontainer/experimental.json")
+		require.NoError(t, err)
 
 		// when
 		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
@@ -117,7 +120,8 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		fs := memfs.New()
 		err := fs.MkdirAll("/workspace", 0o600)
 		require.NoError(t, err)
-		fs.Create("/workspace/devcontainer.json")
+		_, err = fs.Create("/workspace/devcontainer.json")
+		require.NoError(t, err)
 
 		// when
 		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
@@ -138,7 +142,8 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		fs := memfs.New()
 		err := fs.MkdirAll("/workspace/.devcontainer/sample", 0o600)
 		require.NoError(t, err)
-		fs.Create("/workspace/.devcontainer/sample/devcontainer.json")
+		_, err = fs.Create("/workspace/.devcontainer/sample/devcontainer.json")
+		require.NoError(t, err)
 
 		// when
 		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
