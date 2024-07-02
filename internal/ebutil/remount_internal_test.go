@@ -18,6 +18,7 @@ import (
 
 var expectedLibMultiarchDir = map[string]string{
 	"amd64": "/usr/lib/x86_64-linux-gnu",
+	"arm":   "/var/empty",
 	"arm64": "/usr/lib/aarch64-linux-gnu",
 }
 
