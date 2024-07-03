@@ -16,7 +16,7 @@ lint: lint/go lint/shellcheck
 .PHONY: lint/go
 lint/go: $(GO_SRC_FILES)
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
-	golangci-lint run
+	golangci-lint run --timeout=10m
 
 .PHONY: lint/shellcheck
 lint/shellcheck: $(SHELL_SRC_FILES)
