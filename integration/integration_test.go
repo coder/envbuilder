@@ -1612,9 +1612,11 @@ func cleanOldEnvbuilders() {
 		panic(err)
 	}
 	for _, ctr := range ctrs {
-		cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+		if err := cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
 			Force: true,
-		})
+		}); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "failed to remove old test container: %s\n", err.Error())
+		}
 	}
 }
 
