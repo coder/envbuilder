@@ -103,7 +103,7 @@ resource "kubernetes_deployment" "example" {
         # Define the volumeMount with the pull credentials
         volume_mount {
           name       = "docker-config-volume"
-          mount_path = "/envbuilder/config.json"
+          mount_path = "/.envbuilder/config.json"
           sub_path   = ".dockerconfigjson"
         }
       }
