@@ -39,9 +39,9 @@ require (
 	github.com/tailscale/hujson v0.0.0-20221223112325-20486734a56a
 	go.uber.org/mock v0.4.0
 	golang.org/x/crypto v0.24.0
+	golang.org/x/mod v0.18.0
 	golang.org/x/sync v0.7.0
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028
-	storj.io/drpc v0.0.33
 )
 
 require (
@@ -270,7 +270,6 @@ require (
 	go4.org/mem v0.0.0-20220726221520-4f986261bf13 // indirect
 	go4.org/netipx v0.0.0-20230728180743-ad4cb58a6516 // indirect
 	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f // indirect
-	golang.org/x/mod v0.18.0 // indirect
 	golang.org/x/net v0.26.0 // indirect
 	golang.org/x/oauth2 v0.20.0 // indirect
 	golang.org/x/sys v0.21.0 // indirect
@@ -293,5 +292,6 @@ require (
 	gvisor.dev/gvisor v0.0.0-20240509041132-65b30f7869dc // indirect
 	inet.af/peercred v0.0.0-20210906144145-0893ea02156a // indirect
 	nhooyr.io/websocket v1.8.7 // indirect
+	storj.io/drpc v0.0.33 // indirect
 	tailscale.com v1.46.1 // indirect
 )
