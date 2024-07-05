@@ -1191,20 +1191,20 @@ func findDevcontainerJSON(options Options) (string, string, error) {
 
 // maybeDeleteFilesystem wraps util.DeleteFilesystem with a guard to hopefully stop
 // folks from unwittingly deleting their entire root directory.
-func maybeDeleteFilesystem(log log.Func, force bool) error {
+func maybeDeleteFilesystem(logger log.Func, force bool) error {
 	kanikoDir, ok := os.LookupEnv("KANIKO_DIR")
 	if !ok || strings.TrimSpace(kanikoDir) != MagicDir {
 		if force {
 			bailoutSecs := 10
-			log(log.LevelWarn, "WARNING! BYPASSING SAFETY CHECK! THIS WILL DELETE YOUR ROOT FILESYSTEM!")
-			log(log.LevelWarn, "You have %d seconds to bail out!", bailoutSecs)
+			logger(log.LevelWarn, "WARNING! BYPASSING SAFETY CHECK! THIS WILL DELETE YOUR ROOT FILESYSTEM!")
+			logger(log.LevelWarn, "You have %d seconds to bail out!", bailoutSecs)
 			for i := bailoutSecs; i > 0; i-- {
-				log(log.LevelWarn, "%d...", i)
+				logger(log.LevelWarn, "%d...", i)
 				<-time.After(time.Second)
 			}
 		} else {
-			log(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", MagicDir)
-			log(log.LevelError, "To bypass this check, set FORCE_SAFE=true.")
+			logger(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", MagicDir)
+			logger(log.LevelError, "To bypass this check, set FORCE_SAFE=true.")
 			return errors.New("safety check failed")
 		}
 	}

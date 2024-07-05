@@ -145,14 +145,14 @@ func ReadPrivateKey(path string) (gossh.Signer, error) {
 
 // LogHostKeyCallback is a HostKeyCallback that just logs host keys
 // and does nothing else.
-func LogHostKeyCallback(log log.Func) gossh.HostKeyCallback {
+func LogHostKeyCallback(logger log.Func) gossh.HostKeyCallback {
 	return func(hostname string, remote net.Addr, key gossh.PublicKey) error {
 		var sb strings.Builder
 		_ = knownhosts.WriteKnownHost(&sb, hostname, remote, key)
 		// skeema/knownhosts uses a fake public key to determine the host key
 		// algorithms. Ignore this one.
 		if s := sb.String(); !strings.Contains(s, "fake-public-key ZmFrZSBwdWJsaWMga2V5") {
-			log(log.LevelInfo, "#1: 🔑 Got host key: %s", strings.TrimSpace(s))
+			logger(log.LevelInfo, "#1: 🔑 Got host key: %s", strings.TrimSpace(s))
 		}
 		return nil
 	}
