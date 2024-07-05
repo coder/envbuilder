@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/coder/envbuilder"
-	"github.com/coder/envbuilder/internal/notcodersdk"
+	"github.com/coder/envbuilder/internal/log"
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/coder/envbuilder/testutil/mwtest"
 	"github.com/go-git/go-billy/v5"
@@ -404,8 +404,8 @@ func randKeygen(t *testing.T) gossh.Signer {
 	return signer
 }
 
-func testLog(t *testing.T) envbuilder.LoggerFunc {
-	return func(_ notcodersdk.LogLevel, format string, args ...interface{}) {
+func testLog(t *testing.T) log.Func {
+	return func(_ log.Level, format string, args ...interface{}) {
 		t.Logf(format, args...)
 	}
 }

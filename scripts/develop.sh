@@ -3,9 +3,9 @@
 cd "$(dirname "${BASH_SOURCE[0]}")"
 set -euxo pipefail
 
-./build.sh
+./build.sh || exit 1
 
 docker run --rm -it \
-    -e GIT_URL=https://github.com/denoland/deno \
-    -e INIT_SCRIPT="bash" \
+    -e ENVBUILDER_GIT_URL=https://github.com/denoland/deno \
+    -e ENVBUILDER_INIT_SCRIPT="bash" \
     envbuilder:latest

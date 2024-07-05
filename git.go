@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	giturls "github.com/chainguard-dev/git-urls"
-	"github.com/coder/envbuilder/internal/notcodersdk"
+	"github.com/coder/envbuilder/internal/log"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -145,14 +145,14 @@ func ReadPrivateKey(path string) (gossh.Signer, error) {
 
 // LogHostKeyCallback is a HostKeyCallback that just logs host keys
 // and does nothing else.
-func LogHostKeyCallback(log LoggerFunc) gossh.HostKeyCallback {
+func LogHostKeyCallback(logger log.Func) gossh.HostKeyCallback {
 	return func(hostname string, remote net.Addr, key gossh.PublicKey) error {
 		var sb strings.Builder
 		_ = knownhosts.WriteKnownHost(&sb, hostname, remote, key)
 		// skeema/knownhosts uses a fake public key to determine the host key
 		// algorithms. Ignore this one.
 		if s := sb.String(); !strings.Contains(s, "fake-public-key ZmFrZSBwdWJsaWMga2V5") {
-			log(notcodersdk.LogLevelInfo, "#1: 🔑 Got host key: %s", strings.TrimSpace(s))
+			logger(log.LevelInfo, "#1: 🔑 Got host key: %s", strings.TrimSpace(s))
 		}
 		return nil
 	}
@@ -179,19 +179,19 @@ func LogHostKeyCallback(log LoggerFunc) gossh.HostKeyCallback {
 // performed as usual.
 func SetupRepoAuth(options *Options) transport.AuthMethod {
 	if options.GitURL == "" {
-		options.Logger(notcodersdk.LogLevelInfo, "#1: ❔ No Git URL supplied!")
+		options.Logger(log.LevelInfo, "#1: ❔ No Git URL supplied!")
 		return nil
 	}
 	if strings.HasPrefix(options.GitURL, "http://") || strings.HasPrefix(options.GitURL, "https://") {
 		// Special case: no auth
 		if options.GitUsername == "" && options.GitPassword == "" {
-			options.Logger(notcodersdk.LogLevelInfo, "#1: 👤 Using no authentication!")
+			options.Logger(log.LevelInfo, "#1: 👤 Using no authentication!")
 			return nil
 		}
 		// Basic Auth
 		// NOTE: we previously inserted the credentials into the repo URL.
 		// This was removed in https://github.com/coder/envbuilder/pull/141
-		options.Logger(notcodersdk.LogLevelInfo, "#1: 🔒 Using HTTP basic authentication!")
+		options.Logger(log.LevelInfo, "#1: 🔒 Using HTTP basic authentication!")
 		return &githttp.BasicAuth{
 			Username: options.GitUsername,
 			Password: options.GitPassword,
@@ -205,29 +205,29 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 	}
 
 	// Assume SSH auth for all other formats.
-	options.Logger(notcodersdk.LogLevelInfo, "#1: 🔑 Using SSH authentication!")
+	options.Logger(log.LevelInfo, "#1: 🔑 Using SSH authentication!")
 
 	var signer ssh.Signer
 	if options.GitSSHPrivateKeyPath != "" {
 		s, err := ReadPrivateKey(options.GitSSHPrivateKeyPath)
 		if err != nil {
-			options.Logger(notcodersdk.LogLevelError, "#1: ❌ Failed to read private key from %s: %s", options.GitSSHPrivateKeyPath, err.Error())
+			options.Logger(log.LevelError, "#1: ❌ Failed to read private key from %s: %s", options.GitSSHPrivateKeyPath, err.Error())
 		} else {
-			options.Logger(notcodersdk.LogLevelInfo, "#1: 🔑 Using %s key!", s.PublicKey().Type())
+			options.Logger(log.LevelInfo, "#1: 🔑 Using %s key!", s.PublicKey().Type())
 			signer = s
 		}
 	}
 
 	// If no SSH key set, fall back to agent auth.
 	if signer == nil {
-		options.Logger(notcodersdk.LogLevelError, "#1: 🔑 No SSH key found, falling back to agent!")
+		options.Logger(log.LevelError, "#1: 🔑 No SSH key found, falling back to agent!")
 		auth, err := gitssh.NewSSHAgentAuth(options.GitUsername)
 		if err != nil {
-			options.Logger(notcodersdk.LogLevelError, "#1: ❌ Failed to connect to SSH agent: %s", err.Error())
+			options.Logger(log.LevelError, "#1: ❌ Failed to connect to SSH agent: %s", err.Error())
 			return nil // nothing else we can do
 		}
 		if os.Getenv("SSH_KNOWN_HOSTS") == "" {
-			options.Logger(notcodersdk.LogLevelWarn, "#1: 🔓 SSH_KNOWN_HOSTS not set, accepting all host keys!")
+			options.Logger(log.LevelWarn, "#1: 🔓 SSH_KNOWN_HOSTS not set, accepting all host keys!")
 			auth.HostKeyCallback = LogHostKeyCallback(options.Logger)
 		}
 		return auth
@@ -246,7 +246,7 @@ func SetupRepoAuth(options *Options) transport.AuthMethod {
 
 	// Duplicated code due to Go's type system.
 	if os.Getenv("SSH_KNOWN_HOSTS") == "" {
-		options.Logger(notcodersdk.LogLevelWarn, "#1: 🔓 SSH_KNOWN_HOSTS not set, accepting all host keys!")
+		options.Logger(log.LevelWarn, "#1: 🔓 SSH_KNOWN_HOSTS not set, accepting all host keys!")
 		auth.HostKeyCallback = LogHostKeyCallback(options.Logger)
 	}
 	return auth
