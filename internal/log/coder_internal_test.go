@@ -116,6 +116,9 @@ func TestCoder(t *testing.T) {
 		require.Len(t, ld.logs, 10)
 	})
 
+	// In this test, we just stand up an endpoint that does not
+	// do dRPC. We'll try to connect, fail to websocket upgrade
+	// and eventually give up.
 	t.Run("V2/Err", func(t *testing.T) {
 		t.Parallel()
 
@@ -139,7 +142,8 @@ func TestCoder(t *testing.T) {
 		u, err := url.Parse(srv.URL)
 		require.NoError(t, err)
 		_, _, err = Coder(ctx, u, token)
-		require.ErrorContains(t, err, "init coder rpc client")
+		require.ErrorContains(t, err, "failed to WebSocket dial")
+		require.ErrorIs(t, err, context.DeadlineExceeded)
 		<-handlerDone
 	})
 }
