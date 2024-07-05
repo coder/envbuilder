@@ -3,12 +3,10 @@ package envbuilder
 import (
 	"strings"
 
-	"github.com/coder/envbuilder/internal/notcodersdk"
+	"github.com/coder/envbuilder/internal/log"
 	"github.com/coder/serpent"
 	"github.com/go-git/go-billy/v5"
 )
-
-type LoggerFunc func(level notcodersdk.LogLevel, format string, args ...interface{})
 
 // Options contains the configuration for the envbuilder.
 type Options struct {
@@ -125,7 +123,9 @@ type Options struct {
 	// execute it after successful startup.
 	PostStartScriptPath string
 	// Logger is the logger to use for all operations.
-	Logger LoggerFunc
+	Logger log.Func
+	// Verbose controls whether to send verbose logs.
+	Verbose bool
 	// Filesystem is the filesystem to use for all operations. Defaults to the
 	// host filesystem.
 	Filesystem billy.Filesystem
@@ -415,6 +415,12 @@ func (o *Options) CLI() serpent.OptionSet {
 			Value: serpent.BoolOf(&o.GetCachedImage),
 			Description: "Print the digest of the cached image, if available. " +
 				"Exits with an error if not found.",
+		},
+		{
+			Flag:        "verbose",
+			Env:         WithEnvPrefix("VERBOSE"),
+			Value:       serpent.BoolOf(&o.Verbose),
+			Description: "Enable verbose logging.",
 		},
 	}
 

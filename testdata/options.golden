@@ -155,6 +155,9 @@ OPTIONS:
           The content of an SSL cert file. This is useful for self-signed
           certificates.
 
+      --verbose bool, $ENVBUILDER_VERBOSE
+          Enable verbose logging.
+
       --workspace-folder string, $ENVBUILDER_WORKSPACE_FOLDER
           The path to the workspace folder that will be built. This is optional.
 
