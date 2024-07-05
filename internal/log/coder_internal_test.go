@@ -1,4 +1,4 @@
-package eblog
+package log
 
 import (
 	"context"

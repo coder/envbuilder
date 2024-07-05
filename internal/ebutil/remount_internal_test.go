@@ -8,7 +8,7 @@ import (
 	"testing"
 	time "time"
 
-	"github.com/coder/envbuilder/internal/eblog"
+	"github.com/coder/envbuilder/internal/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -653,9 +653,9 @@ func fakeMounts(mounts ...string) []*procfs.MountInfo {
 	return m
 }
 
-func fakeLog(t *testing.T) func(eblog.Level, string, ...any) {
+func fakeLog(t *testing.T) func(log.Level, string, ...any) {
 	t.Helper()
-	return func(_ eblog.Level, s string, a ...any) {
+	return func(_ log.Level, s string, a ...any) {
 		t.Logf(s, a...)
 	}
 }

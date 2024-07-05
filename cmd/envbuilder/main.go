@@ -10,7 +10,7 @@ import (
 
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/envbuilder"
-	"github.com/coder/envbuilder/internal/eblog"
+	"github.com/coder/envbuilder/internal/log"
 	"github.com/coder/serpent"
 
 	// *Never* remove this. Certificates are not bundled as part
@@ -34,7 +34,7 @@ func envbuilderCmd() serpent.Command {
 		Use:     "envbuilder",
 		Options: options.CLI(),
 		Handler: func(inv *serpent.Invocation) error {
-			options.Logger = eblog.New(os.Stderr, options.Verbose)
+			options.Logger = log.New(os.Stderr, options.Verbose)
 			if options.CoderAgentURL != "" {
 				if options.CoderAgentToken == "" {
 					return errors.New("CODER_AGENT_URL must be set if CODER_AGENT_TOKEN is set")
@@ -43,9 +43,9 @@ func envbuilderCmd() serpent.Command {
 				if err != nil {
 					return fmt.Errorf("unable to parse CODER_AGENT_URL as URL: %w", err)
 				}
-				coderLog, closeLogs, err := eblog.Coder(inv.Context(), u, options.CoderAgentToken)
+				coderLog, closeLogs, err := log.Coder(inv.Context(), u, options.CoderAgentToken)
 				if err == nil {
-					options.Logger = eblog.Wrap(options.Logger, coderLog)
+					options.Logger = log.Wrap(options.Logger, coderLog)
 					defer closeLogs()
 					// This adds the envbuilder subsystem.
 					// If telemetry is enabled in a Coder deployment,
@@ -57,13 +57,13 @@ func envbuilderCmd() serpent.Command {
 					}
 				} else {
 					// Failure to log to Coder should cause a fatal error.
-					options.Logger(eblog.LevelError, "unable to send logs to Coder: %s", err.Error())
+					options.Logger(log.LevelError, "unable to send logs to Coder: %s", err.Error())
 				}
 			}
 
 			err := envbuilder.Run(inv.Context(), options)
 			if err != nil {
-				options.Logger(eblog.LevelError, "error: %s", err)
+				options.Logger(log.LevelError, "error: %s", err)
 			}
 			return err
 		},

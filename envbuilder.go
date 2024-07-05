@@ -33,8 +33,8 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/util"
 	giturls "github.com/chainguard-dev/git-urls"
 	"github.com/coder/envbuilder/devcontainer"
-	"github.com/coder/envbuilder/internal/eblog"
 	"github.com/coder/envbuilder/internal/ebutil"
+	"github.com/coder/envbuilder/internal/log"
 	"github.com/containerd/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry/handlers"
@@ -125,14 +125,14 @@ func Run(ctx context.Context, options Options) error {
 		now := time.Now()
 		stageNumber++
 		stageNum := stageNumber
-		options.Logger(eblog.LevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
+		options.Logger(log.LevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
 
 		return func(format string, args ...any) {
-			options.Logger(eblog.LevelInfo, "#%d: %s [%s]", stageNum, fmt.Sprintf(format, args...), time.Since(now))
+			options.Logger(log.LevelInfo, "#%d: %s [%s]", stageNum, fmt.Sprintf(format, args...), time.Since(now))
 		}
 	}
 
-	options.Logger(eblog.LevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
+	options.Logger(log.LevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
 
 	var caBundle []byte
 	if options.SSLCertBase64 != "" {
@@ -194,7 +194,7 @@ func Run(ctx context.Context, options Options) error {
 					if line == "" {
 						continue
 					}
-					options.Logger(eblog.LevelInfo, "#1: %s", strings.TrimSpace(line))
+					options.Logger(log.LevelInfo, "#1: %s", strings.TrimSpace(line))
 				}
 			}
 		}()
@@ -225,8 +225,8 @@ func Run(ctx context.Context, options Options) error {
 				endStage("📦 The repository already exists!")
 			}
 		} else {
-			options.Logger(eblog.LevelError, "Failed to clone repository: %s", fallbackErr.Error())
-			options.Logger(eblog.LevelError, "Falling back to the default image...")
+			options.Logger(log.LevelError, "Failed to clone repository: %s", fallbackErr.Error())
+			options.Logger(log.LevelError, "Falling back to the default image...")
 		}
 	}
 
@@ -270,8 +270,8 @@ func Run(ctx context.Context, options Options) error {
 		var err error
 		devcontainerPath, devcontainerDir, err = findDevcontainerJSON(options)
 		if err != nil {
-			options.Logger(eblog.LevelError, "Failed to locate devcontainer.json: %s", err.Error())
-			options.Logger(eblog.LevelError, "Falling back to the default image...")
+			options.Logger(log.LevelError, "Failed to locate devcontainer.json: %s", err.Error())
+			options.Logger(log.LevelError, "Falling back to the default image...")
 		} else {
 			// We know a devcontainer exists.
 			// Let's parse it and use it!
@@ -292,7 +292,7 @@ func Run(ctx context.Context, options Options) error {
 					if err != nil {
 						return fmt.Errorf("no Dockerfile or image found: %w", err)
 					}
-					options.Logger(eblog.LevelInfo, "No Dockerfile or image specified; falling back to the default image...")
+					options.Logger(log.LevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
 				buildParams, err = devContainer.Compile(options.Filesystem, devcontainerDir, MagicDir, fallbackDockerfile, options.WorkspaceFolder, false, os.LookupEnv)
@@ -301,8 +301,8 @@ func Run(ctx context.Context, options Options) error {
 				}
 				scripts = devContainer.LifecycleScripts
 			} else {
-				options.Logger(eblog.LevelError, "Failed to parse devcontainer.json: %s", err.Error())
-				options.Logger(eblog.LevelError, "Falling back to the default image...")
+				options.Logger(log.LevelError, "Failed to parse devcontainer.json: %s", err.Error())
+				options.Logger(log.LevelError, "Falling back to the default image...")
 			}
 		}
 	} else {
@@ -313,8 +313,8 @@ func Run(ctx context.Context, options Options) error {
 		// not defined, show a warning
 		dockerfileDir := filepath.Dir(dockerfilePath)
 		if dockerfileDir != filepath.Clean(options.WorkspaceFolder) && options.BuildContextPath == "" {
-			options.Logger(eblog.LevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, options.WorkspaceFolder)
-			options.Logger(eblog.LevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
+			options.Logger(log.LevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, options.WorkspaceFolder)
+			options.Logger(log.LevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
 		}
 
 		dockerfile, err := options.Filesystem.Open(dockerfilePath)
@@ -343,7 +343,7 @@ func Run(ctx context.Context, options Options) error {
 
 	HijackLogrus(func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
-			options.Logger(eblog.LevelInfo, "#%d: %s", stageNumber, color.HiBlackString(line))
+			options.Logger(log.LevelInfo, "#%d: %s", stageNumber, color.HiBlackString(line))
 		}
 	})
 
@@ -376,7 +376,7 @@ func Run(ctx context.Context, options Options) error {
 		go func() {
 			err := srv.Serve(listener)
 			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				options.Logger(eblog.LevelError, "Failed to serve registry: %s", err.Error())
+				options.Logger(log.LevelError, "Failed to serve registry: %s", err.Error())
 			}
 		}()
 		closeAfterBuild = func() {
@@ -384,7 +384,7 @@ func Run(ctx context.Context, options Options) error {
 			_ = listener.Close()
 		}
 		if options.CacheRepo != "" {
-			options.Logger(eblog.LevelWarn, "Overriding cache repo with local registry...")
+			options.Logger(log.LevelWarn, "Overriding cache repo with local registry...")
 		}
 		options.CacheRepo = fmt.Sprintf("localhost:%d/local/cache", tcpAddr.Port)
 	}
@@ -442,7 +442,7 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 	restoreMounts, err := ebutil.TempRemount(options.Logger, tempRemountDest, ignorePrefixes...)
 	defer func() { // restoreMounts should never be nil
 		if err := restoreMounts(); err != nil {
-			options.Logger(eblog.LevelError, "restore mounts: %s", err.Error())
+			options.Logger(log.LevelError, "restore mounts: %s", err.Error())
 		}
 	}()
 	if err != nil {
@@ -488,13 +488,13 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		go func() {
 			scanner := bufio.NewScanner(stdoutReader)
 			for scanner.Scan() {
-				options.Logger(eblog.LevelInfo, "%s", scanner.Text())
+				options.Logger(log.LevelInfo, "%s", scanner.Text())
 			}
 		}()
 		go func() {
 			scanner := bufio.NewScanner(stderrReader)
 			for scanner.Scan() {
-				options.Logger(eblog.LevelInfo, "%s", scanner.Text())
+				options.Logger(log.LevelInfo, "%s", scanner.Text())
 			}
 		}()
 		cacheTTL := time.Hour * 24 * 7
@@ -607,13 +607,13 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 			fallback = true
 			fallbackErr = err
 		case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
-			options.Logger(eblog.LevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
+			options.Logger(log.LevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
 		}
 		if !fallback || options.ExitOnBuildFailure {
 			return err
 		}
-		options.Logger(eblog.LevelError, "Failed to build: %s", err)
-		options.Logger(eblog.LevelError, "Falling back to the default image...")
+		options.Logger(log.LevelError, "Failed to build: %s", err)
+		options.Logger(log.LevelError, "Falling back to the default image...")
 		buildParams, err = defaultBuildParams()
 		if err != nil {
 			return err
@@ -660,10 +660,10 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		if err != nil {
 			return fmt.Errorf("unmarshal metadata: %w", err)
 		}
-		options.Logger(eblog.LevelInfo, "#3: 👀 Found devcontainer.json label metadata in image...")
+		options.Logger(log.LevelInfo, "#3: 👀 Found devcontainer.json label metadata in image...")
 		for _, container := range devContainer {
 			if container.RemoteUser != "" {
-				options.Logger(eblog.LevelInfo, "#3: 🧑 Updating the user to %q!", container.RemoteUser)
+				options.Logger(log.LevelInfo, "#3: 🧑 Updating the user to %q!", container.RemoteUser)
 
 				configFile.Config.User = container.RemoteUser
 			}
@@ -770,7 +770,7 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		username = buildParams.User
 	}
 	if username == "" {
-		options.Logger(eblog.LevelWarn, "#3: no user specified, using root")
+		options.Logger(log.LevelWarn, "#3: no user specified, using root")
 	}
 
 	userInfo, err := getUser(username)
@@ -793,7 +793,7 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 			}
 			return os.Chown(path, userInfo.uid, userInfo.gid)
 		}); chownErr != nil {
-			options.Logger(eblog.LevelError, "chown %q: %s", userInfo.user.HomeDir, chownErr.Error())
+			options.Logger(log.LevelError, "chown %q: %s", userInfo.user.HomeDir, chownErr.Error())
 			endStage("⚠️ Failed to the ownership of the workspace, you may need to fix this manually!")
 		} else {
 			endStage("👤 Updated the ownership of the workspace!")
@@ -810,7 +810,7 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 			}
 			return os.Chown(path, userInfo.uid, userInfo.gid)
 		}); chownErr != nil {
-			options.Logger(eblog.LevelError, "chown %q: %s", userInfo.user.HomeDir, chownErr.Error())
+			options.Logger(log.LevelError, "chown %q: %s", userInfo.user.HomeDir, chownErr.Error())
 			endStage("⚠️ Failed to update ownership of %s, you may need to fix this manually!", userInfo.user.HomeDir)
 		} else {
 			endStage("🏡 Updated ownership of %s!", userInfo.user.HomeDir)
@@ -846,7 +846,7 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		// We execute the initialize script as the root user!
 		os.Setenv("HOME", "/root")
 
-		options.Logger(eblog.LevelInfo, "=== Running the setup command %q as the root user...", options.SetupScript)
+		options.Logger(log.LevelInfo, "=== Running the setup command %q as the root user...", options.SetupScript)
 
 		envKey := "ENVBUILDER_ENV"
 		envFile := filepath.Join("/", MagicDir, "environ")
@@ -873,7 +873,7 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 			go func() {
 				scanner := bufio.NewScanner(&buf)
 				for scanner.Scan() {
-					options.Logger(eblog.LevelInfo, "%s", scanner.Text())
+					options.Logger(log.LevelInfo, "%s", scanner.Text())
 				}
 			}()
 
@@ -939,7 +939,7 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		return fmt.Errorf("set uid: %w", err)
 	}
 
-	options.Logger(eblog.LevelInfo, "=== Running the init command %s %+v as the %q user...", options.InitCommand, initArgs, userInfo.user.Username)
+	options.Logger(log.LevelInfo, "=== Running the init command %s %+v as the %q user...", options.InitCommand, initArgs, userInfo.user.Username)
 
 	err = syscall.Exec(options.InitCommand, append([]string{options.InitCommand}, initArgs...), os.Environ())
 	if err != nil {
@@ -1017,7 +1017,7 @@ func findUser(nameOrID string) (*user.User, error) {
 
 func execOneLifecycleScript(
 	ctx context.Context,
-	logf func(level eblog.Level, format string, args ...any),
+	logf func(level log.Level, format string, args ...any),
 	s devcontainer.LifecycleScript,
 	scriptName string,
 	userInfo userInfo,
@@ -1025,9 +1025,9 @@ func execOneLifecycleScript(
 	if s.IsEmpty() {
 		return nil
 	}
-	logf(eblog.LevelInfo, "=== Running %s as the %q user...", scriptName, userInfo.user.Username)
+	logf(log.LevelInfo, "=== Running %s as the %q user...", scriptName, userInfo.user.Username)
 	if err := s.Execute(ctx, userInfo.uid, userInfo.gid); err != nil {
-		logf(eblog.LevelError, "Failed to run %s: %v", scriptName, err)
+		logf(log.LevelError, "Failed to run %s: %v", scriptName, err)
 		return err
 	}
 	return nil
@@ -1173,13 +1173,13 @@ func findDevcontainerJSON(options Options) (string, string, error) {
 
 	for _, fileInfo := range fileInfos {
 		if !fileInfo.IsDir() {
-			options.Logger(eblog.LevelDebug, `%s is a file`, fileInfo.Name())
+			options.Logger(log.LevelDebug, `%s is a file`, fileInfo.Name())
 			continue
 		}
 
 		location := filepath.Join(devcontainerDir, fileInfo.Name(), "devcontainer.json")
 		if _, err := options.Filesystem.Stat(location); err != nil {
-			options.Logger(eblog.LevelDebug, `stat %s failed: %s`, location, err.Error())
+			options.Logger(log.LevelDebug, `stat %s failed: %s`, location, err.Error())
 			continue
 		}
 
@@ -1191,20 +1191,20 @@ func findDevcontainerJSON(options Options) (string, string, error) {
 
 // maybeDeleteFilesystem wraps util.DeleteFilesystem with a guard to hopefully stop
 // folks from unwittingly deleting their entire root directory.
-func maybeDeleteFilesystem(log eblog.LogFunc, force bool) error {
+func maybeDeleteFilesystem(log log.Func, force bool) error {
 	kanikoDir, ok := os.LookupEnv("KANIKO_DIR")
 	if !ok || strings.TrimSpace(kanikoDir) != MagicDir {
 		if force {
 			bailoutSecs := 10
-			log(eblog.LevelWarn, "WARNING! BYPASSING SAFETY CHECK! THIS WILL DELETE YOUR ROOT FILESYSTEM!")
-			log(eblog.LevelWarn, "You have %d seconds to bail out!", bailoutSecs)
+			log(log.LevelWarn, "WARNING! BYPASSING SAFETY CHECK! THIS WILL DELETE YOUR ROOT FILESYSTEM!")
+			log(log.LevelWarn, "You have %d seconds to bail out!", bailoutSecs)
 			for i := bailoutSecs; i > 0; i-- {
-				log(eblog.LevelWarn, "%d...", i)
+				log(log.LevelWarn, "%d...", i)
 				<-time.After(time.Second)
 			}
 		} else {
-			log(eblog.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", MagicDir)
-			log(eblog.LevelError, "To bypass this check, set FORCE_SAFE=true.")
+			log(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", MagicDir)
+			log(log.LevelError, "To bypass this check, set FORCE_SAFE=true.")
 			return errors.New("safety check failed")
 		}
 	}

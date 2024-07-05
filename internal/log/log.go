@@ -1,4 +1,4 @@
-package eblog
+package log
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	"github.com/coder/coder/v2/codersdk"
 )
 
-type LogFunc func(l Level, msg string, args ...any)
+type Func func(l Level, msg string, args ...any)
 
 type Level string
 
@@ -22,7 +22,7 @@ const (
 )
 
 // New logs to the provided io.Writer.
-func New(w io.Writer, verbose bool) LogFunc {
+func New(w io.Writer, verbose bool) Func {
 	return func(l Level, msg string, args ...any) {
 		if !verbose {
 			switch l {
@@ -37,8 +37,8 @@ func New(w io.Writer, verbose bool) LogFunc {
 	}
 }
 
-// Wrap wraps the provided LogFuncs into a single LogFunc.
-func Wrap(fs ...LogFunc) LogFunc {
+// Wrap wraps the provided LogFuncs into a single Func.
+func Wrap(fs ...Func) Func {
 	return func(l Level, msg string, args ...any) {
 		for _, f := range fs {
 			f(l, msg, args...)

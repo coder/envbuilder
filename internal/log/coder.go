@@ -1,4 +1,4 @@
-package eblog
+package log
 
 import (
 	"context"
@@ -30,7 +30,7 @@ var (
 // If the version of Coder does not support the Agent API, it will
 // fall back to using the PatchLogs endpoint.
 // The returned function is used to block until all logs are sent.
-func Coder(ctx context.Context, coderURL *url.URL, token string) (LogFunc, func(), error) {
+func Coder(ctx context.Context, coderURL *url.URL, token string) (Func, func(), error) {
 	client := initClient(coderURL, token)
 	bi, err := client.SDK.BuildInfo(ctx)
 	if err != nil {
@@ -83,7 +83,7 @@ func initRPC(ctx context.Context, client *agentsdk.Client) (proto.DRPCAgentClien
 
 // sendLogsV1 uses the PatchLogs endpoint to send logs.
 // This is deprecated, but required for backward compatibility with older versions of Coder.
-func sendLogsV1(ctx context.Context, client *agentsdk.Client) (LogFunc, func()) {
+func sendLogsV1(ctx context.Context, client *agentsdk.Client) (Func, func()) {
 	// nolint: staticcheck // required for backwards compatibility
 	sendLogs, flushLogs := agentsdk.LogsSender(agentsdk.ExternalLogSourceID, client.PatchLogs, slog.Logger{})
 	return func(l Level, msg string, args ...any) {
@@ -99,7 +99,7 @@ func sendLogsV1(ctx context.Context, client *agentsdk.Client) (LogFunc, func()) 
 }
 
 // sendLogsV2 uses the v2 agent API to send logs. Only compatibile with coder versions >= 2.9.
-func sendLogsV2(ctx context.Context, dest agentsdk.LogDest, ls coderLogSender) (LogFunc, func()) {
+func sendLogsV2(ctx context.Context, dest agentsdk.LogDest, ls coderLogSender) (Func, func()) {
 	metaLogger := slog.Make(sloghuman.Sink(os.Stderr)).Named("send_logs_v2").Leveled(slog.LevelError)
 	done := make(chan struct{})
 	uid := uuid.New()

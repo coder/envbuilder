@@ -3,7 +3,7 @@ package envbuilder
 import (
 	"strings"
 
-	"github.com/coder/envbuilder/internal/eblog"
+	"github.com/coder/envbuilder/internal/log"
 	"github.com/coder/serpent"
 	"github.com/go-git/go-billy/v5"
 )
@@ -123,7 +123,7 @@ type Options struct {
 	// execute it after successful startup.
 	PostStartScriptPath string
 	// Logger is the logger to use for all operations.
-	Logger eblog.LogFunc
+	Logger log.Func
 	// Verbose controls whether to send verbose logs.
 	Verbose bool
 	// Filesystem is the filesystem to use for all operations. Defaults to the
