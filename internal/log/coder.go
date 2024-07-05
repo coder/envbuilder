@@ -31,21 +31,27 @@ var (
 // fall back to using the PatchLogs endpoint.
 // The returned function is used to block until all logs are sent.
 func Coder(ctx context.Context, coderURL *url.URL, token string) (Func, func(), error) {
+	// To troubleshoot issues, we need some way of logging.
+	metaLogger := slog.Make(sloghuman.Sink(os.Stderr))
+	defer metaLogger.Sync()
 	client := initClient(coderURL, token)
 	bi, err := client.SDK.BuildInfo(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get coder build version: %w", err)
 	}
 	if semver.Compare(semver.MajorMinor(bi.Version), minAgentAPIV2) < 0 {
-		sendLogs, flushLogs := sendLogsV1(ctx, client)
+		metaLogger.Warn(ctx, "Detected Coder version incompatible with AgentAPI v2, falling back to deprecated API", slog.F("coder_version", bi.Version))
+		sendLogs, flushLogs := sendLogsV1(ctx, client, metaLogger.Named("send_logs_v1"))
 		return sendLogs, flushLogs, nil
 	}
-	dac, err := initRPC(ctx, client)
+	dac, err := initRPC(ctx, client, metaLogger.Named("init_rpc"))
 	if err != nil {
+		// Logged externally
 		return nil, nil, fmt.Errorf("init coder rpc client: %w", err)
 	}
-	ls := agentsdk.NewLogSender(slog.Make(sloghuman.Sink(os.Stderr)).Named("coder_log_sender").Leveled(slog.LevelError))
-	sendLogs, doneFunc := sendLogsV2(ctx, dac, ls)
+	ls := agentsdk.NewLogSender(metaLogger.Named("coder_log_sender"))
+	metaLogger.Warn(ctx, "Sending logs via AgentAPI v2", slog.F("coder_version", bi.Version))
+	sendLogs, doneFunc := sendLogsV2(ctx, dac, ls, metaLogger.Named("send_logs_v2"))
 	return sendLogs, doneFunc, nil
 }
 
@@ -62,15 +68,18 @@ func initClient(coderURL *url.URL, token string) *agentsdk.Client {
 	return client
 }
 
-func initRPC(ctx context.Context, client *agentsdk.Client) (proto.DRPCAgentClient20, error) {
+func initRPC(ctx context.Context, client *agentsdk.Client, l slog.Logger) (proto.DRPCAgentClient20, error) {
 	var c proto.DRPCAgentClient20
 	var err error
 	retryCtx, retryCancel := context.WithTimeout(context.Background(), rpcConnectTimeout)
 	defer retryCancel()
+	attempts := 0
 	for r := retry.New(100*time.Millisecond, time.Second); r.Wait(retryCtx); {
+		attempts++
 		// Maximize compatibility.
 		c, err = client.ConnectRPC20(ctx)
 		if err != nil {
+			l.Debug(ctx, "Failed to connect to Coder", slog.F("error", err), slog.F("attempt", attempts))
 			continue
 		}
 		break
@@ -83,31 +92,34 @@ func initRPC(ctx context.Context, client *agentsdk.Client) (proto.DRPCAgentClien
 
 // sendLogsV1 uses the PatchLogs endpoint to send logs.
 // This is deprecated, but required for backward compatibility with older versions of Coder.
-func sendLogsV1(ctx context.Context, client *agentsdk.Client) (Func, func()) {
+func sendLogsV1(ctx context.Context, client *agentsdk.Client, l slog.Logger) (Func, func()) {
 	// nolint: staticcheck // required for backwards compatibility
 	sendLogs, flushLogs := agentsdk.LogsSender(agentsdk.ExternalLogSourceID, client.PatchLogs, slog.Logger{})
-	return func(l Level, msg string, args ...any) {
+	return func(lvl Level, msg string, args ...any) {
 			log := agentsdk.Log{
 				CreatedAt: time.Now(),
 				Output:    fmt.Sprintf(msg, args...),
-				Level:     codersdk.LogLevel(l),
+				Level:     codersdk.LogLevel(lvl),
 			}
-			_ = sendLogs(ctx, log)
+			if err := sendLogs(ctx, log); err != nil {
+				l.Warn(ctx, "failed to send logs to Coder", slog.Error(err))
+			}
 		}, func() {
-			_ = flushLogs(ctx)
+			if err := flushLogs(ctx); err != nil {
+				l.Warn(ctx, "failed to flush logs", slog.Error(err))
+			}
 		}
 }
 
 // sendLogsV2 uses the v2 agent API to send logs. Only compatibile with coder versions >= 2.9.
-func sendLogsV2(ctx context.Context, dest agentsdk.LogDest, ls coderLogSender) (Func, func()) {
-	metaLogger := slog.Make(sloghuman.Sink(os.Stderr)).Named("send_logs_v2").Leveled(slog.LevelError)
+func sendLogsV2(ctx context.Context, dest agentsdk.LogDest, ls coderLogSender, l slog.Logger) (Func, func()) {
 	done := make(chan struct{})
 	uid := uuid.New()
 	go func() {
 		defer close(done)
 		if err := ls.SendLoop(ctx, dest); err != nil {
 			if !errors.Is(err, context.Canceled) {
-				metaLogger.Error(ctx, "failed to send logs to Coder", slog.Error(err))
+				l.Warn(ctx, "failed to send logs to Coder", slog.Error(err))
 			}
 		}
 
@@ -115,9 +127,17 @@ func sendLogsV2(ctx context.Context, dest agentsdk.LogDest, ls coderLogSender) (
 		sendCtx, sendCancel := context.WithTimeout(context.Background(), logSendGracePeriod)
 		defer sendCancel()
 		// Try once more to send any pending logs
-		_ = ls.SendLoop(sendCtx, dest)
+		if err := ls.SendLoop(sendCtx, dest); err != nil {
+			if !errors.Is(err, context.DeadlineExceeded) {
+				l.Warn(ctx, "failed to send remaining logs to Coder", slog.Error(err))
+			}
+		}
 		ls.Flush(uid)
-		_ = ls.WaitUntilEmpty(sendCtx)
+		if err := ls.WaitUntilEmpty(sendCtx); err != nil {
+			if !errors.Is(err, context.DeadlineExceeded) {
+				l.Warn(ctx, "log sender did not empty", slog.Error(err))
+			}
+		}
 	}()
 
 	logFunc := func(l Level, msg string, args ...any) {

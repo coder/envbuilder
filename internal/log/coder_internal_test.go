@@ -3,6 +3,7 @@ package log
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -62,7 +63,7 @@ func TestCoder(t *testing.T) {
 		<-gotLogs
 	})
 
-	t.Run("V1/Err", func(t *testing.T) {
+	t.Run("V1/ErrUnauthorized", func(t *testing.T) {
 		t.Parallel()
 
 		token := uuid.NewString()
@@ -91,6 +92,29 @@ func TestCoder(t *testing.T) {
 		<-authFailed
 	})
 
+	t.Run("V1/ErrNotCoder", func(t *testing.T) {
+		t.Parallel()
+
+		token := uuid.NewString()
+		handlerCalled := make(chan struct{})
+		var closeOnce sync.Once
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			defer closeOnce.Do(func() { close(handlerCalled) })
+			_, _ = fmt.Fprintf(w, `hello world`)
+		}
+		srv := httptest.NewServer(http.HandlerFunc(handler))
+		defer srv.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		u, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+		_, _, err = Coder(ctx, u, token)
+		require.ErrorContains(t, err, "get coder build version")
+		require.ErrorContains(t, err, "unexpected non-JSON response")
+		<-handlerCalled
+	})
+
 	// In this test, we just fake out the DRPC server.
 	t.Run("V2/OK", func(t *testing.T) {
 		t.Parallel()
@@ -100,7 +124,7 @@ func TestCoder(t *testing.T) {
 
 		ld := &fakeLogDest{t: t}
 		ls := agentsdk.NewLogSender(slogtest.Make(t, nil))
-		logFunc, logsDone := sendLogsV2(ctx, ld, ls)
+		logFunc, logsDone := sendLogsV2(ctx, ld, ls, slogtest.Make(t, nil))
 		defer logsDone()
 
 		// Send some logs
