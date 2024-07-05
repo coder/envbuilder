@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Coder(t *testing.T) {
+func TestCoder(t *testing.T) {
 	t.Parallel()
 
 	t.Run("V1/OK", func(t *testing.T) {
