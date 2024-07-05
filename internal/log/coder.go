@@ -66,6 +66,7 @@ func initRPC(ctx context.Context, client *agentsdk.Client) (proto.DRPCAgentClien
 	var c proto.DRPCAgentClient20
 	var err error
 	retryCtx, retryCancel := context.WithTimeout(context.Background(), rpcConnectTimeout)
+	defer retryCancel()
 	for r := retry.New(100*time.Millisecond, time.Second); r.Wait(retryCtx); {
 		// Maximize compatibility.
 		c, err = client.ConnectRPC20(ctx)
@@ -74,7 +75,6 @@ func initRPC(ctx context.Context, client *agentsdk.Client) (proto.DRPCAgentClien
 		}
 		break
 	}
-	retryCancel()
 	if c == nil {
 		return nil, err
 	}
