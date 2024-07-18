@@ -19,7 +19,7 @@ require (
 	github.com/coder/serpent v0.7.0
 	github.com/containerd/containerd v1.7.15
 	github.com/distribution/distribution/v3 v3.0.0-alpha.1
-	github.com/docker/cli v26.1.0+incompatible
+	github.com/docker/cli v27.0.3+incompatible
 	github.com/docker/docker v26.1.0+incompatible
 	github.com/fatih/color v1.17.0
 	github.com/gliderlabs/ssh v0.3.7
