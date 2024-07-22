@@ -89,7 +89,7 @@ func Run(ctx context.Context, options Options) error {
 	// Once the legacy environment variables are phased out, this can be
 	// reinstated to the previous default values.
 	if len(options.IgnorePaths) == 0 {
-		options.IgnorePaths = []string{"/var/run"}
+		options.IgnorePaths = []string{"/var/run", "/product_uuid", "/product_name"}
 	}
 	if options.InitScript == "" {
 		options.InitScript = "sleep infinity"
