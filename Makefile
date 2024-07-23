@@ -33,10 +33,10 @@ build: scripts/envbuilder-$(GOARCH)
 update-golden-files: .gen-golden
 
 .gen-golden: $(GOLDEN_FILES) $(GO_SRC_FILES) $(GO_TEST_FILES)
-	go test . -update
+	go test ./options -update
 	@touch "$@"
 
-docs: options.go
+docs: options/options.go options/options_test.go
 	go run ./scripts/docsgen/main.go
 
 .PHONY: test
