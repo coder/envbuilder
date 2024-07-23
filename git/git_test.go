@@ -1,4 +1,4 @@
-package envbuilder_test
+package git_test
 
 import (
 	"context"
@@ -12,9 +12,10 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/coder/envbuilder/git"
+
 	"github.com/coder/envbuilder/options"
 
-	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/internal/log"
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/coder/envbuilder/testutil/mwtest"
@@ -90,7 +91,7 @@ func TestCloneRepo(t *testing.T) {
 				clientFS := memfs.New()
 				// A repo already exists!
 				_ = gittest.NewRepo(t, clientFS)
-				cloned, err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
+				cloned, err := git.CloneRepo(context.Background(), git.CloneRepoOptions{
 					Path:    "/",
 					RepoURL: srv.URL,
 					Storage: clientFS,
@@ -108,7 +109,7 @@ func TestCloneRepo(t *testing.T) {
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
 				clientFS := memfs.New()
 
-				cloned, err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
+				cloned, err := git.CloneRepo(context.Background(), git.CloneRepoOptions{
 					Path:    "/workspace",
 					RepoURL: srv.URL,
 					Storage: clientFS,
@@ -145,7 +146,7 @@ func TestCloneRepo(t *testing.T) {
 				authURL.User = url.UserPassword(tc.username, tc.password)
 				clientFS := memfs.New()
 
-				cloned, err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
+				cloned, err := git.CloneRepo(context.Background(), git.CloneRepoOptions{
 					Path:    "/workspace",
 					RepoURL: authURL.String(),
 					Storage: clientFS,
@@ -184,7 +185,7 @@ func TestCloneRepoSSH(t *testing.T) {
 		gitURL := tr.String()
 		clientFS := memfs.New()
 
-		cloned, err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
+		cloned, err := git.CloneRepo(context.Background(), git.CloneRepoOptions{
 			Path:    "/workspace",
 			RepoURL: gitURL,
 			Storage: clientFS,
@@ -216,7 +217,7 @@ func TestCloneRepoSSH(t *testing.T) {
 		clientFS := memfs.New()
 
 		anotherKey := randKeygen(t)
-		cloned, err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
+		cloned, err := git.CloneRepo(context.Background(), git.CloneRepoOptions{
 			Path:    "/workspace",
 			RepoURL: gitURL,
 			Storage: clientFS,
@@ -246,7 +247,7 @@ func TestCloneRepoSSH(t *testing.T) {
 		gitURL := tr.String()
 		clientFS := memfs.New()
 
-		cloned, err := envbuilder.CloneRepo(context.Background(), envbuilder.CloneRepoOptions{
+		cloned, err := git.CloneRepo(context.Background(), git.CloneRepoOptions{
 			Path:    "/workspace",
 			RepoURL: gitURL,
 			Storage: clientFS,
@@ -270,7 +271,7 @@ func TestSetupRepoAuth(t *testing.T) {
 		opts := &options.Options{
 			Logger: testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := git.SetupRepoAuth(opts)
 		require.Nil(t, auth)
 	})
 
@@ -279,7 +280,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitURL: "http://host.tld/repo",
 			Logger: testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := git.SetupRepoAuth(opts)
 		require.Nil(t, auth)
 	})
 
@@ -290,7 +291,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitPassword: "pass",
 			Logger:      testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := git.SetupRepoAuth(opts)
 		ba, ok := auth.(*githttp.BasicAuth)
 		require.True(t, ok)
 		require.Equal(t, opts.GitUsername, ba.Username)
@@ -304,7 +305,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitPassword: "pass",
 			Logger:      testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := git.SetupRepoAuth(opts)
 		ba, ok := auth.(*githttp.BasicAuth)
 		require.True(t, ok)
 		require.Equal(t, opts.GitUsername, ba.Username)
@@ -318,7 +319,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitSSHPrivateKeyPath: kPath,
 			Logger:               testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := git.SetupRepoAuth(opts)
 		_, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 	})
@@ -330,7 +331,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitSSHPrivateKeyPath: kPath,
 			Logger:               testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := git.SetupRepoAuth(opts)
 		_, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 	})
@@ -343,7 +344,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitSSHPrivateKeyPath: kPath,
 			Logger:               testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := git.SetupRepoAuth(opts)
 		_, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 	})
@@ -356,7 +357,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitUsername:          "user",
 			Logger:               testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := git.SetupRepoAuth(opts)
 		_, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 	})
@@ -368,7 +369,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitSSHPrivateKeyPath: kPath,
 			Logger:               testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := git.SetupRepoAuth(opts)
 		pk, ok := auth.(*gitssh.PublicKeys)
 		require.True(t, ok)
 		require.NotNil(t, pk.Signer)
@@ -382,7 +383,7 @@ func TestSetupRepoAuth(t *testing.T) {
 			GitURL: "ssh://git@host.tld:repo/path",
 			Logger: testLog(t),
 		}
-		auth := envbuilder.SetupRepoAuth(opts)
+		auth := git.SetupRepoAuth(opts)
 		require.Nil(t, auth) // TODO: actually test SSH_AUTH_SOCK
 	})
 }
