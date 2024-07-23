@@ -25,47 +25,47 @@ func main() {
 	cmd := envbuilderCmd()
 	err := cmd.Invoke().WithOS().Run()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v", err)
+		_, _ = fmt.Fprintf(os.Stderr, "error: %v", err)
 		os.Exit(1)
 	}
 }
 
 func envbuilderCmd() serpent.Command {
-	var options options.Options
+	var o options.Options
 	cmd := serpent.Command{
 		Use:     "envbuilder",
-		Options: options.CLI(),
+		Options: o.CLI(),
 		Handler: func(inv *serpent.Invocation) error {
-			options.Logger = log.New(os.Stderr, options.Verbose)
-			if options.CoderAgentURL != "" {
-				if options.CoderAgentToken == "" {
+			o.Logger = log.New(os.Stderr, o.Verbose)
+			if o.CoderAgentURL != "" {
+				if o.CoderAgentToken == "" {
 					return errors.New("CODER_AGENT_URL must be set if CODER_AGENT_TOKEN is set")
 				}
-				u, err := url.Parse(options.CoderAgentURL)
+				u, err := url.Parse(o.CoderAgentURL)
 				if err != nil {
 					return fmt.Errorf("unable to parse CODER_AGENT_URL as URL: %w", err)
 				}
-				coderLog, closeLogs, err := log.Coder(inv.Context(), u, options.CoderAgentToken)
+				coderLog, closeLogs, err := log.Coder(inv.Context(), u, o.CoderAgentToken)
 				if err == nil {
-					options.Logger = log.Wrap(options.Logger, coderLog)
+					o.Logger = log.Wrap(o.Logger, coderLog)
 					defer closeLogs()
 					// This adds the envbuilder subsystem.
 					// If telemetry is enabled in a Coder deployment,
 					// this will be reported and help us understand
 					// envbuilder usage.
-					if !slices.Contains(options.CoderAgentSubsystem, string(codersdk.AgentSubsystemEnvbuilder)) {
-						options.CoderAgentSubsystem = append(options.CoderAgentSubsystem, string(codersdk.AgentSubsystemEnvbuilder))
-						_ = os.Setenv("CODER_AGENT_SUBSYSTEM", strings.Join(options.CoderAgentSubsystem, ","))
+					if !slices.Contains(o.CoderAgentSubsystem, string(codersdk.AgentSubsystemEnvbuilder)) {
+						o.CoderAgentSubsystem = append(o.CoderAgentSubsystem, string(codersdk.AgentSubsystemEnvbuilder))
+						_ = os.Setenv("CODER_AGENT_SUBSYSTEM", strings.Join(o.CoderAgentSubsystem, ","))
 					}
 				} else {
 					// Failure to log to Coder should cause a fatal error.
-					options.Logger(log.LevelError, "unable to send logs to Coder: %s", err.Error())
+					o.Logger(log.LevelError, "unable to send logs to Coder: %s", err.Error())
 				}
 			}
 
-			err := envbuilder.Run(inv.Context(), options)
+			err := envbuilder.Run(inv.Context(), o)
 			if err != nil {
-				options.Logger(log.LevelError, "error: %s", err)
+				o.Logger(log.LevelError, "error: %s", err)
 			}
 			return err
 		},
