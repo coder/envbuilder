@@ -14,7 +14,7 @@ require (
 	github.com/GoogleContainerTools/kaniko v1.9.2
 	github.com/breml/rootcerts v0.2.10
 	github.com/chainguard-dev/git-urls v1.0.2
-	github.com/coder/coder/v2 v2.10.1-0.20240704130443-c2d44d16a352
+	github.com/coder/coder/v2 v2.13.1
 	github.com/coder/retry v1.5.1
 	github.com/coder/serpent v0.7.0
 	github.com/containerd/containerd v1.7.15
@@ -102,7 +102,6 @@ require (
 	github.com/cilium/ebpf v0.12.3 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0 // indirect
-	github.com/coder/quartz v0.1.0 // indirect
 	github.com/coder/terraform-provider-coder v0.23.0 // indirect
 	github.com/containerd/cgroups v1.1.0 // indirect
 	github.com/containerd/cgroups/v3 v3.0.2 // indirect
