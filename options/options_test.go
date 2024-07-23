@@ -1,4 +1,4 @@
-package envbuilder_test
+package options_test
 
 import (
 	"bytes"
@@ -6,7 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/coder/envbuilder"
+	"github.com/coder/envbuilder/options"
+
 	"github.com/coder/serpent"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,50 +17,50 @@ import (
 func TestEnvOptionParsing(t *testing.T) {
 	t.Run("string", func(t *testing.T) {
 		const val = "setup.sh"
-		t.Setenv(envbuilder.WithEnvPrefix("SETUP_SCRIPT"), val)
+		t.Setenv(options.WithEnvPrefix("SETUP_SCRIPT"), val)
 		o := runCLI()
 		require.Equal(t, o.SetupScript, val)
 	})
 
 	t.Run("int", func(t *testing.T) {
-		t.Setenv(envbuilder.WithEnvPrefix("CACHE_TTL_DAYS"), "7")
+		t.Setenv(options.WithEnvPrefix("CACHE_TTL_DAYS"), "7")
 		o := runCLI()
 		require.Equal(t, o.CacheTTLDays, int64(7))
 	})
 
 	t.Run("string array", func(t *testing.T) {
-		t.Setenv(envbuilder.WithEnvPrefix("IGNORE_PATHS"), "/var,/temp")
+		t.Setenv(options.WithEnvPrefix("IGNORE_PATHS"), "/var,/temp")
 		o := runCLI()
 		require.Equal(t, o.IgnorePaths, []string{"/var", "/temp"})
 	})
 
 	t.Run("bool", func(t *testing.T) {
 		t.Run("lowercase", func(t *testing.T) {
-			t.Setenv(envbuilder.WithEnvPrefix("SKIP_REBUILD"), "true")
-			t.Setenv(envbuilder.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "false")
+			t.Setenv(options.WithEnvPrefix("SKIP_REBUILD"), "true")
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "false")
 			o := runCLI()
 			require.True(t, o.SkipRebuild)
 			require.False(t, o.GitCloneSingleBranch)
 		})
 
 		t.Run("uppercase", func(t *testing.T) {
-			t.Setenv(envbuilder.WithEnvPrefix("SKIP_REBUILD"), "TRUE")
-			t.Setenv(envbuilder.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "FALSE")
+			t.Setenv(options.WithEnvPrefix("SKIP_REBUILD"), "TRUE")
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "FALSE")
 			o := runCLI()
 			require.True(t, o.SkipRebuild)
 			require.False(t, o.GitCloneSingleBranch)
 		})
 
 		t.Run("numeric", func(t *testing.T) {
-			t.Setenv(envbuilder.WithEnvPrefix("SKIP_REBUILD"), "1")
-			t.Setenv(envbuilder.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "0")
+			t.Setenv(options.WithEnvPrefix("SKIP_REBUILD"), "1")
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "0")
 			o := runCLI()
 			require.True(t, o.SkipRebuild)
 			require.False(t, o.GitCloneSingleBranch)
 		})
 
 		t.Run("empty", func(t *testing.T) {
-			t.Setenv(envbuilder.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "")
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "")
 			o := runCLI()
 			require.False(t, o.GitCloneSingleBranch)
 		})
@@ -142,7 +143,7 @@ var updateCLIOutputGoldenFiles = flag.Bool("update", false, "update options CLI 
 
 // TestCLIOutput tests that the default CLI output is as expected.
 func TestCLIOutput(t *testing.T) {
-	var o envbuilder.Options
+	var o options.Options
 	cmd := serpent.Command{
 		Use:     "envbuilder",
 		Options: o.CLI(),
@@ -171,8 +172,8 @@ func TestCLIOutput(t *testing.T) {
 	}
 }
 
-func runCLI() envbuilder.Options {
-	var o envbuilder.Options
+func runCLI() options.Options {
+	var o options.Options
 	cmd := serpent.Command{
 		Options: o.CLI(),
 		Handler: func(inv *serpent.Invocation) error {

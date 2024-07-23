@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/coder/envbuilder/options"
+
 	giturls "github.com/chainguard-dev/git-urls"
 	"github.com/coder/envbuilder/internal/log"
 	"github.com/go-git/go-billy/v5"
@@ -177,7 +179,7 @@ func LogHostKeyCallback(logger log.Func) gossh.HostKeyCallback {
 // If SSH_KNOWN_HOSTS is not set, the SSH auth method will be configured
 // to accept and log all host keys. Otherwise, host key checking will be
 // performed as usual.
-func SetupRepoAuth(options *Options) transport.AuthMethod {
+func SetupRepoAuth(options *options.Options) transport.AuthMethod {
 	if options.GitURL == "" {
 		options.Logger(log.LevelInfo, "#1: ❔ No Git URL supplied!")
 		return nil
