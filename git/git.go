@@ -1,4 +1,4 @@
-package envbuilder
+package git
 
 import (
 	"context"

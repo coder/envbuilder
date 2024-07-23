@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/coder/envbuilder/git"
 	"github.com/coder/envbuilder/options"
 
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
@@ -204,7 +205,7 @@ func Run(ctx context.Context, opts options.Options) error {
 			}
 		}()
 
-		cloneOpts := CloneRepoOptions{
+		cloneOpts := git.CloneRepoOptions{
 			Path:         opts.WorkspaceFolder,
 			Storage:      opts.Filesystem,
 			Insecure:     opts.Insecure,
@@ -214,7 +215,7 @@ func Run(ctx context.Context, opts options.Options) error {
 			CABundle:     caBundle,
 		}
 
-		cloneOpts.RepoAuth = SetupRepoAuth(&opts)
+		cloneOpts.RepoAuth = git.SetupRepoAuth(&opts)
 		if opts.GitHTTPProxyURL != "" {
 			cloneOpts.ProxyOptions = transport.ProxyOptions{
 				URL: opts.GitHTTPProxyURL,
@@ -222,7 +223,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		}
 		cloneOpts.RepoURL = opts.GitURL
 
-		cloned, fallbackErr = CloneRepo(ctx, cloneOpts)
+		cloned, fallbackErr = git.CloneRepo(ctx, cloneOpts)
 		if fallbackErr == nil {
 			if cloned {
 				endStage("📦 Cloned repository!")
