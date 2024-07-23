@@ -36,7 +36,7 @@ update-golden-files: .gen-golden
 	go test . -update
 	@touch "$@"
 
-docs: options.go
+docs: pkg/options/options.go
 	go run ./scripts/docsgen/main.go
 
 .PHONY: test
