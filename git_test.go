@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/coder/envbuilder/pkg/options"
+	"github.com/coder/envbuilder/options"
 
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/internal/log"

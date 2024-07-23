@@ -3,7 +3,7 @@ package envbuilder
 import (
 	"testing"
 
-	"github.com/coder/envbuilder/pkg/options"
+	"github.com/coder/envbuilder/options"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/stretchr/testify/assert"

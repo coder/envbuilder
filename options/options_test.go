@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/coder/envbuilder/pkg/options"
+	"github.com/coder/envbuilder/options"
 
 	"github.com/coder/serpent"
 	"github.com/stretchr/testify/assert"

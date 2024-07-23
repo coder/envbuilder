@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/coder/envbuilder/pkg/options"
+	"github.com/coder/envbuilder/options"
 )
 
 const (

@@ -8,11 +8,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/coder/envbuilder"
-	"github.com/coder/envbuilder/internal/log"
-	"github.com/coder/envbuilder/pkg/options"
+	"github.com/coder/envbuilder/options"
 
 	"github.com/coder/coder/v2/codersdk"
+	"github.com/coder/envbuilder"
+	"github.com/coder/envbuilder/internal/log"
 	"github.com/coder/serpent"
 
 	// *Never* remove this. Certificates are not bundled as part

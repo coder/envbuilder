@@ -21,9 +21,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/envbuilder/options"
+
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer/features"
-	"github.com/coder/envbuilder/pkg/options"
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/coder/envbuilder/testutil/mwtest"
 	"github.com/coder/envbuilder/testutil/registrytest"
