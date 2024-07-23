@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/coder/envbuilder"
+	"github.com/coder/envbuilder/options"
 )
 
 const (
@@ -26,7 +26,7 @@ func main() {
 		panic("start or end section comments not found in the file.")
 	}
 
-	var options envbuilder.Options
+	var options options.Options
 	mkd := "\n## Environment Variables\n\n" + options.Markdown()
 	modifiedContent := readmeContent[:startIndex+len(startSection)] + mkd + readmeContent[endIndex:]
 

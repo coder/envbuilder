@@ -1,6 +1,7 @@
-package envbuilder
+package options
 
 import (
+	"os"
 	"strings"
 
 	"github.com/coder/envbuilder/internal/log"
@@ -492,4 +493,23 @@ func skipDeprecatedOptions(options []serpent.Option) []serpent.Option {
 	}
 
 	return activeOptions
+}
+
+// UnsetEnv unsets all environment variables that are used
+// to configure the options.
+func UnsetEnv() {
+	var o Options
+	for _, opt := range o.CLI() {
+		if opt.Env == "" {
+			continue
+		}
+		// Do not strip options that do not have the magic prefix!
+		// For example, CODER_AGENT_URL, CODER_AGENT_TOKEN, CODER_AGENT_SUBSYSTEM.
+		if !strings.HasPrefix(opt.Env, envPrefix) {
+			continue
+		}
+		// Strip both with and without prefix.
+		_ = os.Unsetenv(opt.Env)
+		_ = os.Unsetenv(strings.TrimPrefix(opt.Env, envPrefix))
+	}
 }
