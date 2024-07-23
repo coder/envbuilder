@@ -23,9 +23,11 @@ import (
 
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer/features"
+	"github.com/coder/envbuilder/pkg/options"
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/coder/envbuilder/testutil/mwtest"
 	"github.com/coder/envbuilder/testutil/registrytest"
+
 	clitypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -71,7 +73,7 @@ func TestInitScriptInitCommand(t *testing.T) {
 			"Dockerfile": fmt.Sprintf("FROM %s\nRUN unlink /bin/sh", testImageAlpine),
 		},
 	})
-	_, err := runEnvbuilder(t, options{env: []string{
+	_, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		envbuilderEnv("INIT_SCRIPT", fmt.Sprintf(`wget -O - %q`, initSrv.URL)),
@@ -85,7 +87,7 @@ func TestInitScriptInitCommand(t *testing.T) {
 	}
 	require.NoError(t, ctx.Err(), "init script did not execute for prefixed env vars")
 
-	_, err = runEnvbuilder(t, options{env: []string{
+	_, err = runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		fmt.Sprintf(`INIT_SCRIPT=wget -O - %q`, initSrv.URL),
@@ -129,7 +131,7 @@ RUN printf "%%s\n" \
 				"Dockerfile": dockerFile,
 			},
 		})
-		_, err := runEnvbuilder(t, options{env: []string{
+		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		}})
@@ -160,7 +162,7 @@ RUN mkdir -p /myapp/somedir \
 				"Dockerfile": dockerFile,
 			},
 		})
-		_, err := runEnvbuilder(t, options{env: []string{
+		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		}})
@@ -178,7 +180,7 @@ func TestForceSafe(t *testing.T) {
 				"Dockerfile": "FROM " + testImageAlpine,
 			},
 		})
-		_, err := runEnvbuilder(t, options{env: []string{
+		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			"KANIKO_DIR=/not/envbuilder",
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
@@ -194,7 +196,7 @@ func TestForceSafe(t *testing.T) {
 				"Dockerfile": "FROM " + testImageAlpine,
 			},
 		})
-		_, err := runEnvbuilder(t, options{env: []string{
+		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			"KANIKO_DIR=/not/envbuilder",
 			envbuilderEnv("FORCE_SAFE", "true"),
@@ -213,7 +215,7 @@ func TestFailsGitAuth(t *testing.T) {
 		username: "kyle",
 		password: "testing",
 	})
-	_, err := runEnvbuilder(t, options{env: []string{
+	_, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 	}})
 	require.ErrorContains(t, err, "authentication required")
@@ -228,7 +230,7 @@ func TestSucceedsGitAuth(t *testing.T) {
 		username: "kyle",
 		password: "testing",
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		envbuilderEnv("GIT_USERNAME", "kyle"),
@@ -252,7 +254,7 @@ func TestSucceedsGitAuthInURL(t *testing.T) {
 	u, err := url.Parse(srv.URL)
 	require.NoError(t, err)
 	u.User = url.UserPassword("kyle", "testing")
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", u.String()),
 		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 	}})
@@ -330,7 +332,7 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 			".devcontainer/feature3/install.sh":                "echo $GRAPE > /test3output",
 		},
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 	}})
 	require.NoError(t, err)
@@ -352,7 +354,7 @@ func TestBuildFromDockerfile(t *testing.T) {
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString([]byte(`{"experimental": "enabled"}`))),
@@ -374,7 +376,7 @@ func TestBuildPrintBuildOutput(t *testing.T) {
 			"Dockerfile": "FROM " + testImageAlpine + "\nRUN echo hello",
 		},
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 	}})
@@ -408,7 +410,7 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("ReadWrite", func(t *testing.T) {
-		ctr, err := runEnvbuilder(t, options{
+		ctr, err := runEnvbuilder(t, runOpts{
 			env: []string{
 				envbuilderEnv("GIT_URL", srv.URL),
 				envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
@@ -422,7 +424,7 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 	})
 
 	t.Run("ReadOnly", func(t *testing.T) {
-		ctr, err := runEnvbuilder(t, options{
+		ctr, err := runEnvbuilder(t, runOpts{
 			env: []string{
 				envbuilderEnv("GIT_URL", srv.URL),
 				envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
@@ -443,7 +445,7 @@ func TestBuildWithSetupScript(t *testing.T) {
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		envbuilderEnv("SETUP_SCRIPT", "echo \"INIT_ARGS=-c 'echo hi > /wow && sleep infinity'\" >> $ENVBUILDER_ENV"),
@@ -469,7 +471,7 @@ func TestBuildFromDevcontainerInCustomPath(t *testing.T) {
 			".devcontainer/custom/Dockerfile": "FROM " + testImageUbuntu,
 		},
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("DEVCONTAINER_DIR", ".devcontainer/custom"),
 	}})
@@ -494,7 +496,7 @@ func TestBuildFromDevcontainerInSubfolder(t *testing.T) {
 			".devcontainer/subfolder/Dockerfile": "FROM " + testImageUbuntu,
 		},
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 	}})
 	require.NoError(t, err)
@@ -518,7 +520,7 @@ func TestBuildFromDevcontainerInRoot(t *testing.T) {
 			"Dockerfile": "FROM " + testImageUbuntu,
 		},
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 	}})
 	require.NoError(t, err)
@@ -534,7 +536,7 @@ func TestBuildCustomCertificates(t *testing.T) {
 		},
 		tls: true,
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		envbuilderEnv("SSL_CERT_BASE64", base64.StdEncoding.EncodeToString(pem.EncodeToMemory(&pem.Block{
@@ -555,7 +557,7 @@ func TestBuildStopStartCached(t *testing.T) {
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		envbuilderEnv("SKIP_REBUILD", "true"),
@@ -586,7 +588,7 @@ func TestCloneFailsFallback(t *testing.T) {
 	t.Parallel()
 	t.Run("BadRepo", func(t *testing.T) {
 		t.Parallel()
-		_, err := runEnvbuilder(t, options{env: []string{
+		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", "bad-value"),
 		}})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
@@ -603,7 +605,7 @@ func TestBuildFailsFallback(t *testing.T) {
 				"Dockerfile": "bad syntax",
 			},
 		})
-		_, err := runEnvbuilder(t, options{env: []string{
+		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		}})
@@ -619,7 +621,7 @@ func TestBuildFailsFallback(t *testing.T) {
 RUN exit 1`,
 			},
 		})
-		_, err := runEnvbuilder(t, options{env: []string{
+		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		}})
@@ -633,7 +635,7 @@ RUN exit 1`,
 				".devcontainer/devcontainer.json": "not json",
 			},
 		})
-		_, err := runEnvbuilder(t, options{env: []string{
+		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 		}})
 		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
@@ -645,7 +647,7 @@ RUN exit 1`,
 				".devcontainer/devcontainer.json": "{}",
 			},
 		})
-		ctr, err := runEnvbuilder(t, options{env: []string{
+		ctr, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("FALLBACK_IMAGE", testImageAlpine),
 		}})
@@ -663,7 +665,7 @@ func TestExitBuildOnFailure(t *testing.T) {
 			"Dockerfile": "bad syntax",
 		},
 	})
-	_, err := runEnvbuilder(t, options{env: []string{
+	_, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		envbuilderEnv("FALLBACK_IMAGE", testImageAlpine),
@@ -697,7 +699,7 @@ func TestContainerEnv(t *testing.T) {
 			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\nENV FROM_DOCKERFILE=foo",
 		},
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("EXPORT_ENV_FILE", "/env"),
 	}})
@@ -730,7 +732,7 @@ func TestUnsetOptionsEnv(t *testing.T) {
 			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\nENV FROM_DOCKERFILE=foo",
 		},
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		"GIT_URL", srv.URL,
 		envbuilderEnv("GIT_PASSWORD", "supersecret"),
@@ -741,13 +743,13 @@ func TestUnsetOptionsEnv(t *testing.T) {
 	require.NoError(t, err)
 
 	output := execContainer(t, ctr, "cat /root/env.txt")
-	var os envbuilder.Options
+	var os options.Options
 	for _, s := range strings.Split(strings.TrimSpace(output), "\n") {
 		for _, o := range os.CLI() {
 			if strings.HasPrefix(s, o.Env) {
 				assert.Fail(t, "environment variable should be stripped when running init script", s)
 			}
-			optWithoutPrefix := strings.TrimPrefix(o.Env, envbuilder.WithEnvPrefix(""))
+			optWithoutPrefix := strings.TrimPrefix(o.Env, options.WithEnvPrefix(""))
 			if strings.HasPrefix(s, optWithoutPrefix) {
 				assert.Fail(t, "environment variable should be stripped when running init script", s)
 			}
@@ -777,7 +779,7 @@ func TestLifecycleScripts(t *testing.T) {
 			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\nUSER nobody",
 		},
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 	}})
 	require.NoError(t, err)
@@ -816,7 +818,7 @@ RUN chmod +x /bin/init.sh
 USER nobody`,
 		},
 	})
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("POST_START_SCRIPT_PATH", "/tmp/post-start.sh"),
 		envbuilderEnv("INIT_COMMAND", "/bin/init.sh"),
@@ -850,7 +852,7 @@ func TestPrivateRegistry(t *testing.T) {
 				"Dockerfile": "FROM " + image,
 			},
 		})
-		_, err := runEnvbuilder(t, options{env: []string{
+		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		}})
@@ -879,7 +881,7 @@ func TestPrivateRegistry(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString(config)),
@@ -911,7 +913,7 @@ func TestPrivateRegistry(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString(config)),
@@ -968,7 +970,7 @@ func setupPassthroughRegistry(t *testing.T, image string, opts *setupPassthrough
 }
 
 func TestNoMethodFails(t *testing.T) {
-	_, err := runEnvbuilder(t, options{env: []string{}})
+	_, err := runEnvbuilder(t, runOpts{env: []string{}})
 	require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 }
 
@@ -1042,7 +1044,7 @@ COPY %s .`, testImageAlpine, inclFile)
 			srv := createGitServer(t, gitServerOptions{
 				files: tc.files,
 			})
-			_, err := runEnvbuilder(t, options{env: []string{
+			_, err := runEnvbuilder(t, runOpts{env: []string{
 				envbuilderEnv("GIT_URL", srv.URL),
 				envbuilderEnv("DOCKERFILE_PATH", tc.dockerfilePath),
 				envbuilderEnv("BUILD_CONTEXT_PATH", tc.buildContextPath),
@@ -1090,7 +1092,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
@@ -1101,7 +1103,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 		}})
@@ -1112,7 +1114,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.ErrorContains(t, err, "MANIFEST_UNKNOWN", "expected image to not be present before build + push")
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
@@ -1150,7 +1152,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
@@ -1161,7 +1163,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("PUSH_IMAGE", "1"),
@@ -1184,7 +1186,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		}
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		ctrID, err := runEnvbuilder(t, options{env: []string{
+		ctrID, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
@@ -1283,7 +1285,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
@@ -1294,7 +1296,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("PUSH_IMAGE", "1"),
@@ -1307,7 +1309,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.NoError(t, err, "expected image to be present after build + push")
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
@@ -1351,7 +1353,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
@@ -1362,7 +1364,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("PUSH_IMAGE", "1"),
@@ -1404,7 +1406,7 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
@@ -1416,7 +1418,7 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		ctrID, err := runEnvbuilder(t, options{env: []string{
+		ctrID, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("PUSH_IMAGE", "1"),
@@ -1432,7 +1434,7 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 		require.NoError(t, err, "expected image to be present after build + push")
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		_, err = runEnvbuilder(t, options{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
@@ -1463,7 +1465,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		})
 
 		// When: we run envbuilder with PUSH_IMAGE set but no cache repo set
-		_, err := runEnvbuilder(t, options{env: []string{
+		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("PUSH_IMAGE", "1"),
 		}})
@@ -1499,7 +1501,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		notRegURL := strings.TrimPrefix(notRegSrv.URL, "http://") + "/test"
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err := runEnvbuilder(t, options{env: []string{
+		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", notRegURL),
 			envbuilderEnv("PUSH_IMAGE", "1"),
@@ -1535,7 +1537,7 @@ USER test
 
 	// Run envbuilder with a Docker volume mounted to homedir
 	volName := fmt.Sprintf("%s%d-home", t.Name(), time.Now().Unix())
-	ctr, err := runEnvbuilder(t, options{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 	}, volumes: map[string]string{volName: "/home/test"}})
 	require.NoError(t, err)
@@ -1656,7 +1658,7 @@ func cleanOldEnvbuilders() {
 	}
 }
 
-type options struct {
+type runOpts struct {
 	binds   []string
 	env     []string
 	volumes map[string]string
@@ -1664,7 +1666,7 @@ type options struct {
 
 // runEnvbuilder starts the envbuilder container with the given environment
 // variables and returns the container ID.
-func runEnvbuilder(t *testing.T, options options) (string, error) {
+func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 	t.Helper()
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -1673,7 +1675,7 @@ func runEnvbuilder(t *testing.T, options options) (string, error) {
 		cli.Close()
 	})
 	mounts := make([]mount.Mount, 0)
-	for volName, volPath := range options.volumes {
+	for volName, volPath := range opts.volumes {
 		mounts = append(mounts, mount.Mount{
 			Type:   mount.TypeVolume,
 			Source: volName,
@@ -1689,13 +1691,13 @@ func runEnvbuilder(t *testing.T, options options) (string, error) {
 	}
 	ctr, err := cli.ContainerCreate(ctx, &container.Config{
 		Image: "envbuilder:latest",
-		Env:   options.env,
+		Env:   opts.env,
 		Labels: map[string]string{
 			testContainerLabel: "true",
 		},
 	}, &container.HostConfig{
 		NetworkMode: container.NetworkMode("host"),
-		Binds:       options.binds,
+		Binds:       opts.binds,
 		Mounts:      mounts,
 	}, nil, nil, "")
 	require.NoError(t, err)
@@ -1784,5 +1786,5 @@ func streamContainerLogs(t *testing.T, cli *client.Client, containerID string) (
 }
 
 func envbuilderEnv(env string, value string) string {
-	return fmt.Sprintf("%s=%s", envbuilder.WithEnvPrefix(env), value)
+	return fmt.Sprintf("%s=%s", options.WithEnvPrefix(env), value)
 }

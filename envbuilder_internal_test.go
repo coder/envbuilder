@@ -3,6 +3,8 @@ package envbuilder
 import (
 	"testing"
 
+	"github.com/coder/envbuilder/pkg/options"
+
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,7 +20,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		fs := memfs.New()
 
 		// when
-		_, _, err := findDevcontainerJSON(Options{
+		_, _, err := findDevcontainerJSON(options.Options{
 			Filesystem:      fs,
 			WorkspaceFolder: "/workspace",
 		})
@@ -36,7 +38,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		require.NoError(t, err)
 
 		// when
-		_, _, err = findDevcontainerJSON(Options{
+		_, _, err = findDevcontainerJSON(options.Options{
 			Filesystem:      fs,
 			WorkspaceFolder: "/workspace",
 		})
@@ -56,7 +58,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		require.NoError(t, err)
 
 		// when
-		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
+		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(options.Options{
 			Filesystem:      fs,
 			WorkspaceFolder: "/workspace",
 		})
@@ -78,7 +80,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		require.NoError(t, err)
 
 		// when
-		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
+		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(options.Options{
 			Filesystem:      fs,
 			WorkspaceFolder: "/workspace",
 			DevcontainerDir: "experimental-devcontainer",
@@ -101,7 +103,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		require.NoError(t, err)
 
 		// when
-		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
+		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(options.Options{
 			Filesystem:           fs,
 			WorkspaceFolder:      "/workspace",
 			DevcontainerJSONPath: "experimental.json",
@@ -124,7 +126,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		require.NoError(t, err)
 
 		// when
-		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
+		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(options.Options{
 			Filesystem:      fs,
 			WorkspaceFolder: "/workspace",
 		})
@@ -146,7 +148,7 @@ func TestFindDevcontainerJSON(t *testing.T) {
 		require.NoError(t, err)
 
 		// when
-		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(Options{
+		devcontainerPath, devcontainerDir, err := findDevcontainerJSON(options.Options{
 			Filesystem:      fs,
 			WorkspaceFolder: "/workspace",
 		})

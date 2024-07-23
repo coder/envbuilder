@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/coder/envbuilder/pkg/options"
+
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/internal/log"
 	"github.com/coder/envbuilder/testutil/gittest"
@@ -265,7 +267,7 @@ func TestCloneRepoSSH(t *testing.T) {
 func TestSetupRepoAuth(t *testing.T) {
 	t.Setenv("SSH_AUTH_SOCK", "")
 	t.Run("Empty", func(t *testing.T) {
-		opts := &envbuilder.Options{
+		opts := &options.Options{
 			Logger: testLog(t),
 		}
 		auth := envbuilder.SetupRepoAuth(opts)
@@ -273,7 +275,7 @@ func TestSetupRepoAuth(t *testing.T) {
 	})
 
 	t.Run("HTTP/NoAuth", func(t *testing.T) {
-		opts := &envbuilder.Options{
+		opts := &options.Options{
 			GitURL: "http://host.tld/repo",
 			Logger: testLog(t),
 		}
@@ -282,7 +284,7 @@ func TestSetupRepoAuth(t *testing.T) {
 	})
 
 	t.Run("HTTP/BasicAuth", func(t *testing.T) {
-		opts := &envbuilder.Options{
+		opts := &options.Options{
 			GitURL:      "http://host.tld/repo",
 			GitUsername: "user",
 			GitPassword: "pass",
@@ -296,7 +298,7 @@ func TestSetupRepoAuth(t *testing.T) {
 	})
 
 	t.Run("HTTPS/BasicAuth", func(t *testing.T) {
-		opts := &envbuilder.Options{
+		opts := &options.Options{
 			GitURL:      "https://host.tld/repo",
 			GitUsername: "user",
 			GitPassword: "pass",
@@ -311,7 +313,7 @@ func TestSetupRepoAuth(t *testing.T) {
 
 	t.Run("SSH/WithScheme", func(t *testing.T) {
 		kPath := writeTestPrivateKey(t)
-		opts := &envbuilder.Options{
+		opts := &options.Options{
 			GitURL:               "ssh://host.tld/repo",
 			GitSSHPrivateKeyPath: kPath,
 			Logger:               testLog(t),
@@ -323,7 +325,7 @@ func TestSetupRepoAuth(t *testing.T) {
 
 	t.Run("SSH/NoScheme", func(t *testing.T) {
 		kPath := writeTestPrivateKey(t)
-		opts := &envbuilder.Options{
+		opts := &options.Options{
 			GitURL:               "git@host.tld:repo/path",
 			GitSSHPrivateKeyPath: kPath,
 			Logger:               testLog(t),
@@ -336,7 +338,7 @@ func TestSetupRepoAuth(t *testing.T) {
 	t.Run("SSH/OtherScheme", func(t *testing.T) {
 		// Anything that is not https:// or http:// is treated as SSH.
 		kPath := writeTestPrivateKey(t)
-		opts := &envbuilder.Options{
+		opts := &options.Options{
 			GitURL:               "git://git@host.tld:repo/path",
 			GitSSHPrivateKeyPath: kPath,
 			Logger:               testLog(t),
@@ -348,7 +350,7 @@ func TestSetupRepoAuth(t *testing.T) {
 
 	t.Run("SSH/GitUsername", func(t *testing.T) {
 		kPath := writeTestPrivateKey(t)
-		opts := &envbuilder.Options{
+		opts := &options.Options{
 			GitURL:               "host.tld:12345/repo/path",
 			GitSSHPrivateKeyPath: kPath,
 			GitUsername:          "user",
@@ -361,7 +363,7 @@ func TestSetupRepoAuth(t *testing.T) {
 
 	t.Run("SSH/PrivateKey", func(t *testing.T) {
 		kPath := writeTestPrivateKey(t)
-		opts := &envbuilder.Options{
+		opts := &options.Options{
 			GitURL:               "ssh://git@host.tld:repo/path",
 			GitSSHPrivateKeyPath: kPath,
 			Logger:               testLog(t),
@@ -376,7 +378,7 @@ func TestSetupRepoAuth(t *testing.T) {
 	})
 
 	t.Run("SSH/NoAuthMethods", func(t *testing.T) {
-		opts := &envbuilder.Options{
+		opts := &options.Options{
 			GitURL: "ssh://git@host.tld:repo/path",
 			Logger: testLog(t),
 		}
