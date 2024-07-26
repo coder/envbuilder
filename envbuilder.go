@@ -26,7 +26,6 @@ import (
 
 	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/git"
-	"github.com/coder/envbuilder/internal/chmodfs"
 	"github.com/coder/envbuilder/options"
 
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
@@ -42,7 +41,6 @@ import (
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/fatih/color"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -61,23 +59,8 @@ type DockerConfig configfile.ConfigFile
 // Filesystem is the filesystem to use for all operations.
 // Defaults to the host filesystem.
 func Run(ctx context.Context, opts options.Options) error {
-	// Temporarily removed these from the default settings to prevent conflicts
-	// between current and legacy environment variables that add default values.
-	// Once the legacy environment variables are phased out, this can be
-	// reinstated to the previous default values.
-	if len(opts.IgnorePaths) == 0 {
-		opts.IgnorePaths = []string{
-			"/var/run",
-			// KinD adds these paths to pods, so ignore them by default.
-			"/product_uuid", "/product_name",
-		}
-	}
-	if opts.InitScript == "" {
-		opts.InitScript = "sleep infinity"
-	}
-	if opts.InitCommand == "" {
-		opts.InitCommand = "/bin/sh"
-	}
+	opts.SetDefaults()
+
 	if opts.CacheRepo == "" && opts.PushImage {
 		return fmt.Errorf("--cache-repo must be set when using --push-image")
 	}
@@ -89,12 +72,6 @@ func Run(ctx context.Context, opts options.Options) error {
 		if err != nil {
 			return fmt.Errorf("parse init args: %w", err)
 		}
-	}
-	if opts.Filesystem == nil {
-		opts.Filesystem = chmodfs.New(osfs.New("/"))
-	}
-	if opts.WorkspaceFolder == "" {
-		opts.WorkspaceFolder = options.DefaultWorkspaceFolder(opts.GitURL)
 	}
 
 	stageNumber := 0
