@@ -26,6 +26,7 @@ import (
 
 	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/git"
+	"github.com/coder/envbuilder/internal/chmodfs"
 	"github.com/coder/envbuilder/options"
 
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
@@ -41,7 +42,6 @@ import (
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/fatih/color"
-	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -91,7 +91,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		}
 	}
 	if opts.Filesystem == nil {
-		opts.Filesystem = &osfsWithChmod{osfs.New("/")}
+		opts.Filesystem = chmodfs.New(osfs.New("/"))
 	}
 	if opts.WorkspaceFolder == "" {
 		opts.WorkspaceFolder = options.DefaultWorkspaceFolder(opts.GitURL)
@@ -1051,14 +1051,6 @@ func newColor(value ...color.Attribute) *color.Color {
 	c := color.New(value...)
 	c.EnableColor()
 	return c
-}
-
-type osfsWithChmod struct {
-	billy.Filesystem
-}
-
-func (fs *osfsWithChmod) Chmod(name string, mode os.FileMode) error {
-	return os.Chmod(name, mode)
 }
 
 func findDevcontainerJSON(options options.Options) (string, string, error) {
