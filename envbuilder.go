@@ -59,7 +59,9 @@ type DockerConfig configfile.ConfigFile
 // Filesystem is the filesystem to use for all operations.
 // Defaults to the host filesystem.
 func Run(ctx context.Context, opts options.Options) error {
-	opts.SetDefaults()
+	if opts.GetCachedImage {
+		return fmt.Errorf("developer error: use RunCacheProbe instead")
+	}
 
 	if opts.CacheRepo == "" && opts.PushImage {
 		return fmt.Errorf("--cache-repo must be set when using --push-image")
@@ -900,6 +902,418 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		return fmt.Errorf("exec init script: %w", err)
 	}
 	return nil
+}
+
+// RunCacheProbe performs a 'dry-run' build of the image and checks that
+// all of the resulting layers are present in options.CacheRepo.
+// Logger is the logf to use for all operations.
+// Filesystem is the filesystem to use for all operations.
+// Defaults to the host filesystem.
+func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) {
+	if !opts.GetCachedImage {
+		return nil, fmt.Errorf("developer error: RunCacheProbe must be run with --get-cached-image")
+	}
+	if opts.CacheRepo == "" {
+		return nil, fmt.Errorf("--cache-repo must be set when using --get-cached-image")
+	}
+
+	// Default to the shell!
+	// initArgs := []string{"-c", opts.InitScript}
+	// if opts.InitArgs != "" {
+	// 	var err error
+	// 	initArgs, err = shellquote.Split(opts.InitArgs)
+	// 	if err != nil {
+	// 		return fmt.Errorf("parse init args: %w", err)
+	// 	}
+	// }
+
+	stageNumber := 0
+	startStage := func(format string, args ...any) func(format string, args ...any) {
+		now := time.Now()
+		stageNumber++
+		stageNum := stageNumber
+		opts.Logger(log.LevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
+
+		return func(format string, args ...any) {
+			opts.Logger(log.LevelInfo, "#%d: %s [%s]", stageNum, fmt.Sprintf(format, args...), time.Since(now))
+		}
+	}
+
+	opts.Logger(log.LevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
+
+	var caBundle []byte
+	if opts.SSLCertBase64 != "" {
+		certPool, err := x509.SystemCertPool()
+		if err != nil {
+			return nil, xerrors.Errorf("get global system cert pool: %w", err)
+		}
+		data, err := base64.StdEncoding.DecodeString(opts.SSLCertBase64)
+		if err != nil {
+			return nil, xerrors.Errorf("base64 decode ssl cert: %w", err)
+		}
+		ok := certPool.AppendCertsFromPEM(data)
+		if !ok {
+			return nil, xerrors.Errorf("failed to append the ssl cert to the global pool: %s", data)
+		}
+		caBundle = data
+	}
+
+	if opts.DockerConfigBase64 != "" {
+		decoded, err := base64.StdEncoding.DecodeString(opts.DockerConfigBase64)
+		if err != nil {
+			return nil, fmt.Errorf("decode docker config: %w", err)
+		}
+		var configFile DockerConfig
+		decoded, err = hujson.Standardize(decoded)
+		if err != nil {
+			return nil, fmt.Errorf("humanize json for docker config: %w", err)
+		}
+		err = json.Unmarshal(decoded, &configFile)
+		if err != nil {
+			return nil, fmt.Errorf("parse docker config: %w", err)
+		}
+		err = os.WriteFile(filepath.Join(constants.MagicDir, "config.json"), decoded, 0o644)
+		if err != nil {
+			return nil, fmt.Errorf("write docker config: %w", err)
+		}
+	}
+
+	var fallbackErr error
+	var cloned bool
+	if opts.GitURL != "" {
+		endStage := startStage("📦 Cloning %s to %s...",
+			newColor(color.FgCyan).Sprintf(opts.GitURL),
+			newColor(color.FgCyan).Sprintf(opts.WorkspaceFolder),
+		)
+
+		reader, writer := io.Pipe()
+		defer reader.Close()
+		defer writer.Close()
+		go func() {
+			data := make([]byte, 4096)
+			for {
+				read, err := reader.Read(data)
+				if err != nil {
+					return
+				}
+				content := data[:read]
+				for _, line := range strings.Split(string(content), "\r") {
+					if line == "" {
+						continue
+					}
+					opts.Logger(log.LevelInfo, "#1: %s", strings.TrimSpace(line))
+				}
+			}
+		}()
+
+		cloneOpts := git.CloneRepoOptions{
+			Path:         opts.WorkspaceFolder,
+			Storage:      opts.Filesystem,
+			Insecure:     opts.Insecure,
+			Progress:     writer,
+			SingleBranch: opts.GitCloneSingleBranch,
+			Depth:        int(opts.GitCloneDepth),
+			CABundle:     caBundle,
+		}
+
+		cloneOpts.RepoAuth = git.SetupRepoAuth(&opts)
+		if opts.GitHTTPProxyURL != "" {
+			cloneOpts.ProxyOptions = transport.ProxyOptions{
+				URL: opts.GitHTTPProxyURL,
+			}
+		}
+		cloneOpts.RepoURL = opts.GitURL
+
+		cloned, fallbackErr = git.CloneRepo(ctx, cloneOpts)
+		if fallbackErr == nil {
+			if cloned {
+				endStage("📦 Cloned repository!")
+			} else {
+				endStage("📦 The repository already exists!")
+			}
+		} else {
+			opts.Logger(log.LevelError, "Failed to clone repository: %s", fallbackErr.Error())
+			opts.Logger(log.LevelError, "Falling back to the default image...")
+		}
+	}
+
+	defaultBuildParams := func() (*devcontainer.Compiled, error) {
+		dockerfile := filepath.Join(constants.MagicDir, "Dockerfile")
+		file, err := opts.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+		if opts.FallbackImage == "" {
+			if fallbackErr != nil {
+				return nil, xerrors.Errorf("%s: %w", fallbackErr.Error(), constants.ErrNoFallbackImage)
+			}
+			// We can't use errors.Join here because our tests
+			// don't support parsing a multiline error.
+			return nil, constants.ErrNoFallbackImage
+		}
+		content := "FROM " + opts.FallbackImage
+		_, err = file.Write([]byte(content))
+		if err != nil {
+			return nil, err
+		}
+		return &devcontainer.Compiled{
+			DockerfilePath:    dockerfile,
+			DockerfileContent: content,
+			BuildContext:      constants.MagicDir,
+		}, nil
+	}
+
+	var (
+		buildParams      *devcontainer.Compiled
+		devcontainerPath string
+	)
+	if opts.DockerfilePath == "" {
+		// Only look for a devcontainer if a Dockerfile wasn't specified.
+		// devcontainer is a standard, so it's reasonable to be the default.
+		var devcontainerDir string
+		var err error
+		devcontainerPath, devcontainerDir, err = findDevcontainerJSON(opts)
+		if err != nil {
+			opts.Logger(log.LevelError, "Failed to locate devcontainer.json: %s", err.Error())
+			opts.Logger(log.LevelError, "Falling back to the default image...")
+		} else {
+			// We know a devcontainer exists.
+			// Let's parse it and use it!
+			file, err := opts.Filesystem.Open(devcontainerPath)
+			if err != nil {
+				return nil, fmt.Errorf("open devcontainer.json: %w", err)
+			}
+			defer file.Close()
+			content, err := io.ReadAll(file)
+			if err != nil {
+				return nil, fmt.Errorf("read devcontainer.json: %w", err)
+			}
+			devContainer, err := devcontainer.Parse(content)
+			if err == nil {
+				var fallbackDockerfile string
+				if !devContainer.HasImage() && !devContainer.HasDockerfile() {
+					defaultParams, err := defaultBuildParams()
+					if err != nil {
+						return nil, fmt.Errorf("no Dockerfile or image found: %w", err)
+					}
+					opts.Logger(log.LevelInfo, "No Dockerfile or image specified; falling back to the default image...")
+					fallbackDockerfile = defaultParams.DockerfilePath
+				}
+				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, constants.MagicDir, fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
+				if err != nil {
+					return nil, fmt.Errorf("compile devcontainer.json: %w", err)
+				}
+			} else {
+				opts.Logger(log.LevelError, "Failed to parse devcontainer.json: %s", err.Error())
+				opts.Logger(log.LevelError, "Falling back to the default image...")
+			}
+		}
+	} else {
+		// If a Dockerfile was specified, we use that.
+		dockerfilePath := filepath.Join(opts.WorkspaceFolder, opts.DockerfilePath)
+
+		// If the dockerfilePath is specified and deeper than the base of WorkspaceFolder AND the BuildContextPath is
+		// not defined, show a warning
+		dockerfileDir := filepath.Dir(dockerfilePath)
+		if dockerfileDir != filepath.Clean(opts.WorkspaceFolder) && opts.BuildContextPath == "" {
+			opts.Logger(log.LevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, opts.WorkspaceFolder)
+			opts.Logger(log.LevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
+		}
+
+		dockerfile, err := opts.Filesystem.Open(dockerfilePath)
+		if err == nil {
+			content, err := io.ReadAll(dockerfile)
+			if err != nil {
+				return nil, fmt.Errorf("read Dockerfile: %w", err)
+			}
+			buildParams = &devcontainer.Compiled{
+				DockerfilePath:    dockerfilePath,
+				DockerfileContent: string(content),
+				BuildContext:      filepath.Join(opts.WorkspaceFolder, opts.BuildContextPath),
+			}
+		}
+	}
+
+	// When probing the build cache, there is no fallback!
+	if buildParams == nil {
+		return nil, fmt.Errorf("no Dockerfile or devcontainer.json found")
+	}
+
+	HijackLogrus(func(entry *logrus.Entry) {
+		for _, line := range strings.Split(entry.Message, "\r") {
+			opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, color.HiBlackString(line))
+		}
+	})
+
+	var closeAfterBuild func()
+	// Allows quick testing of layer caching using a local directory!
+	if opts.LayerCacheDir != "" {
+		cfg := &configuration.Configuration{
+			Storage: configuration.Storage{
+				"filesystem": configuration.Parameters{
+					"rootdirectory": opts.LayerCacheDir,
+				},
+			},
+		}
+		cfg.Log.Level = "error"
+
+		// Spawn an in-memory registry to cache built layers...
+		registry := handlers.NewApp(ctx, cfg)
+
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return nil, fmt.Errorf("start listener for in-memory registry: %w", err)
+		}
+		tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+		if !ok {
+			return nil, fmt.Errorf("listener addr was of wrong type: %T", listener.Addr())
+		}
+		srv := &http.Server{
+			Handler: registry,
+		}
+		go func() {
+			err := srv.Serve(listener)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				opts.Logger(log.LevelError, "Failed to serve registry: %s", err.Error())
+			}
+		}()
+		closeAfterBuild = func() {
+			_ = srv.Close()
+			_ = listener.Close()
+		}
+		if opts.CacheRepo != "" {
+			opts.Logger(log.LevelWarn, "Overriding cache repo with local registry...")
+		}
+		opts.CacheRepo = fmt.Sprintf("localhost:%d/local/cache", tcpAddr.Port)
+	}
+
+	// IgnorePaths in the Kaniko opts doesn't properly ignore paths.
+	// So we add them to the default ignore list. See:
+	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
+	ignorePaths := append([]string{
+		constants.MagicDir,
+		opts.WorkspaceFolder,
+		// See: https://github.com/coder/envbuilder/issues/37
+		"/etc/resolv.conf",
+	}, opts.IgnorePaths...)
+
+	if opts.LayerCacheDir != "" {
+		ignorePaths = append(ignorePaths, opts.LayerCacheDir)
+	}
+
+	for _, ignorePath := range ignorePaths {
+		util.AddToDefaultIgnoreList(util.IgnoreListEntry{
+			Path:            ignorePath,
+			PrefixMatchOnly: false,
+			AllowedPaths:    nil,
+		})
+	}
+
+	stdoutReader, stdoutWriter := io.Pipe()
+	stderrReader, stderrWriter := io.Pipe()
+	defer stdoutReader.Close()
+	defer stdoutWriter.Close()
+	defer stderrReader.Close()
+	defer stderrWriter.Close()
+	go func() {
+		scanner := bufio.NewScanner(stdoutReader)
+		for scanner.Scan() {
+			opts.Logger(log.LevelInfo, "%s", scanner.Text())
+		}
+	}()
+	go func() {
+		scanner := bufio.NewScanner(stderrReader)
+		for scanner.Scan() {
+			opts.Logger(log.LevelInfo, "%s", scanner.Text())
+		}
+	}()
+	cacheTTL := time.Hour * 24 * 7
+	if opts.CacheTTLDays != 0 {
+		cacheTTL = time.Hour * 24 * time.Duration(opts.CacheTTLDays)
+	}
+
+	// At this point we have all the context, we can now build!
+	registryMirror := []string{}
+	if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
+		registryMirror = strings.Split(val, ";")
+	}
+	var destinations []string
+	if opts.CacheRepo != "" {
+		destinations = append(destinations, opts.CacheRepo)
+	}
+	kOpts := &config.KanikoOptions{
+		// Boilerplate!
+		CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
+		SnapshotMode:      "redo",
+		RunV2:             true,
+		RunStdout:         stdoutWriter,
+		RunStderr:         stderrWriter,
+		Destinations:      destinations,
+		NoPush:            !opts.PushImage || len(destinations) == 0,
+		CacheRunLayers:    true,
+		CacheCopyLayers:   true,
+		CompressedCaching: true,
+		Compression:       config.ZStd,
+		// Maps to "default" level, ~100-300 MB/sec according to
+		// benchmarks in klauspost/compress README
+		// https://github.com/klauspost/compress/blob/67a538e2b4df11f8ec7139388838a13bce84b5d5/zstd/encoder_options.go#L188
+		CompressionLevel: 3,
+		CacheOptions: config.CacheOptions{
+			// Cache for a week by default!
+			CacheTTL: cacheTTL,
+			CacheDir: opts.BaseImageCacheDir,
+		},
+		ForceUnpack:       true,
+		BuildArgs:         buildParams.BuildArgs,
+		CacheRepo:         opts.CacheRepo,
+		Cache:             opts.CacheRepo != "" || opts.BaseImageCacheDir != "",
+		DockerfilePath:    buildParams.DockerfilePath,
+		DockerfileContent: buildParams.DockerfileContent,
+		RegistryOptions: config.RegistryOptions{
+			Insecure:      opts.Insecure,
+			InsecurePull:  opts.Insecure,
+			SkipTLSVerify: opts.Insecure,
+			// Enables registry mirror features in Kaniko, see more in link below
+			// https://github.com/GoogleContainerTools/kaniko?tab=readme-ov-file#flag---registry-mirror
+			// Related to PR #114
+			// https://github.com/coder/envbuilder/pull/114
+			RegistryMirrors: registryMirror,
+		},
+		SrcContext: buildParams.BuildContext,
+
+		// For cached image utilization, produce reproducible builds.
+		Reproducible: opts.PushImage,
+	}
+
+	endStage := startStage("🏗️ Checking for cached image...")
+	image, err := executor.DoCacheProbe(kOpts)
+	if err != nil {
+		return nil, xerrors.Errorf("get cached image: %w", err)
+	}
+	endStage("🏗️ Found cached image!")
+
+	if closeAfterBuild != nil {
+		closeAfterBuild()
+	}
+
+	// Sanitize the environment of any opts!
+	options.UnsetEnv()
+
+	// Remove the Docker config secret file!
+	if opts.DockerConfigBase64 != "" {
+		c := filepath.Join(constants.MagicDir, "config.json")
+		err = os.Remove(c)
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				return nil, fmt.Errorf("remove docker config: %w", err)
+			} else {
+				fmt.Fprintln(os.Stderr, "failed to remove the Docker config secret file: %w", c)
+			}
+		}
+	}
+
+	return image, nil
 }
 
 type userInfo struct {
