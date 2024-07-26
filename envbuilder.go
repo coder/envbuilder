@@ -32,7 +32,6 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
 	"github.com/GoogleContainerTools/kaniko/pkg/util"
-	giturls "github.com/chainguard-dev/git-urls"
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/coder/envbuilder/internal/ebutil"
 	"github.com/coder/envbuilder/internal/log"
@@ -95,11 +94,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		opts.Filesystem = &osfsWithChmod{osfs.New("/")}
 	}
 	if opts.WorkspaceFolder == "" {
-		f, err := DefaultWorkspaceFolder(opts.GitURL)
-		if err != nil {
-			return err
-		}
-		opts.WorkspaceFolder = f
+		opts.WorkspaceFolder = options.DefaultWorkspaceFolder(opts.GitURL)
 	}
 
 	stageNumber := 0
@@ -928,25 +923,6 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		return fmt.Errorf("exec init script: %w", err)
 	}
 	return nil
-}
-
-// DefaultWorkspaceFolder returns the default workspace folder
-// for a given repository URL.
-func DefaultWorkspaceFolder(repoURL string) (string, error) {
-	if repoURL == "" {
-		return constants.EmptyWorkspaceDir, nil
-	}
-	parsed, err := giturls.Parse(repoURL)
-	if err != nil {
-		return "", err
-	}
-	name := strings.Split(parsed.Path, "/")
-	hasOwnerAndRepo := len(name) >= 2
-	if !hasOwnerAndRepo {
-		return constants.EmptyWorkspaceDir, nil
-	}
-	repo := strings.TrimSuffix(name[len(name)-1], ".git")
-	return fmt.Sprintf("/workspaces/%s", repo), nil
 }
 
 type userInfo struct {
