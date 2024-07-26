@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/coder/envbuilder"
+	"github.com/coder/envbuilder/constants"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,7 +40,7 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 		{
 			name:     "empty",
 			gitURL:   "",
-			expected: envbuilder.EmptyWorkspaceDir,
+			expected: constants.EmptyWorkspaceDir,
 		},
 	}
 	for _, tt := range successTests {
@@ -66,7 +68,7 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dir, err := envbuilder.DefaultWorkspaceFolder(tt.invalidURL)
 			require.NoError(t, err)
-			require.Equal(t, envbuilder.EmptyWorkspaceDir, dir)
+			require.Equal(t, constants.EmptyWorkspaceDir, dir)
 		})
 	}
 }
