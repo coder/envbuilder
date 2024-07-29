@@ -32,7 +32,6 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
 	"github.com/GoogleContainerTools/kaniko/pkg/executor"
 	"github.com/GoogleContainerTools/kaniko/pkg/util"
-	giturls "github.com/chainguard-dev/git-urls"
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/coder/envbuilder/internal/ebutil"
 	"github.com/coder/envbuilder/internal/log"
@@ -42,8 +41,6 @@ import (
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/fatih/color"
-	"github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -62,23 +59,8 @@ type DockerConfig configfile.ConfigFile
 // Filesystem is the filesystem to use for all operations.
 // Defaults to the host filesystem.
 func Run(ctx context.Context, opts options.Options) error {
-	// Temporarily removed these from the default settings to prevent conflicts
-	// between current and legacy environment variables that add default values.
-	// Once the legacy environment variables are phased out, this can be
-	// reinstated to the previous default values.
-	if len(opts.IgnorePaths) == 0 {
-		opts.IgnorePaths = []string{
-			"/var/run",
-			// KinD adds these paths to pods, so ignore them by default.
-			"/product_uuid", "/product_name",
-		}
-	}
-	if opts.InitScript == "" {
-		opts.InitScript = "sleep infinity"
-	}
-	if opts.InitCommand == "" {
-		opts.InitCommand = "/bin/sh"
-	}
+	opts.SetDefaults()
+
 	if opts.CacheRepo == "" && opts.PushImage {
 		return fmt.Errorf("--cache-repo must be set when using --push-image")
 	}
@@ -90,16 +72,6 @@ func Run(ctx context.Context, opts options.Options) error {
 		if err != nil {
 			return fmt.Errorf("parse init args: %w", err)
 		}
-	}
-	if opts.Filesystem == nil {
-		opts.Filesystem = &osfsWithChmod{osfs.New("/")}
-	}
-	if opts.WorkspaceFolder == "" {
-		f, err := DefaultWorkspaceFolder(opts.GitURL)
-		if err != nil {
-			return err
-		}
-		opts.WorkspaceFolder = f
 	}
 
 	stageNumber := 0
@@ -930,25 +902,6 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 	return nil
 }
 
-// DefaultWorkspaceFolder returns the default workspace folder
-// for a given repository URL.
-func DefaultWorkspaceFolder(repoURL string) (string, error) {
-	if repoURL == "" {
-		return constants.EmptyWorkspaceDir, nil
-	}
-	parsed, err := giturls.Parse(repoURL)
-	if err != nil {
-		return "", err
-	}
-	name := strings.Split(parsed.Path, "/")
-	hasOwnerAndRepo := len(name) >= 2
-	if !hasOwnerAndRepo {
-		return constants.EmptyWorkspaceDir, nil
-	}
-	repo := strings.TrimSuffix(name[len(name)-1], ".git")
-	return fmt.Sprintf("/workspaces/%s", repo), nil
-}
-
 type userInfo struct {
 	uid  int
 	gid  int
@@ -1075,14 +1028,6 @@ func newColor(value ...color.Attribute) *color.Color {
 	c := color.New(value...)
 	c.EnableColor()
 	return c
-}
-
-type osfsWithChmod struct {
-	billy.Filesystem
-}
-
-func (fs *osfsWithChmod) Chmod(name string, mode os.FileMode) error {
-	return os.Chmod(name, mode)
 }
 
 func findDevcontainerJSON(options options.Options) (string, string, error) {
