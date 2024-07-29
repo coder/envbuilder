@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coder/envbuilder/options"
-
 	"github.com/coder/envbuilder"
+	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/devcontainer/features"
+	"github.com/coder/envbuilder/options"
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/coder/envbuilder/testutil/mwtest"
 	"github.com/coder/envbuilder/testutil/registrytest"
@@ -366,7 +366,7 @@ func TestBuildFromDockerfile(t *testing.T) {
 	require.Equal(t, "hello", strings.TrimSpace(output))
 
 	// Verify that the Docker configuration secret file is removed
-	output = execContainer(t, ctr, "stat "+filepath.Join(envbuilder.MagicDir, "config.json"))
+	output = execContainer(t, ctr, "stat "+filepath.Join(constants.MagicDir, "config.json"))
 	require.Contains(t, output, "No such file or directory")
 }
 
@@ -592,7 +592,7 @@ func TestCloneFailsFallback(t *testing.T) {
 		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", "bad-value"),
 		}})
-		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
+		require.ErrorContains(t, err, constants.ErrNoFallbackImage.Error())
 	})
 }
 
@@ -610,7 +610,7 @@ func TestBuildFailsFallback(t *testing.T) {
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		}})
-		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
+		require.ErrorContains(t, err, constants.ErrNoFallbackImage.Error())
 		require.ErrorContains(t, err, "dockerfile parse error")
 	})
 	t.Run("FailsBuild", func(t *testing.T) {
@@ -626,7 +626,7 @@ RUN exit 1`,
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		}})
-		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
+		require.ErrorContains(t, err, constants.ErrNoFallbackImage.Error())
 	})
 	t.Run("BadDevcontainer", func(t *testing.T) {
 		t.Parallel()
@@ -639,7 +639,7 @@ RUN exit 1`,
 		_, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 		}})
-		require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
+		require.ErrorContains(t, err, constants.ErrNoFallbackImage.Error())
 	})
 	t.Run("NoImageOrDockerfile", func(t *testing.T) {
 		t.Parallel()
@@ -972,7 +972,7 @@ func setupPassthroughRegistry(t *testing.T, image string, opts *setupPassthrough
 
 func TestNoMethodFails(t *testing.T) {
 	_, err := runEnvbuilder(t, runOpts{env: []string{}})
-	require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
+	require.ErrorContains(t, err, constants.ErrNoFallbackImage.Error())
 }
 
 func TestDockerfileBuildContext(t *testing.T) {
