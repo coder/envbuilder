@@ -16,7 +16,7 @@ import (
 
 	"github.com/coder/envbuilder/options"
 
-	"github.com/coder/envbuilder/internal/log"
+	"github.com/coder/envbuilder/log"
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/coder/envbuilder/testutil/mwtest"
 	"github.com/go-git/go-billy/v5"
