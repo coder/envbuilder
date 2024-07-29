@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/coder/envbuilder/internal/log"
+	"github.com/coder/envbuilder/log"
 	"github.com/stretchr/testify/require"
 )
 

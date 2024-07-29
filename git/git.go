@@ -12,7 +12,7 @@ import (
 	"github.com/coder/envbuilder/options"
 
 	giturls "github.com/chainguard-dev/git-urls"
-	"github.com/coder/envbuilder/internal/log"
+	"github.com/coder/envbuilder/log"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"

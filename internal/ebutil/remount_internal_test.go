@@ -8,7 +8,7 @@ import (
 	"testing"
 	time "time"
 
-	"github.com/coder/envbuilder/internal/log"
+	"github.com/coder/envbuilder/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
