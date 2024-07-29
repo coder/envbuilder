@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/coder/envbuilder/internal/log"
+	"github.com/coder/envbuilder/log"
 	"github.com/coder/serpent"
 	"github.com/go-git/go-billy/v5"
 )
