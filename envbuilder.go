@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -91,41 +92,16 @@ func Run(ctx context.Context, opts options.Options) error {
 	opts.Logger(log.LevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
 
 	var caBundle []byte
-	if opts.SSLCertBase64 != "" {
-		certPool, err := x509.SystemCertPool()
-		if err != nil {
-			return xerrors.Errorf("get global system cert pool: %w", err)
-		}
-		data, err := base64.StdEncoding.DecodeString(opts.SSLCertBase64)
-		if err != nil {
-			return xerrors.Errorf("base64 decode ssl cert: %w", err)
-		}
-		ok := certPool.AppendCertsFromPEM(data)
-		if !ok {
-			return xerrors.Errorf("failed to append the ssl cert to the global pool: %s", data)
-		}
-		caBundle = data
+	caBundle, err := initCABundle(opts.SSLCertBase64)
+	if err != nil {
+		return err
 	}
 
-	if opts.DockerConfigBase64 != "" {
-		decoded, err := base64.StdEncoding.DecodeString(opts.DockerConfigBase64)
-		if err != nil {
-			return fmt.Errorf("decode docker config: %w", err)
-		}
-		var configFile DockerConfig
-		decoded, err = hujson.Standardize(decoded)
-		if err != nil {
-			return fmt.Errorf("humanize json for docker config: %w", err)
-		}
-		err = json.Unmarshal(decoded, &configFile)
-		if err != nil {
-			return fmt.Errorf("parse docker config: %w", err)
-		}
-		err = os.WriteFile(filepath.Join(constants.MagicDir, "config.json"), decoded, 0o644)
-		if err != nil {
-			return fmt.Errorf("write docker config: %w", err)
-		}
+	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.DockerConfigBase64)
+	if err != nil {
+		return err
 	}
+	defer func() { _ = cleanupDockerConfigJSON() }() // best effort
 
 	var fallbackErr error
 	var cloned bool
@@ -644,16 +620,8 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 	options.UnsetEnv()
 
 	// Remove the Docker config secret file!
-	if opts.DockerConfigBase64 != "" {
-		c := filepath.Join(constants.MagicDir, "config.json")
-		err = os.Remove(c)
-		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) {
-				return fmt.Errorf("remove docker config: %w", err)
-			} else {
-				fmt.Fprintln(os.Stderr, "failed to remove the Docker config secret file: %w", c)
-			}
-		}
+	if err := cleanupDockerConfigJSON(); err != nil {
+		return err
 	}
 
 	environ, err := os.ReadFile("/etc/environment")
@@ -917,16 +885,6 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		return nil, fmt.Errorf("--cache-repo must be set when using --get-cached-image")
 	}
 
-	// Default to the shell!
-	// initArgs := []string{"-c", opts.InitScript}
-	// if opts.InitArgs != "" {
-	// 	var err error
-	// 	initArgs, err = shellquote.Split(opts.InitArgs)
-	// 	if err != nil {
-	// 		return fmt.Errorf("parse init args: %w", err)
-	// 	}
-	// }
-
 	stageNumber := 0
 	startStage := func(format string, args ...any) func(format string, args ...any) {
 		now := time.Now()
@@ -941,42 +899,16 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 
 	opts.Logger(log.LevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
 
-	var caBundle []byte
-	if opts.SSLCertBase64 != "" {
-		certPool, err := x509.SystemCertPool()
-		if err != nil {
-			return nil, xerrors.Errorf("get global system cert pool: %w", err)
-		}
-		data, err := base64.StdEncoding.DecodeString(opts.SSLCertBase64)
-		if err != nil {
-			return nil, xerrors.Errorf("base64 decode ssl cert: %w", err)
-		}
-		ok := certPool.AppendCertsFromPEM(data)
-		if !ok {
-			return nil, xerrors.Errorf("failed to append the ssl cert to the global pool: %s", data)
-		}
-		caBundle = data
+	caBundle, err := initCABundle(opts.SSLCertBase64)
+	if err != nil {
+		return nil, err
 	}
 
-	if opts.DockerConfigBase64 != "" {
-		decoded, err := base64.StdEncoding.DecodeString(opts.DockerConfigBase64)
-		if err != nil {
-			return nil, fmt.Errorf("decode docker config: %w", err)
-		}
-		var configFile DockerConfig
-		decoded, err = hujson.Standardize(decoded)
-		if err != nil {
-			return nil, fmt.Errorf("humanize json for docker config: %w", err)
-		}
-		err = json.Unmarshal(decoded, &configFile)
-		if err != nil {
-			return nil, fmt.Errorf("parse docker config: %w", err)
-		}
-		err = os.WriteFile(filepath.Join(constants.MagicDir, "config.json"), decoded, 0o644)
-		if err != nil {
-			return nil, fmt.Errorf("write docker config: %w", err)
-		}
+	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.DockerConfigBase64)
+	if err != nil {
+		return nil, err
 	}
+	defer func() { _ = cleanupDockerConfigJSON() }() // best effort
 
 	var fallbackErr error
 	var cloned bool
@@ -1301,16 +1233,8 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	options.UnsetEnv()
 
 	// Remove the Docker config secret file!
-	if opts.DockerConfigBase64 != "" {
-		c := filepath.Join(constants.MagicDir, "config.json")
-		err = os.Remove(c)
-		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) {
-				return nil, fmt.Errorf("remove docker config: %w", err)
-			} else {
-				fmt.Fprintln(os.Stderr, "failed to remove the Docker config secret file: %w", c)
-			}
-		}
+	if err := cleanupDockerConfigJSON(); err != nil {
+		return nil, err
 	}
 
 	return image, nil
@@ -1550,4 +1474,63 @@ func copyFile(src, dst string) error {
 		return xerrors.Errorf("write file failed: %w", err)
 	}
 	return nil
+}
+
+func initCABundle(sslCertBase64 string) ([]byte, error) {
+	if sslCertBase64 == "" {
+		return []byte{}, nil
+	}
+	certPool, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, xerrors.Errorf("get global system cert pool: %w", err)
+	}
+	data, err := base64.StdEncoding.DecodeString(sslCertBase64)
+	if err != nil {
+		return nil, xerrors.Errorf("base64 decode ssl cert: %w", err)
+	}
+	ok := certPool.AppendCertsFromPEM(data)
+	if !ok {
+		return nil, xerrors.Errorf("failed to append the ssl cert to the global pool: %s", data)
+	}
+	return data, nil
+}
+
+func initDockerConfigJSON(dockerConfigBase64 string) (func() error, error) {
+	var cleanupOnce sync.Once
+	noop := func() error { return nil }
+	if dockerConfigBase64 == "" {
+		return noop, nil
+	}
+	cfgPath := filepath.Join(constants.MagicDir, "config.json")
+	decoded, err := base64.StdEncoding.DecodeString(dockerConfigBase64)
+	if err != nil {
+		return noop, fmt.Errorf("decode docker config: %w", err)
+	}
+	var configFile DockerConfig
+	decoded, err = hujson.Standardize(decoded)
+	if err != nil {
+		return noop, fmt.Errorf("humanize json for docker config: %w", err)
+	}
+	err = json.Unmarshal(decoded, &configFile)
+	if err != nil {
+		return noop, fmt.Errorf("parse docker config: %w", err)
+	}
+	err = os.WriteFile(cfgPath, decoded, 0o644)
+	if err != nil {
+		return noop, fmt.Errorf("write docker config: %w", err)
+	}
+	cleanup := func() error {
+		var cleanupErr error
+		cleanupOnce.Do(func() {
+			// Remove the Docker config secret file!
+			if cleanupErr = os.Remove(cfgPath); err != nil {
+				if !errors.Is(err, fs.ErrNotExist) {
+					cleanupErr = fmt.Errorf("remove docker config: %w", cleanupErr)
+				}
+				_, _ = fmt.Fprintln(os.Stderr, "failed to remove the Docker config secret file: %w", cfgPath)
+			}
+		})
+		return cleanupErr
+	}
+	return cleanup, err
 }
