@@ -1,6 +1,9 @@
 package options
 
 import (
+	"crypto/x509"
+	"encoding/base64"
+	"fmt"
 	"os"
 	"strings"
 
@@ -146,9 +149,23 @@ type Options struct {
 	// GetCachedImage is a flag to determine if the cached image is available,
 	// and if it is, to return it.
 	GetCachedImage bool
+
+	// RepoBuildMode is the mode to use when building the workspace from a
+	// repository. When set to `local`, the repository is cloned locally and
+	// built. If the repository is already present, it is used as the source of
+	// truth. When set to `remote`, the repository is cloned into a temporary
+	// directory and built. This is useful when the repository should act as the
+	// source of truth. Defaults to "local".
+	RepoBuildMode string
 }
 
 const envPrefix = "ENVBUILDER_"
+
+// Available modes for repo build mode.
+const (
+	RepoBuildModeLocal  = "local"
+	RepoBuildModeRemote = "remote"
+)
 
 // Generate CLI options for the envbuilder command.
 func (o *Options) CLI() serpent.OptionSet {
@@ -418,6 +435,18 @@ func (o *Options) CLI() serpent.OptionSet {
 				"Exits with an error if not found.",
 		},
 		{
+			Flag:    "repo-build-mode",
+			Env:     WithEnvPrefix("REPO_BUILD_MODE"),
+			Value:   serpent.EnumOf(&o.RepoBuildMode, RepoBuildModeLocal, RepoBuildModeRemote),
+			Default: RepoBuildModeLocal,
+			Description: "The mode to use when building the workspace from a " +
+				"repository. When set to `local`, the repository is cloned locally " +
+				"and built. If the repository is already present, it is used as the " +
+				"source of truth. When set to `remote`, the repository is cloned into " +
+				"a temporary directory and built. This is useful when the repository " +
+				"should act as the source of truth.",
+		},
+		{
 			Flag:        "verbose",
 			Env:         WithEnvPrefix("VERBOSE"),
 			Value:       serpent.BoolOf(&o.Verbose),
@@ -480,6 +509,26 @@ func (o *Options) Markdown() string {
 	}
 
 	return sb.String()
+}
+
+func (o *Options) CABundle() ([]byte, error) {
+	if o.SSLCertBase64 == "" {
+		return nil, nil
+	}
+
+	certPool, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("get global system cert pool: %w", err)
+	}
+	data, err := base64.StdEncoding.DecodeString(o.SSLCertBase64)
+	if err != nil {
+		return nil, fmt.Errorf("base64 decode ssl cert: %w", err)
+	}
+	ok := certPool.AppendCertsFromPEM(data)
+	if !ok {
+		return nil, fmt.Errorf("failed to append the ssl cert to the global pool: %s", data)
+	}
+	return data, nil
 }
 
 func skipDeprecatedOptions(options []serpent.Option) []serpent.Option {

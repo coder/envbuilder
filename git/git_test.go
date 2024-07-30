@@ -169,6 +169,65 @@ func TestCloneRepo(t *testing.T) {
 	}
 }
 
+func TestShallowCloneRepo(t *testing.T) {
+	t.Parallel()
+
+	t.Run("NotEmpty", func(t *testing.T) {
+		t.Parallel()
+		srvFS := memfs.New()
+		_ = gittest.NewRepo(t, srvFS,
+			gittest.Commit(t, "README.md", "Hello, world!", "Many wow!"),
+			gittest.Commit(t, "foo", "bar!", "Such commit!"),
+			gittest.Commit(t, "baz", "qux", "V nice!"),
+		)
+		authMW := mwtest.BasicAuthMW("test", "test")
+		srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
+
+		clientFS := memfs.New()
+		// Not empty.
+		err := clientFS.MkdirAll("/repo", 0o500)
+		require.NoError(t, err)
+		f, err := clientFS.Create("/repo/not-empty")
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+
+		err = git.ShallowCloneRepo(context.Background(), git.CloneRepoOptions{
+			Path:    "/repo",
+			RepoURL: srv.URL,
+			Storage: clientFS,
+			RepoAuth: &githttp.BasicAuth{
+				Username: "test",
+				Password: "test",
+			},
+		})
+		require.Error(t, err)
+	})
+	t.Run("OK", func(t *testing.T) {
+		t.Parallel()
+		srvFS := memfs.New()
+		_ = gittest.NewRepo(t, srvFS,
+			gittest.Commit(t, "README.md", "Hello, world!", "Many wow!"),
+			gittest.Commit(t, "foo", "bar!", "Such commit!"),
+			gittest.Commit(t, "baz", "qux", "V nice!"),
+		)
+		authMW := mwtest.BasicAuthMW("test", "test")
+		srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
+
+		clientFS := memfs.New()
+
+		err := git.ShallowCloneRepo(context.Background(), git.CloneRepoOptions{
+			Path:    "/repo",
+			RepoURL: srv.URL,
+			Storage: clientFS,
+			RepoAuth: &githttp.BasicAuth{
+				Username: "test",
+				Password: "test",
+			},
+		})
+		require.Error(t, err)
+	})
+}
+
 func TestCloneRepoSSH(t *testing.T) {
 	t.Parallel()
 

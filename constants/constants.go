@@ -28,4 +28,8 @@ var (
 	// to skip building when a container is restarting.
 	// e.g. docker stop -> docker start
 	MagicFile = filepath.Join(MagicDir, "built")
+
+	// MagicFile is the location of the build context when
+	// using remote build mode.
+	MagicRemoteRepoDir = filepath.Join(MagicDir, "repo")
 )
