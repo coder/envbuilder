@@ -279,46 +279,16 @@ func Run(ctx context.Context, opts options.Options) error {
 		}
 	})
 
-	var closeAfterBuild func()
-	// Allows quick testing of layer caching using a local directory!
 	if opts.LayerCacheDir != "" {
-		cfg := &configuration.Configuration{
-			Storage: configuration.Storage{
-				"filesystem": configuration.Parameters{
-					"rootdirectory": opts.LayerCacheDir,
-				},
-			},
-		}
-		cfg.Log.Level = "error"
-
-		// Spawn an in-memory registry to cache built layers...
-		registry := handlers.NewApp(ctx, cfg)
-
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			return err
-		}
-		tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-		if !ok {
-			return fmt.Errorf("listener addr was of wrong type: %T", listener.Addr())
-		}
-		srv := &http.Server{
-			Handler: registry,
-		}
-		go func() {
-			err := srv.Serve(listener)
-			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				opts.Logger(log.LevelError, "Failed to serve registry: %s", err.Error())
-			}
-		}()
-		closeAfterBuild = func() {
-			_ = srv.Close()
-			_ = listener.Close()
-		}
 		if opts.CacheRepo != "" {
 			opts.Logger(log.LevelWarn, "Overriding cache repo with local registry...")
 		}
-		opts.CacheRepo = fmt.Sprintf("localhost:%d/local/cache", tcpAddr.Port)
+		localRegistry, closeLocalRegistry, err := serveLocalRegistry(ctx, opts.Logger, opts.LayerCacheDir)
+		if err != nil {
+			return err
+		}
+		defer closeLocalRegistry()
+		opts.CacheRepo = localRegistry
 	}
 
 	// IgnorePaths in the Kaniko opts doesn't properly ignore paths.
@@ -554,10 +524,6 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 	}
 	if err != nil {
 		return fmt.Errorf("build with kaniko: %w", err)
-	}
-
-	if closeAfterBuild != nil {
-		closeAfterBuild()
 	}
 
 	if err := restoreMounts(); err != nil {
@@ -1078,46 +1044,16 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		}
 	})
 
-	var closeAfterBuild func()
-	// Allows quick testing of layer caching using a local directory!
 	if opts.LayerCacheDir != "" {
-		cfg := &configuration.Configuration{
-			Storage: configuration.Storage{
-				"filesystem": configuration.Parameters{
-					"rootdirectory": opts.LayerCacheDir,
-				},
-			},
-		}
-		cfg.Log.Level = "error"
-
-		// Spawn an in-memory registry to cache built layers...
-		registry := handlers.NewApp(ctx, cfg)
-
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			return nil, fmt.Errorf("start listener for in-memory registry: %w", err)
-		}
-		tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-		if !ok {
-			return nil, fmt.Errorf("listener addr was of wrong type: %T", listener.Addr())
-		}
-		srv := &http.Server{
-			Handler: registry,
-		}
-		go func() {
-			err := srv.Serve(listener)
-			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				opts.Logger(log.LevelError, "Failed to serve registry: %s", err.Error())
-			}
-		}()
-		closeAfterBuild = func() {
-			_ = srv.Close()
-			_ = listener.Close()
-		}
 		if opts.CacheRepo != "" {
 			opts.Logger(log.LevelWarn, "Overriding cache repo with local registry...")
 		}
-		opts.CacheRepo = fmt.Sprintf("localhost:%d/local/cache", tcpAddr.Port)
+		localRegistry, closeLocalRegistry, err := serveLocalRegistry(ctx, opts.Logger, opts.LayerCacheDir)
+		if err != nil {
+			return nil, err
+		}
+		defer closeLocalRegistry()
+		opts.CacheRepo = localRegistry
 	}
 
 	// IgnorePaths in the Kaniko opts doesn't properly ignore paths.
@@ -1224,10 +1160,6 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		return nil, xerrors.Errorf("get cached image: %w", err)
 	}
 	endStage("🏗️ Found cached image!")
-
-	if closeAfterBuild != nil {
-		closeAfterBuild()
-	}
 
 	// Sanitize the environment of any opts!
 	options.UnsetEnv()
@@ -1533,4 +1465,53 @@ func initDockerConfigJSON(dockerConfigBase64 string) (func() error, error) {
 		return cleanupErr
 	}
 	return cleanup, err
+}
+
+// Allows quick testing of layer caching using a local directory!
+func serveLocalRegistry(ctx context.Context, logf log.Func, layerCacheDir string) (string, func(), error) {
+	noop := func() {}
+	if layerCacheDir == "" {
+		return "", noop, nil
+	}
+	cfg := &configuration.Configuration{
+		Storage: configuration.Storage{
+			"filesystem": configuration.Parameters{
+				"rootdirectory": layerCacheDir,
+			},
+		},
+	}
+	cfg.Log.Level = "error"
+
+	// Spawn an in-memory registry to cache built layers...
+	registry := handlers.NewApp(ctx, cfg)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", nil, fmt.Errorf("start listener for in-memory registry: %w", err)
+	}
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return "", noop, fmt.Errorf("listener addr was of wrong type: %T", listener.Addr())
+	}
+	srv := &http.Server{
+		Handler: registry,
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		err := srv.Serve(listener)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logf(log.LevelError, "Failed to serve registry: %s", err.Error())
+		}
+	}()
+	var closeOnce sync.Once
+	closer := func() {
+		closeOnce.Do(func() {
+			_ = srv.Close()
+			_ = listener.Close()
+			<-done
+		})
+	}
+	addr := fmt.Sprintf("localhost:%d/local/cache", tcpAddr.Port)
+	return addr, closer, nil
 }
