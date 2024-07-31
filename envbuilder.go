@@ -60,6 +60,7 @@ type DockerConfig configfile.ConfigFile
 // Filesystem is the filesystem to use for all operations.
 // Defaults to the host filesystem.
 func Run(ctx context.Context, opts options.Options) error {
+	defer options.UnsetEnv()
 	if opts.GetCachedImage {
 		return fmt.Errorf("developer error: use RunCacheProbe instead")
 	}
@@ -834,6 +835,7 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 // RunCacheProbe performs a 'dry-run' build of the image and checks that
 // all of the resulting layers are present in options.CacheRepo.
 func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) {
+	defer options.UnsetEnv()
 	if !opts.GetCachedImage {
 		return nil, fmt.Errorf("developer error: RunCacheProbe must be run with --get-cached-image")
 	}
