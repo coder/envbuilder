@@ -456,21 +456,6 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 			Reproducible: opts.PushImage,
 		}
 
-		if opts.GetCachedImage {
-			endStage := startStage("🏗️ Checking for cached image...")
-			image, err := executor.DoCacheProbe(kOpts)
-			if err != nil {
-				return nil, xerrors.Errorf("get cached image: %w", err)
-			}
-			digest, err := image.Digest()
-			if err != nil {
-				return nil, xerrors.Errorf("get cached image digest: %w", err)
-			}
-			endStage("🏗️ Found cached image!")
-			_, _ = fmt.Fprintf(os.Stdout, "ENVBUILDER_CACHED_IMAGE=%s@%s\n", kOpts.CacheRepo, digest.String())
-			os.Exit(0)
-		}
-
 		endStage := startStage("🏗️ Building image...")
 		image, err := executor.DoBuild(kOpts)
 		if err != nil {
