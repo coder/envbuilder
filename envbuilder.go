@@ -431,7 +431,6 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 			// https://github.com/klauspost/compress/blob/67a538e2b4df11f8ec7139388838a13bce84b5d5/zstd/encoder_options.go#L188
 			CompressionLevel: 3,
 			CacheOptions: config.CacheOptions{
-				// Cache for a week by default!
 				CacheTTL: cacheTTL,
 				CacheDir: opts.BaseImageCacheDir,
 			},
@@ -840,9 +839,6 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 
 // RunCacheProbe performs a 'dry-run' build of the image and checks that
 // all of the resulting layers are present in options.CacheRepo.
-// Logger is the logf to use for all operations.
-// Filesystem is the filesystem to use for all operations.
-// Defaults to the host filesystem.
 func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) {
 	if !opts.GetCachedImage {
 		return nil, fmt.Errorf("developer error: RunCacheProbe must be run with --get-cached-image")
@@ -1128,7 +1124,6 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		// https://github.com/klauspost/compress/blob/67a538e2b4df11f8ec7139388838a13bce84b5d5/zstd/encoder_options.go#L188
 		CompressionLevel: 3,
 		CacheOptions: config.CacheOptions{
-			// Cache for a week by default!
 			CacheTTL: cacheTTL,
 			CacheDir: opts.BaseImageCacheDir,
 		},
