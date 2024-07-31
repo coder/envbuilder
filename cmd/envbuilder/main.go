@@ -36,6 +36,7 @@ func envbuilderCmd() serpent.Command {
 		Use:     "envbuilder",
 		Options: o.CLI(),
 		Handler: func(inv *serpent.Invocation) error {
+			o.SetDefaults()
 			o.Logger = log.New(os.Stderr, o.Verbose)
 			if o.CoderAgentURL != "" {
 				if o.CoderAgentToken == "" {
@@ -61,6 +62,19 @@ func envbuilderCmd() serpent.Command {
 					// Failure to log to Coder should cause a fatal error.
 					o.Logger(log.LevelError, "unable to send logs to Coder: %s", err.Error())
 				}
+			}
+
+			if o.GetCachedImage {
+				img, err := envbuilder.RunCacheProbe(inv.Context(), o)
+				if err != nil {
+					o.Logger(log.LevelError, "error: %s", err)
+				}
+				digest, err := img.Digest()
+				if err != nil {
+					return fmt.Errorf("get cached image digest: %w", err)
+				}
+				_, _ = fmt.Fprintf(inv.Stdout, "ENVBUILDER_CACHED_IMAGE=%s@%s\n", o.CacheRepo, digest.String())
+				return nil
 			}
 
 			err := envbuilder.Run(inv.Context(), o)
