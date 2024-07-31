@@ -352,6 +352,10 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 	}
 
 	skippedRebuild := false
+	stdoutWriter, closeStdout := log.Writer(opts.Logger)
+	defer closeStdout()
+	stderrWriter, closeStderr := log.Writer(opts.Logger)
+	defer closeStderr()
 	build := func() (v1.Image, error) {
 		_, err := opts.Filesystem.Stat(constants.MagicFile)
 		if err == nil && opts.SkipRebuild {
@@ -380,25 +384,26 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		if err := maybeDeleteFilesystem(opts.Logger, opts.ForceSafe); err != nil {
 			return nil, fmt.Errorf("delete filesystem: %w", err)
 		}
-
-		stdoutReader, stdoutWriter := io.Pipe()
-		stderrReader, stderrWriter := io.Pipe()
-		defer stdoutReader.Close()
-		defer stdoutWriter.Close()
-		defer stderrReader.Close()
-		defer stderrWriter.Close()
-		go func() {
-			scanner := bufio.NewScanner(stdoutReader)
-			for scanner.Scan() {
-				opts.Logger(log.LevelInfo, "%s", scanner.Text())
-			}
-		}()
-		go func() {
-			scanner := bufio.NewScanner(stderrReader)
-			for scanner.Scan() {
-				opts.Logger(log.LevelInfo, "%s", scanner.Text())
-			}
-		}()
+		/*
+			stdoutReader, stdoutWriter := io.Pipe()
+			stderrReader, stderrWriter := io.Pipe()
+			defer stdoutReader.Close()
+			defer stdoutWriter.Close()
+			defer stderrReader.Close()
+			defer stderrWriter.Close()
+			go func() {
+				scanner := bufio.NewScanner(stdoutReader)
+				for scanner.Scan() {
+					opts.Logger(log.LevelInfo, "%s", scanner.Text())
+				}
+			}()
+			go func() {
+				scanner := bufio.NewScanner(stderrReader)
+				for scanner.Scan() {
+					opts.Logger(log.LevelInfo, "%s", scanner.Text())
+				}
+			}()
+		*/
 		cacheTTL := time.Hour * 24 * 7
 		if opts.CacheTTLDays != 0 {
 			cacheTTL = time.Hour * 24 * time.Duration(opts.CacheTTLDays)
@@ -1059,24 +1064,10 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		})
 	}
 
-	stdoutReader, stdoutWriter := io.Pipe()
-	stderrReader, stderrWriter := io.Pipe()
-	defer stdoutReader.Close()
-	defer stdoutWriter.Close()
-	defer stderrReader.Close()
-	defer stderrWriter.Close()
-	go func() {
-		scanner := bufio.NewScanner(stdoutReader)
-		for scanner.Scan() {
-			opts.Logger(log.LevelInfo, "%s", scanner.Text())
-		}
-	}()
-	go func() {
-		scanner := bufio.NewScanner(stderrReader)
-		for scanner.Scan() {
-			opts.Logger(log.LevelInfo, "%s", scanner.Text())
-		}
-	}()
+	stdoutWriter, closeStdout := log.Writer(opts.Logger)
+	defer closeStdout()
+	stderrWriter, closeStderr := log.Writer(opts.Logger)
+	defer closeStderr()
 	cacheTTL := time.Hour * 24 * 7
 	if opts.CacheTTLDays != 0 {
 		cacheTTL = time.Hour * 24 * time.Duration(opts.CacheTTLDays)
