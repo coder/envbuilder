@@ -101,7 +101,11 @@ func Run(ctx context.Context, opts options.Options) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = cleanupDockerConfigJSON() }() // best effort
+	defer func() {
+		if err := cleanupDockerConfigJSON(); err != nil {
+			opts.Logger(log.LevelError, "failed to cleanup docker config JSON: %w", err)
+		}
+	}() // best effort
 
 	var fallbackErr error
 	var cloned bool
@@ -860,7 +864,11 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = cleanupDockerConfigJSON() }() // best effort
+	defer func() {
+		if err := cleanupDockerConfigJSON(); err != nil {
+			opts.Logger(log.LevelError, "failed to cleanup docker config JSON: %w", err)
+		}
+	}() // best effort
 
 	var fallbackErr error
 	var cloned bool
@@ -1430,7 +1438,7 @@ func initDockerConfigJSON(dockerConfigBase64 string) (func() error, error) {
 				if !errors.Is(err, fs.ErrNotExist) {
 					cleanupErr = fmt.Errorf("remove docker config: %w", cleanupErr)
 				}
-				_, _ = fmt.Fprintln(os.Stderr, "failed to remove the Docker config secret file: %w", cfgPath)
+				_, _ = fmt.Fprintf(os.Stderr, "failed to remove the Docker config secret file: %s\n", cleanupErr)
 			}
 		})
 		return cleanupErr
