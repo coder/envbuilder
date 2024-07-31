@@ -1,6 +1,7 @@
 package log
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"strings"
@@ -44,4 +45,32 @@ func Wrap(fs ...Func) Func {
 			f(l, msg, args...)
 		}
 	}
+}
+
+// Writer returns an io.Writer that logs all writes in a separate goroutine.
+// It is the responsibility of the caller to call the returned
+// function to stop the goroutine.
+func Writer(logf Func) (io.Writer, func()) {
+	pipeReader, pipeWriter := io.Pipe()
+	doneCh := make(chan struct{})
+	go func() {
+		defer pipeWriter.Close()
+		defer pipeReader.Close()
+		scanner := bufio.NewScanner(pipeReader)
+		for {
+			select {
+			case <-doneCh:
+				return
+			default:
+				if !scanner.Scan() {
+					return
+				}
+				logf(LevelInfo, "%s", scanner.Text())
+			}
+		}
+	}()
+	closer := func() {
+		close(doneCh)
+	}
+	return pipeWriter, closer
 }
