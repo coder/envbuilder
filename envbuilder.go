@@ -940,7 +940,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		defer file.Close()
 		if opts.FallbackImage == "" {
 			if fallbackErr != nil {
-				return nil, xerrors.Errorf("%s: %w", fallbackErr.Error(), constants.ErrNoFallbackImage)
+				return nil, fmt.Errorf("%s: %w", fallbackErr.Error(), constants.ErrNoFallbackImage)
 			}
 			// We can't use errors.Join here because our tests
 			// don't support parsing a multiline error.
@@ -1152,7 +1152,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	endStage := startStage("🏗️ Checking for cached image...")
 	image, err := executor.DoCacheProbe(kOpts)
 	if err != nil {
-		return nil, xerrors.Errorf("get cached image: %w", err)
+		return nil, fmt.Errorf("get cached image: %w", err)
 	}
 	endStage("🏗️ Found cached image!")
 
@@ -1388,17 +1388,17 @@ func maybeDeleteFilesystem(logger log.Func, force bool) error {
 func copyFile(src, dst string) error {
 	content, err := os.ReadFile(src)
 	if err != nil {
-		return xerrors.Errorf("read file failed: %w", err)
+		return fmt.Errorf("read file failed: %w", err)
 	}
 
 	err = os.MkdirAll(filepath.Dir(dst), 0o755)
 	if err != nil {
-		return xerrors.Errorf("mkdir all failed: %w", err)
+		return fmt.Errorf("mkdir all failed: %w", err)
 	}
 
 	err = os.WriteFile(dst, content, 0o644)
 	if err != nil {
-		return xerrors.Errorf("write file failed: %w", err)
+		return fmt.Errorf("write file failed: %w", err)
 	}
 	return nil
 }
@@ -1409,15 +1409,15 @@ func initCABundle(sslCertBase64 string) ([]byte, error) {
 	}
 	certPool, err := x509.SystemCertPool()
 	if err != nil {
-		return nil, xerrors.Errorf("get global system cert pool: %w", err)
+		return nil, fmt.Errorf("get global system cert pool: %w", err)
 	}
 	data, err := base64.StdEncoding.DecodeString(sslCertBase64)
 	if err != nil {
-		return nil, xerrors.Errorf("base64 decode ssl cert: %w", err)
+		return nil, fmt.Errorf("base64 decode ssl cert: %w", err)
 	}
 	ok := certPool.AppendCertsFromPEM(data)
 	if !ok {
-		return nil, xerrors.Errorf("failed to append the ssl cert to the global pool: %s", data)
+		return nil, fmt.Errorf("failed to append the ssl cert to the global pool: %s", data)
 	}
 	return data, nil
 }
