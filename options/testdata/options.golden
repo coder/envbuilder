@@ -138,13 +138,11 @@ OPTIONS:
           Push the built image to a remote registry. This option forces a
           reproducible build.
 
-      --repo-build-mode local|remote, $ENVBUILDER_REPO_BUILD_MODE (default: local)
-          The mode to use when building the workspace from a repository. When
-          set to `local`, the repository is cloned locally and built. If the
-          repository is already present, it is used as the source of truth. When
-          set to `remote`, the repository is cloned into a temporary directory
-          and built. This is useful when the repository should act as the source
-          of truth.
+      --remote-repo-build-mode bool, $ENVBUILDER_REMOTE_REPO_BUILD_MODE (default: false)
+          Use the remote repository as the source of truth when building the
+          image. This means that the users changes to the local files that have
+          been cloned will not be reflected in the image. This is useful as a
+          way to improve cache utilization (get cached image).
 
       --setup-script string, $ENVBUILDER_SETUP_SCRIPT
           The script to run before the init script. It runs as the root user

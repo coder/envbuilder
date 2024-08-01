@@ -130,22 +130,16 @@ func Run(ctx context.Context, opts options.Options) error {
 			opts.Logger(log.LevelError, "Falling back to the default image...")
 		}
 
-		// The repo wasn't cloned (i.e. may not be up-to-date with remote), so
-		// we need to clone it to get the right build context. This is only
-		// necessary when the repo is in remote build mode. If the repo is in
-		// local build mode, the build context is already available on the host
-		// filesystem.
-		//
-		// Skipping clone here if we believe workspace repo matches remote repo
-		// is a performance optimization.
-		if fallbackErr == nil && !cloned && opts.RepoBuildMode == options.RepoBuildModeRemote {
+		// Always clone the repo in remote repo build mode into a location that
+		// we control that isn't affected by the users changes.
+		if opts.RemoteRepoBuildMode {
 			cloneOpts, err := git.CloneOptionsFromOptions(opts)
 			if err != nil {
 				return fmt.Errorf("git clone options: %w", err)
 			}
 			cloneOpts.Path = constants.MagicRemoteRepoDir
 
-			endStage := startStage("📦 Remote build mode enabled, cloning %s to %s for build context...",
+			endStage := startStage("📦 Remote repo build mode enabled, cloning %s to %s for build context...",
 				newColor(color.FgCyan).Sprintf(opts.GitURL),
 				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
 			)
@@ -895,22 +889,16 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 			opts.Logger(log.LevelError, "Falling back to the default image...")
 		}
 
-		// The repo wasn't cloned (i.e. may not be up-to-date with remote), so
-		// we need to clone it to get the right build context. This is only
-		// necessary when the repo is in remote build mode. If the repo is in
-		// local build mode, the build context is already available on the host
-		// filesystem.
-		//
-		// Skipping clone here if we believe workspace repo matches remote repo
-		// is a performance optimization.
-		if opts.RepoBuildMode == options.RepoBuildModeRemote {
+		// Always clone the repo in remote repo build mode into a location that
+		// we control that isn't affected by the users changes.
+		if opts.RemoteRepoBuildMode {
 			cloneOpts, err := git.CloneOptionsFromOptions(opts)
 			if err != nil {
 				return nil, fmt.Errorf("git clone options: %w", err)
 			}
 			cloneOpts.Path = constants.MagicRemoteRepoDir
 
-			endStage := startStage("📦 Remote build mode enabled, cloning %s to %s for build context...",
+			endStage := startStage("📦 Remote repo build mode enabled, cloning %s to %s for build context...",
 				newColor(color.FgCyan).Sprintf(opts.GitURL),
 				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
 			)

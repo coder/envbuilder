@@ -150,22 +150,14 @@ type Options struct {
 	// and if it is, to return it.
 	GetCachedImage bool
 
-	// RepoBuildMode is the mode to use when building the workspace from a
-	// repository. When set to `local`, the repository is cloned locally and
-	// built. If the repository is already present, it is used as the source of
-	// truth. When set to `remote`, the repository is cloned into a temporary
-	// directory and built. This is useful when the repository should act as the
-	// source of truth. Defaults to "local".
-	RepoBuildMode string
+	// RemoteRepoBuildMode uses the remote repository as the source of truth
+	// when building the image. This means that the users changes to the local
+	// files that have been cloned will not be reflected in the image. This is
+	// useful as a way to improve cache utilization (get cached image).
+	RemoteRepoBuildMode bool
 }
 
 const envPrefix = "ENVBUILDER_"
-
-// Available modes for repo build mode.
-const (
-	RepoBuildModeLocal  = "local"
-	RepoBuildModeRemote = "remote"
-)
 
 // Generate CLI options for the envbuilder command.
 func (o *Options) CLI() serpent.OptionSet {
@@ -435,16 +427,15 @@ func (o *Options) CLI() serpent.OptionSet {
 				"Exits with an error if not found.",
 		},
 		{
-			Flag:    "repo-build-mode",
-			Env:     WithEnvPrefix("REPO_BUILD_MODE"),
-			Value:   serpent.EnumOf(&o.RepoBuildMode, RepoBuildModeLocal, RepoBuildModeRemote),
-			Default: RepoBuildModeLocal,
-			Description: "The mode to use when building the workspace from a " +
-				"repository. When set to `local`, the repository is cloned locally " +
-				"and built. If the repository is already present, it is used as the " +
-				"source of truth. When set to `remote`, the repository is cloned into " +
-				"a temporary directory and built. This is useful when the repository " +
-				"should act as the source of truth.",
+			Flag:    "remote-repo-build-mode",
+			Env:     WithEnvPrefix("REMOTE_REPO_BUILD_MODE"),
+			Value:   serpent.BoolOf(&o.RemoteRepoBuildMode),
+			Default: "false",
+			Description: "Use the remote repository as the source of truth " +
+				"when building the image. This means that the users changes to " +
+				"the local files that have been cloned will not be reflected in " +
+				"the image. This is useful as a way to improve cache utilization " +
+				"(get cached image).",
 		},
 		{
 			Flag:        "verbose",
