@@ -138,6 +138,13 @@ OPTIONS:
           Push the built image to a remote registry. This option forces a
           reproducible build.
 
+      --remote-repo-build-mode bool, $ENVBUILDER_REMOTE_REPO_BUILD_MODE (default: false)
+          Use the remote repository as the source of truth when building the
+          image. Enabling this option ignores user changes to local files and
+          they will not be reflected in the image. This can be used to improving
+          cache utilization when multiple users are building working on the same
+          repository.
+
       --setup-script string, $ENVBUILDER_SETUP_SCRIPT
           The script to run before the init script. It runs as the root user
           regardless of the user specified in the devcontainer.json file.
