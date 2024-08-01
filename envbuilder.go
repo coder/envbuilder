@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -42,7 +41,6 @@ import (
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/fatih/color"
-	"github.com/go-git/go-git/v5/plumbing/transport"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/kballard/go-shellquote"
@@ -92,12 +90,6 @@ func Run(ctx context.Context, opts options.Options) error {
 
 	opts.Logger(log.LevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
 
-	var caBundle []byte
-	caBundle, err := initCABundle(opts.SSLCertBase64)
-	if err != nil {
-		return err
-	}
-
 	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.DockerConfigBase64)
 	if err != nil {
 		return err
@@ -108,51 +100,23 @@ func Run(ctx context.Context, opts options.Options) error {
 		}
 	}() // best effort
 
+	buildTimeWorkspaceFolder := opts.WorkspaceFolder
 	var fallbackErr error
 	var cloned bool
 	if opts.GitURL != "" {
+		cloneOpts, err := git.CloneOptionsFromOptions(opts)
+		if err != nil {
+			return fmt.Errorf("git clone options: %w", err)
+		}
+
 		endStage := startStage("📦 Cloning %s to %s...",
 			newColor(color.FgCyan).Sprintf(opts.GitURL),
-			newColor(color.FgCyan).Sprintf(opts.WorkspaceFolder),
+			newColor(color.FgCyan).Sprintf(cloneOpts.Path),
 		)
 
-		reader, writer := io.Pipe()
-		defer reader.Close()
-		defer writer.Close()
-		go func() {
-			data := make([]byte, 4096)
-			for {
-				read, err := reader.Read(data)
-				if err != nil {
-					return
-				}
-				content := data[:read]
-				for _, line := range strings.Split(string(content), "\r") {
-					if line == "" {
-						continue
-					}
-					opts.Logger(log.LevelInfo, "#1: %s", strings.TrimSpace(line))
-				}
-			}
-		}()
-
-		cloneOpts := git.CloneRepoOptions{
-			Path:         opts.WorkspaceFolder,
-			Storage:      opts.Filesystem,
-			Insecure:     opts.Insecure,
-			Progress:     writer,
-			SingleBranch: opts.GitCloneSingleBranch,
-			Depth:        int(opts.GitCloneDepth),
-			CABundle:     caBundle,
-		}
-
-		cloneOpts.RepoAuth = git.SetupRepoAuth(&opts)
-		if opts.GitHTTPProxyURL != "" {
-			cloneOpts.ProxyOptions = transport.ProxyOptions{
-				URL: opts.GitHTTPProxyURL,
-			}
-		}
-		cloneOpts.RepoURL = opts.GitURL
+		w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, line) })
+		defer w.Close()
+		cloneOpts.Progress = w
 
 		cloned, fallbackErr = git.CloneRepo(ctx, cloneOpts)
 		if fallbackErr == nil {
@@ -164,6 +128,34 @@ func Run(ctx context.Context, opts options.Options) error {
 		} else {
 			opts.Logger(log.LevelError, "Failed to clone repository: %s", fallbackErr.Error())
 			opts.Logger(log.LevelError, "Falling back to the default image...")
+		}
+
+		// Always clone the repo in remote repo build mode into a location that
+		// we control that isn't affected by the users changes.
+		if opts.RemoteRepoBuildMode {
+			cloneOpts, err := git.CloneOptionsFromOptions(opts)
+			if err != nil {
+				return fmt.Errorf("git clone options: %w", err)
+			}
+			cloneOpts.Path = constants.MagicRemoteRepoDir
+
+			endStage := startStage("📦 Remote repo build mode enabled, cloning %s to %s for build context...",
+				newColor(color.FgCyan).Sprintf(opts.GitURL),
+				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
+			)
+
+			w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, line) })
+			defer w.Close()
+			cloneOpts.Progress = w
+
+			fallbackErr = git.ShallowCloneRepo(ctx, cloneOpts)
+			if fallbackErr == nil {
+				endStage("📦 Cloned repository!")
+				buildTimeWorkspaceFolder = cloneOpts.Path
+			} else {
+				opts.Logger(log.LevelError, "Failed to clone repository for remote repo mode: %s", err.Error())
+				opts.Logger(log.LevelError, "Falling back to the default image...")
+			}
 		}
 	}
 
@@ -205,7 +197,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		// devcontainer is a standard, so it's reasonable to be the default.
 		var devcontainerDir string
 		var err error
-		devcontainerPath, devcontainerDir, err = findDevcontainerJSON(opts)
+		devcontainerPath, devcontainerDir, err = findDevcontainerJSON(buildTimeWorkspaceFolder, opts)
 		if err != nil {
 			opts.Logger(log.LevelError, "Failed to locate devcontainer.json: %s", err.Error())
 			opts.Logger(log.LevelError, "Falling back to the default image...")
@@ -244,13 +236,13 @@ func Run(ctx context.Context, opts options.Options) error {
 		}
 	} else {
 		// If a Dockerfile was specified, we use that.
-		dockerfilePath := filepath.Join(opts.WorkspaceFolder, opts.DockerfilePath)
+		dockerfilePath := filepath.Join(buildTimeWorkspaceFolder, opts.DockerfilePath)
 
 		// If the dockerfilePath is specified and deeper than the base of WorkspaceFolder AND the BuildContextPath is
 		// not defined, show a warning
 		dockerfileDir := filepath.Dir(dockerfilePath)
-		if dockerfileDir != filepath.Clean(opts.WorkspaceFolder) && opts.BuildContextPath == "" {
-			opts.Logger(log.LevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, opts.WorkspaceFolder)
+		if dockerfileDir != filepath.Clean(buildTimeWorkspaceFolder) && opts.BuildContextPath == "" {
+			opts.Logger(log.LevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, buildTimeWorkspaceFolder)
 			opts.Logger(log.LevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
 		}
 
@@ -263,7 +255,7 @@ func Run(ctx context.Context, opts options.Options) error {
 			buildParams = &devcontainer.Compiled{
 				DockerfilePath:    dockerfilePath,
 				DockerfileContent: string(content),
-				BuildContext:      filepath.Join(opts.WorkspaceFolder, opts.BuildContextPath),
+				BuildContext:      filepath.Join(buildTimeWorkspaceFolder, opts.BuildContextPath),
 			}
 		}
 	}
@@ -552,10 +544,10 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		if err != nil {
 			return fmt.Errorf("unmarshal metadata: %w", err)
 		}
-		opts.Logger(log.LevelInfo, "#3: 👀 Found devcontainer.json label metadata in image...")
+		opts.Logger(log.LevelInfo, "#%d: 👀 Found devcontainer.json label metadata in image...", stageNumber)
 		for _, container := range devContainer {
 			if container.RemoteUser != "" {
-				opts.Logger(log.LevelInfo, "#3: 🧑 Updating the user to %q!", container.RemoteUser)
+				opts.Logger(log.LevelInfo, "#%d: 🧑 Updating the user to %q!", stageNumber, container.RemoteUser)
 
 				configFile.Config.User = container.RemoteUser
 			}
@@ -654,7 +646,7 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		username = buildParams.User
 	}
 	if username == "" {
-		opts.Logger(log.LevelWarn, "#3: no user specified, using root")
+		opts.Logger(log.LevelWarn, "#%d: no user specified, using root", stageNumber)
 	}
 
 	userInfo, err := getUser(username)
@@ -857,11 +849,6 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 
 	opts.Logger(log.LevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
 
-	caBundle, err := initCABundle(opts.SSLCertBase64)
-	if err != nil {
-		return nil, err
-	}
-
 	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.DockerConfigBase64)
 	if err != nil {
 		return nil, err
@@ -872,51 +859,23 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		}
 	}() // best effort
 
+	buildTimeWorkspaceFolder := opts.WorkspaceFolder
 	var fallbackErr error
 	var cloned bool
 	if opts.GitURL != "" {
+		cloneOpts, err := git.CloneOptionsFromOptions(opts)
+		if err != nil {
+			return nil, fmt.Errorf("git clone options: %w", err)
+		}
+
 		endStage := startStage("📦 Cloning %s to %s...",
 			newColor(color.FgCyan).Sprintf(opts.GitURL),
-			newColor(color.FgCyan).Sprintf(opts.WorkspaceFolder),
+			newColor(color.FgCyan).Sprintf(cloneOpts.Path),
 		)
 
-		reader, writer := io.Pipe()
-		defer reader.Close()
-		defer writer.Close()
-		go func() {
-			data := make([]byte, 4096)
-			for {
-				read, err := reader.Read(data)
-				if err != nil {
-					return
-				}
-				content := data[:read]
-				for _, line := range strings.Split(string(content), "\r") {
-					if line == "" {
-						continue
-					}
-					opts.Logger(log.LevelInfo, "#1: %s", strings.TrimSpace(line))
-				}
-			}
-		}()
-
-		cloneOpts := git.CloneRepoOptions{
-			Path:         opts.WorkspaceFolder,
-			Storage:      opts.Filesystem,
-			Insecure:     opts.Insecure,
-			Progress:     writer,
-			SingleBranch: opts.GitCloneSingleBranch,
-			Depth:        int(opts.GitCloneDepth),
-			CABundle:     caBundle,
-		}
-
-		cloneOpts.RepoAuth = git.SetupRepoAuth(&opts)
-		if opts.GitHTTPProxyURL != "" {
-			cloneOpts.ProxyOptions = transport.ProxyOptions{
-				URL: opts.GitHTTPProxyURL,
-			}
-		}
-		cloneOpts.RepoURL = opts.GitURL
+		w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, line) })
+		defer w.Close()
+		cloneOpts.Progress = w
 
 		cloned, fallbackErr = git.CloneRepo(ctx, cloneOpts)
 		if fallbackErr == nil {
@@ -928,6 +887,34 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		} else {
 			opts.Logger(log.LevelError, "Failed to clone repository: %s", fallbackErr.Error())
 			opts.Logger(log.LevelError, "Falling back to the default image...")
+		}
+
+		// Always clone the repo in remote repo build mode into a location that
+		// we control that isn't affected by the users changes.
+		if opts.RemoteRepoBuildMode {
+			cloneOpts, err := git.CloneOptionsFromOptions(opts)
+			if err != nil {
+				return nil, fmt.Errorf("git clone options: %w", err)
+			}
+			cloneOpts.Path = constants.MagicRemoteRepoDir
+
+			endStage := startStage("📦 Remote repo build mode enabled, cloning %s to %s for build context...",
+				newColor(color.FgCyan).Sprintf(opts.GitURL),
+				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
+			)
+
+			w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, line) })
+			defer w.Close()
+			cloneOpts.Progress = w
+
+			fallbackErr = git.ShallowCloneRepo(ctx, cloneOpts)
+			if fallbackErr == nil {
+				endStage("📦 Cloned repository!")
+				buildTimeWorkspaceFolder = cloneOpts.Path
+			} else {
+				opts.Logger(log.LevelError, "Failed to clone repository for remote repo mode: %s", err.Error())
+				opts.Logger(log.LevelError, "Falling back to the default image...")
+			}
 		}
 	}
 
@@ -967,7 +954,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		// devcontainer is a standard, so it's reasonable to be the default.
 		var devcontainerDir string
 		var err error
-		devcontainerPath, devcontainerDir, err = findDevcontainerJSON(opts)
+		devcontainerPath, devcontainerDir, err = findDevcontainerJSON(buildTimeWorkspaceFolder, opts)
 		if err != nil {
 			opts.Logger(log.LevelError, "Failed to locate devcontainer.json: %s", err.Error())
 			opts.Logger(log.LevelError, "Falling back to the default image...")
@@ -1005,13 +992,13 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		}
 	} else {
 		// If a Dockerfile was specified, we use that.
-		dockerfilePath := filepath.Join(opts.WorkspaceFolder, opts.DockerfilePath)
+		dockerfilePath := filepath.Join(buildTimeWorkspaceFolder, opts.DockerfilePath)
 
 		// If the dockerfilePath is specified and deeper than the base of WorkspaceFolder AND the BuildContextPath is
 		// not defined, show a warning
 		dockerfileDir := filepath.Dir(dockerfilePath)
-		if dockerfileDir != filepath.Clean(opts.WorkspaceFolder) && opts.BuildContextPath == "" {
-			opts.Logger(log.LevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, opts.WorkspaceFolder)
+		if dockerfileDir != filepath.Clean(buildTimeWorkspaceFolder) && opts.BuildContextPath == "" {
+			opts.Logger(log.LevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, buildTimeWorkspaceFolder)
 			opts.Logger(log.LevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
 		}
 
@@ -1024,7 +1011,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 			buildParams = &devcontainer.Compiled{
 				DockerfilePath:    dockerfilePath,
 				DockerfileContent: string(content),
-				BuildContext:      filepath.Join(opts.WorkspaceFolder, opts.BuildContextPath),
+				BuildContext:      filepath.Join(buildTimeWorkspaceFolder, opts.BuildContextPath),
 			}
 		}
 	}
@@ -1281,7 +1268,11 @@ func newColor(value ...color.Attribute) *color.Color {
 	return c
 }
 
-func findDevcontainerJSON(options options.Options) (string, string, error) {
+func findDevcontainerJSON(workspaceFolder string, options options.Options) (string, string, error) {
+	if workspaceFolder == "" {
+		workspaceFolder = options.WorkspaceFolder
+	}
+
 	// 0. Check if custom devcontainer directory or path is provided.
 	if options.DevcontainerDir != "" || options.DevcontainerJSONPath != "" {
 		devcontainerDir := options.DevcontainerDir
@@ -1291,7 +1282,7 @@ func findDevcontainerJSON(options options.Options) (string, string, error) {
 
 		// If `devcontainerDir` is not an absolute path, assume it is relative to the workspace folder.
 		if !filepath.IsAbs(devcontainerDir) {
-			devcontainerDir = filepath.Join(options.WorkspaceFolder, devcontainerDir)
+			devcontainerDir = filepath.Join(workspaceFolder, devcontainerDir)
 		}
 
 		// An absolute location always takes a precedence.
@@ -1310,20 +1301,20 @@ func findDevcontainerJSON(options options.Options) (string, string, error) {
 		return devcontainerPath, devcontainerDir, nil
 	}
 
-	// 1. Check `options.WorkspaceFolder`/.devcontainer/devcontainer.json.
-	location := filepath.Join(options.WorkspaceFolder, ".devcontainer", "devcontainer.json")
+	// 1. Check `workspaceFolder`/.devcontainer/devcontainer.json.
+	location := filepath.Join(workspaceFolder, ".devcontainer", "devcontainer.json")
 	if _, err := options.Filesystem.Stat(location); err == nil {
 		return location, filepath.Dir(location), nil
 	}
 
-	// 2. Check `options.WorkspaceFolder`/devcontainer.json.
-	location = filepath.Join(options.WorkspaceFolder, "devcontainer.json")
+	// 2. Check `workspaceFolder`/devcontainer.json.
+	location = filepath.Join(workspaceFolder, "devcontainer.json")
 	if _, err := options.Filesystem.Stat(location); err == nil {
 		return location, filepath.Dir(location), nil
 	}
 
-	// 3. Check every folder: `options.WorkspaceFolder`/.devcontainer/<folder>/devcontainer.json.
-	devcontainerDir := filepath.Join(options.WorkspaceFolder, ".devcontainer")
+	// 3. Check every folder: `workspaceFolder`/.devcontainer/<folder>/devcontainer.json.
+	devcontainerDir := filepath.Join(workspaceFolder, ".devcontainer")
 
 	fileInfos, err := options.Filesystem.ReadDir(devcontainerDir)
 	if err != nil {
@@ -1387,25 +1378,6 @@ func copyFile(src, dst string) error {
 		return fmt.Errorf("write file failed: %w", err)
 	}
 	return nil
-}
-
-func initCABundle(sslCertBase64 string) ([]byte, error) {
-	if sslCertBase64 == "" {
-		return []byte{}, nil
-	}
-	certPool, err := x509.SystemCertPool()
-	if err != nil {
-		return nil, fmt.Errorf("get global system cert pool: %w", err)
-	}
-	data, err := base64.StdEncoding.DecodeString(sslCertBase64)
-	if err != nil {
-		return nil, fmt.Errorf("base64 decode ssl cert: %w", err)
-	}
-	ok := certPool.AppendCertsFromPEM(data)
-	if !ok {
-		return nil, fmt.Errorf("failed to append the ssl cert to the global pool: %s", data)
-	}
-	return data, nil
 }
 
 func initDockerConfigJSON(dockerConfigBase64 string) (func() error, error) {
