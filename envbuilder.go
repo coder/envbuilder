@@ -28,6 +28,7 @@ import (
 	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/git"
 	"github.com/coder/envbuilder/options"
+	"github.com/go-git/go-billy/v5"
 
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
@@ -321,6 +322,10 @@ func Run(ctx context.Context, opts options.Options) error {
 	// In order to allow 'resuming' envbuilder, embed the binary into the image
 	// if it is being pushed
 	if opts.PushImage {
+		// Add exception to the ignore list for the magic image file.
+		if err := util.AddAllowedPathToDefaultIgnoreList(constants.MagicImage); err != nil {
+			return xerrors.Errorf("add exe path to ignore list: %w", err)
+		}
 		exePath, err := os.Executable()
 		if err != nil {
 			return xerrors.Errorf("get exe path: %w", err)
@@ -331,13 +336,18 @@ func Run(ctx context.Context, opts options.Options) error {
 		}
 		// Copy the envbuilder binary into the build context.
 		buildParams.DockerfileContent += fmt.Sprintf(`
-COPY --chmod=0755 %s %s
+COPY --chmod=0644 %[1]s %[1]s
+COPY --chmod=0755 %[2]s %[2]s
 USER root
 WORKDIR /
-ENTRYPOINT [%q]`, exePath, exePath, exePath)
-		dst := filepath.Join(buildParams.BuildContext, exePath)
-		if err := copyFile(exePath, dst); err != nil {
-			return xerrors.Errorf("copy running binary to build context: %w", err)
+ENTRYPOINT [%[2]q]`, constants.MagicImage, exePath)
+		magicDst := filepath.Join(buildParams.BuildContext, constants.MagicImage)
+		if err := touchFile(opts.Filesystem, magicDst); err != nil {
+			return xerrors.Errorf("touch file in build context: %w", err)
+		}
+		exeDst := filepath.Join(buildParams.BuildContext, exePath)
+		if err := copyFile(opts.Filesystem, exePath, exeDst); err != nil {
+			return xerrors.Errorf("copy file to build context: %w", err)
 		}
 	}
 
@@ -362,8 +372,9 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 	stderrWriter, closeStderr := log.Writer(opts.Logger)
 	defer closeStderr()
 	build := func() (v1.Image, error) {
-		_, err := opts.Filesystem.Stat(constants.MagicFile)
-		if err == nil && opts.SkipRebuild {
+		_, alreadyBuiltErr := opts.Filesystem.Stat(constants.MagicFile)
+		_, isImageErr := opts.Filesystem.Stat(constants.MagicImage)
+		if (alreadyBuiltErr == nil && opts.SkipRebuild) || isImageErr == nil {
 			endStage := startStage("🏗️ Skipping build because of cache...")
 			imageRef, err := devcontainer.ImageFromDockerfile(buildParams.DockerfileContent)
 			if err != nil {
@@ -1371,22 +1382,41 @@ func maybeDeleteFilesystem(logger log.Func, force bool) error {
 	return util.DeleteFilesystem()
 }
 
-func copyFile(src, dst string) error {
-	content, err := os.ReadFile(src)
+func copyFile(fs billy.Filesystem, src, dst string) error {
+	from, err := fs.Open(src)
 	if err != nil {
-		return fmt.Errorf("read file failed: %w", err)
+		return fmt.Errorf("open file failed: %w", err)
 	}
+	defer from.Close()
 
-	err = os.MkdirAll(filepath.Dir(dst), 0o755)
+	err = fs.MkdirAll(filepath.Dir(dst), 0o755)
 	if err != nil {
 		return fmt.Errorf("mkdir all failed: %w", err)
 	}
 
-	err = os.WriteFile(dst, content, 0o644)
+	to, err := fs.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
-		return fmt.Errorf("write file failed: %w", err)
+		return fmt.Errorf("open file failed: %w", err)
 	}
+	defer to.Close()
+
+	_, err = io.Copy(to, from)
+	if err != nil {
+		return fmt.Errorf("copy file failed: %w", err)
+	}
+	if err := to.Close(); err != nil {
+		return fmt.Errorf("close file failed: %w", err)
+	}
+
 	return nil
+}
+
+func touchFile(fs billy.Filesystem, name string) error {
+	f, err := fs.Create(name)
+	if err != nil {
+		return xerrors.Errorf("create file failed: %w", err)
+	}
+	return f.Close()
 }
 
 func initCABundle(sslCertBase64 string) ([]byte, error) {

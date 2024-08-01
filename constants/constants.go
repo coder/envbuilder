@@ -28,4 +28,9 @@ var (
 	// to skip building when a container is restarting.
 	// e.g. docker stop -> docker start
 	MagicFile = filepath.Join(MagicDir, "built")
+
+	// MagicImage is a file that is created in the image when
+	// envbuilder has already been run. This is used to skip
+	// building when a container is starting.
+	MagicImage = filepath.Join(MagicDir, "image")
 )
