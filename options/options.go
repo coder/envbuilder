@@ -151,9 +151,10 @@ type Options struct {
 	GetCachedImage bool
 
 	// RemoteRepoBuildMode uses the remote repository as the source of truth
-	// when building the image. This means that the users changes to the local
-	// files that have been cloned will not be reflected in the image. This is
-	// useful as a way to improve cache utilization (get cached image).
+	// when building the image. Enabling this option ignores user changes to
+	// local files and they will not be reflected in the image. This can be
+	// used to improving cache utilization when multiple users are building
+	// working on the same repository.
 	RemoteRepoBuildMode bool
 }
 
@@ -432,10 +433,10 @@ func (o *Options) CLI() serpent.OptionSet {
 			Value:   serpent.BoolOf(&o.RemoteRepoBuildMode),
 			Default: "false",
 			Description: "Use the remote repository as the source of truth " +
-				"when building the image. This means that the users changes to " +
-				"the local files that have been cloned will not be reflected in " +
-				"the image. This is useful as a way to improve cache utilization " +
-				"(get cached image).",
+				"when building the image. Enabling this option ignores user changes " +
+				"to local files and they will not be reflected in the image. This can " +
+				"be used to improving cache utilization when multiple users are building " +
+				"working on the same repository.",
 		},
 		{
 			Flag:        "verbose",

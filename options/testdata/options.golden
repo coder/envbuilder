@@ -140,9 +140,10 @@ OPTIONS:
 
       --remote-repo-build-mode bool, $ENVBUILDER_REMOTE_REPO_BUILD_MODE (default: false)
           Use the remote repository as the source of truth when building the
-          image. This means that the users changes to the local files that have
-          been cloned will not be reflected in the image. This is useful as a
-          way to improve cache utilization (get cached image).
+          image. Enabling this option ignores user changes to local files and
+          they will not be reflected in the image. This can be used to improving
+          cache utilization when multiple users are building working on the same
+          repository.
 
       --setup-script string, $ENVBUILDER_SETUP_SCRIPT
           The script to run before the init script. It runs as the root user
