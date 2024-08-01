@@ -12,7 +12,7 @@ import (
 	"github.com/coder/envbuilder/options"
 
 	giturls "github.com/chainguard-dev/git-urls"
-	"github.com/coder/envbuilder/internal/log"
+	"github.com/coder/envbuilder/log"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -124,6 +124,41 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
 		return false, fmt.Errorf("clone %q: %w", opts.RepoURL, err)
 	}
 	return true, nil
+}
+
+// ShallowCloneRepo will clone the repository at the given URL into the given path
+// with a depth of 1. If the destination folder exists and is not empty, the
+// clone will not be performed.
+//
+// The bool returned states whether the repository was cloned or not.
+func ShallowCloneRepo(ctx context.Context, opts CloneRepoOptions) error {
+	opts.Depth = 1
+	opts.SingleBranch = true
+
+	if opts.Path == "" {
+		return errors.New("path is required")
+	}
+
+	// Avoid clobbering the destination.
+	if _, err := opts.Storage.Stat(opts.Path); err == nil {
+		files, err := opts.Storage.ReadDir(opts.Path)
+		if err != nil {
+			return fmt.Errorf("read dir %q: %w", opts.Path, err)
+		}
+		if len(files) > 0 {
+			return fmt.Errorf("directory %q is not empty", opts.Path)
+		}
+	}
+
+	cloned, err := CloneRepo(ctx, opts)
+	if err != nil {
+		return err
+	}
+	if !cloned {
+		return errors.New("repository already exists")
+	}
+
+	return nil
 }
 
 // ReadPrivateKey attempts to read an SSH private key from path
@@ -252,4 +287,69 @@ func SetupRepoAuth(options *options.Options) transport.AuthMethod {
 		auth.HostKeyCallback = LogHostKeyCallback(options.Logger)
 	}
 	return auth
+}
+
+func CloneOptionsFromOptions(options options.Options) (CloneRepoOptions, error) {
+	caBundle, err := options.CABundle()
+	if err != nil {
+		return CloneRepoOptions{}, err
+	}
+
+	cloneOpts := CloneRepoOptions{
+		Path:         options.WorkspaceFolder,
+		Storage:      options.Filesystem,
+		Insecure:     options.Insecure,
+		SingleBranch: options.GitCloneSingleBranch,
+		Depth:        int(options.GitCloneDepth),
+		CABundle:     caBundle,
+	}
+
+	cloneOpts.RepoAuth = SetupRepoAuth(&options)
+	if options.GitHTTPProxyURL != "" {
+		cloneOpts.ProxyOptions = transport.ProxyOptions{
+			URL: options.GitHTTPProxyURL,
+		}
+	}
+	cloneOpts.RepoURL = options.GitURL
+
+	return cloneOpts, nil
+}
+
+type progressWriter struct {
+	io.WriteCloser
+	r io.ReadCloser
+}
+
+func (w *progressWriter) Close() error {
+	err := w.r.Close()
+	err2 := w.WriteCloser.Close()
+	if err != nil {
+		return err
+	}
+	return err2
+}
+
+func ProgressWriter(write func(line string)) io.WriteCloser {
+	reader, writer := io.Pipe()
+	go func() {
+		data := make([]byte, 4096)
+		for {
+			read, err := reader.Read(data)
+			if err != nil {
+				return
+			}
+			content := data[:read]
+			for _, line := range strings.Split(string(content), "\r") {
+				if line == "" {
+					continue
+				}
+				write(strings.TrimSpace(line))
+			}
+		}
+	}()
+
+	return &progressWriter{
+		WriteCloser: writer,
+		r:           reader,
+	}
 }

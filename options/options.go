@@ -1,10 +1,13 @@
 package options
 
 import (
+	"crypto/x509"
+	"encoding/base64"
+	"fmt"
 	"os"
 	"strings"
 
-	"github.com/coder/envbuilder/internal/log"
+	"github.com/coder/envbuilder/log"
 	"github.com/coder/serpent"
 	"github.com/go-git/go-billy/v5"
 )
@@ -146,6 +149,13 @@ type Options struct {
 	// GetCachedImage is a flag to determine if the cached image is available,
 	// and if it is, to return it.
 	GetCachedImage bool
+
+	// RemoteRepoBuildMode uses the remote repository as the source of truth
+	// when building the image. Enabling this option ignores user changes to
+	// local files and they will not be reflected in the image. This can be
+	// used to improving cache utilization when multiple users are building
+	// working on the same repository.
+	RemoteRepoBuildMode bool
 }
 
 const envPrefix = "ENVBUILDER_"
@@ -418,6 +428,17 @@ func (o *Options) CLI() serpent.OptionSet {
 				"Exits with an error if not found.",
 		},
 		{
+			Flag:    "remote-repo-build-mode",
+			Env:     WithEnvPrefix("REMOTE_REPO_BUILD_MODE"),
+			Value:   serpent.BoolOf(&o.RemoteRepoBuildMode),
+			Default: "false",
+			Description: "Use the remote repository as the source of truth " +
+				"when building the image. Enabling this option ignores user changes " +
+				"to local files and they will not be reflected in the image. This can " +
+				"be used to improving cache utilization when multiple users are building " +
+				"working on the same repository.",
+		},
+		{
 			Flag:        "verbose",
 			Env:         WithEnvPrefix("VERBOSE"),
 			Value:       serpent.BoolOf(&o.Verbose),
@@ -480,6 +501,26 @@ func (o *Options) Markdown() string {
 	}
 
 	return sb.String()
+}
+
+func (o *Options) CABundle() ([]byte, error) {
+	if o.SSLCertBase64 == "" {
+		return nil, nil
+	}
+
+	certPool, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("get global system cert pool: %w", err)
+	}
+	data, err := base64.StdEncoding.DecodeString(o.SSLCertBase64)
+	if err != nil {
+		return nil, fmt.Errorf("base64 decode ssl cert: %w", err)
+	}
+	ok := certPool.AppendCertsFromPEM(data)
+	if !ok {
+		return nil, fmt.Errorf("failed to append the ssl cert to the global pool: %s", data)
+	}
+	return data, nil
 }
 
 func skipDeprecatedOptions(options []serpent.Option) []serpent.Option {

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/coder/envbuilder/internal/log"
+	"github.com/coder/envbuilder/log"
 	"github.com/hashicorp/go-multierror"
 	"github.com/prometheus/procfs"
 )

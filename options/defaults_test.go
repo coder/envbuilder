@@ -1,9 +1,15 @@
-package envbuilder_test
+package options_test
 
 import (
 	"testing"
 
-	"github.com/coder/envbuilder"
+	"github.com/coder/envbuilder/internal/chmodfs"
+	"github.com/go-git/go-billy/v5/osfs"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/coder/envbuilder/constants"
+	"github.com/coder/envbuilder/options"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,13 +44,12 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 		{
 			name:     "empty",
 			gitURL:   "",
-			expected: envbuilder.EmptyWorkspaceDir,
+			expected: constants.EmptyWorkspaceDir,
 		},
 	}
 	for _, tt := range successTests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir, err := envbuilder.DefaultWorkspaceFolder(tt.gitURL)
-			require.NoError(t, err)
+			dir := options.DefaultWorkspaceFolder(tt.gitURL)
 			require.Equal(t, tt.expected, dir)
 		})
 	}
@@ -64,9 +69,25 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 	}
 	for _, tt := range invalidTests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir, err := envbuilder.DefaultWorkspaceFolder(tt.invalidURL)
-			require.NoError(t, err)
-			require.Equal(t, envbuilder.EmptyWorkspaceDir, dir)
+			dir := options.DefaultWorkspaceFolder(tt.invalidURL)
+			require.Equal(t, constants.EmptyWorkspaceDir, dir)
 		})
 	}
+}
+
+func TestOptions_SetDefaults(t *testing.T) {
+	t.Parallel()
+
+	expected := options.Options{
+		InitScript:      "sleep infinity",
+		InitCommand:     "/bin/sh",
+		IgnorePaths:     []string{"/var/run", "/product_uuid", "/product_name"},
+		Filesystem:      chmodfs.New(osfs.New("/")),
+		GitURL:          "",
+		WorkspaceFolder: constants.EmptyWorkspaceDir,
+	}
+
+	var actual options.Options
+	actual.SetDefaults()
+	assert.Equal(t, expected, actual)
 }
