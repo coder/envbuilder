@@ -55,4 +55,7 @@ func (o *Options) SetDefaults() {
 	if o.WorkspaceFolder == "" {
 		o.WorkspaceFolder = DefaultWorkspaceFolder(o.GitURL)
 	}
+	if o.BinaryPath == "" {
+		o.BinaryPath = "/.envbuilder/bin/envbuilder"
+	}
 }
