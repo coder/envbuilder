@@ -156,6 +156,11 @@ type Options struct {
 	// used to improving cache utilization when multiple users are building
 	// working on the same repository.
 	RemoteRepoBuildMode bool
+
+	// BinaryPath is the path to the local envbuilder binary when
+	// attempting to probe the build cache. This is only relevant when
+	// GetCachedImage is true.
+	BinaryPath string
 }
 
 const envPrefix = "ENVBUILDER_"
@@ -426,6 +431,13 @@ func (o *Options) CLI() serpent.OptionSet {
 			Value: serpent.BoolOf(&o.GetCachedImage),
 			Description: "Print the digest of the cached image, if available. " +
 				"Exits with an error if not found.",
+		},
+		{
+			Flag:        "binary-path",
+			Env:         WithEnvPrefix("BINARY_PATH"),
+			Value:       serpent.StringOf(&o.BinaryPath),
+			Hidden:      true,
+			Description: "Specify the path to an Envbuilder binary for use when probing the build cache.",
 		},
 		{
 			Flag:    "remote-repo-build-mode",

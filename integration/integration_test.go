@@ -1114,13 +1114,14 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "MANIFEST_UNKNOWN", "expected image to not be present before build + push")
 
-		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should not succeed, as
+		// the envbuilder binary is not present in the pushed image.
 		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 		}})
-		require.NoError(t, err)
+		require.ErrorContains(t, err, "uncached COPY command is not supported in cache probe mode")
 	})
 
 	t.Run("CacheAndPush", func(t *testing.T) {
