@@ -497,6 +497,9 @@ func (o *Options) Markdown() string {
 	_, _ = sb.WriteString("| - | - | - | - |\n")
 
 	for _, opt := range cliOptions {
+		if opt.Hidden {
+			continue
+		}
 		d := opt.Default
 		if d != "" {
 			d = "`" + d + "`"
