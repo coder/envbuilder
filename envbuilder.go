@@ -863,35 +863,35 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	var fallbackErr error
 	var cloned bool
 	if opts.GitURL != "" {
-		cloneOpts, err := git.CloneOptionsFromOptions(opts)
-		if err != nil {
-			return nil, fmt.Errorf("git clone options: %w", err)
-		}
+		// In cache probe mode we should only attempt to clone the full
+		// repository if remote repo build mode isn't enabled.
+		if !opts.RemoteRepoBuildMode {
+			cloneOpts, err := git.CloneOptionsFromOptions(opts)
+			if err != nil {
+				return nil, fmt.Errorf("git clone options: %w", err)
+			}
 
-		endStage := startStage("📦 Cloning %s to %s...",
-			newColor(color.FgCyan).Sprintf(opts.GitURL),
-			newColor(color.FgCyan).Sprintf(cloneOpts.Path),
-		)
+			endStage := startStage("📦 Cloning %s to %s...",
+				newColor(color.FgCyan).Sprintf(opts.GitURL),
+				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
+			)
 
-		w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, line) })
-		defer w.Close()
-		cloneOpts.Progress = w
+			w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, line) })
+			defer w.Close()
+			cloneOpts.Progress = w
 
-		cloned, fallbackErr = git.CloneRepo(ctx, cloneOpts)
-		if fallbackErr == nil {
-			if cloned {
-				endStage("📦 Cloned repository!")
+			cloned, fallbackErr = git.CloneRepo(ctx, cloneOpts)
+			if fallbackErr == nil {
+				if cloned {
+					endStage("📦 Cloned repository!")
+				} else {
+					endStage("📦 The repository already exists!")
+				}
 			} else {
-				endStage("📦 The repository already exists!")
+				opts.Logger(log.LevelError, "Failed to clone repository: %s", fallbackErr.Error())
+				opts.Logger(log.LevelError, "Falling back to the default image...")
 			}
 		} else {
-			opts.Logger(log.LevelError, "Failed to clone repository: %s", fallbackErr.Error())
-			opts.Logger(log.LevelError, "Falling back to the default image...")
-		}
-
-		// Always clone the repo in remote repo build mode into a location that
-		// we control that isn't affected by the users changes.
-		if opts.RemoteRepoBuildMode {
 			cloneOpts, err := git.CloneOptionsFromOptions(opts)
 			if err != nil {
 				return nil, fmt.Errorf("git clone options: %w", err)
