@@ -1061,6 +1061,26 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		})
 	}
 
+	// We expect an image built and pushed by envbuilder to have the envbuilder
+	// binary present at a predefined path. In order to correctly replicate the
+	// build via executor.RunCacheProbe we need to have the *exact* copy of the
+	// envbuilder binary available used to build the image.
+	exePath := opts.BinaryPath
+	// Add an exception for the current running binary in kaniko ignore list
+	if err := util.AddAllowedPathToDefaultIgnoreList(exePath); err != nil {
+		return nil, xerrors.Errorf("add exe path to ignore list: %w", err)
+	}
+	// Copy the envbuilder binary into the build context.
+	buildParams.DockerfileContent += fmt.Sprintf(`
+COPY --chmod=0755 %s %s
+USER root
+WORKDIR /
+ENTRYPOINT [%q]`, exePath, exePath, exePath)
+	dst := filepath.Join(buildParams.BuildContext, exePath)
+	if err := copyFile(exePath, dst); err != nil {
+		return nil, xerrors.Errorf("copy envbuilder binary to build context: %w", err)
+	}
+
 	stdoutWriter, closeStdout := log.Writer(opts.Logger)
 	defer closeStdout()
 	stderrWriter, closeStderr := log.Writer(opts.Logger)

@@ -85,6 +85,7 @@ func TestOptions_SetDefaults(t *testing.T) {
 		Filesystem:      chmodfs.New(osfs.New("/")),
 		GitURL:          "",
 		WorkspaceFolder: constants.EmptyWorkspaceDir,
+		BinaryPath:      "/.envbuilder/bin/envbuilder",
 	}
 
 	var actual options.Options
