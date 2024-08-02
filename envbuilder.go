@@ -912,7 +912,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 				endStage("📦 Cloned repository!")
 				buildTimeWorkspaceFolder = cloneOpts.Path
 			} else {
-				opts.Logger(log.LevelError, "Failed to clone repository for remote repo mode: %s", err.Error())
+				opts.Logger(log.LevelError, "Failed to clone repository for remote repo mode: %s", fallbackErr.Error())
 				opts.Logger(log.LevelError, "Falling back to the default image...")
 			}
 		}
