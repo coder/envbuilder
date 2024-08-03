@@ -27,6 +27,7 @@ import (
 	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/git"
 	"github.com/coder/envbuilder/options"
+	"github.com/go-git/go-billy/v5"
 
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
@@ -311,26 +312,58 @@ func Run(ctx context.Context, opts options.Options) error {
 	}
 
 	// In order to allow 'resuming' envbuilder, embed the binary into the image
-	// if it is being pushed
+	// if it is being pushed.
+	// As these files will be owned by root, it is considerate to clean up
+	// after we're done!
+	cleanupBuildContext := func() {}
 	if opts.PushImage {
-		exePath, err := os.Executable()
-		if err != nil {
-			return xerrors.Errorf("get exe path: %w", err)
+		// Add exceptions in Kaniko's ignorelist for these magic files we add.
+		if err := util.AddAllowedPathToDefaultIgnoreList(opts.BinaryPath); err != nil {
+			return fmt.Errorf("add envbuilder binary to ignore list: %w", err)
 		}
-		// Add an exception for the current running binary in kaniko ignore list
-		if err := util.AddAllowedPathToDefaultIgnoreList(exePath); err != nil {
-			return xerrors.Errorf("add exe path to ignore list: %w", err)
+		if err := util.AddAllowedPathToDefaultIgnoreList(constants.MagicImage); err != nil {
+			return fmt.Errorf("add magic image file to ignore list: %w", err)
 		}
+		magicTempDir := filepath.Join(buildParams.BuildContext, constants.MagicTempDir)
+		if err := opts.Filesystem.MkdirAll(magicTempDir, 0o755); err != nil {
+			return fmt.Errorf("create magic temp dir in build context: %w", err)
+		}
+		// Add the magic directives that embed the binary into the built image.
+		buildParams.DockerfileContent += constants.MagicDirectives
 		// Copy the envbuilder binary into the build context.
-		buildParams.DockerfileContent += fmt.Sprintf(`
-COPY --chmod=0755 %s %s
-USER root
-WORKDIR /
-ENTRYPOINT [%q]`, exePath, exePath, exePath)
-		dst := filepath.Join(buildParams.BuildContext, exePath)
-		if err := copyFile(exePath, dst); err != nil {
-			return xerrors.Errorf("copy running binary to build context: %w", err)
+		// External callers will need to specify the path to the desired envbuilder binary.
+		envbuilderBinDest := filepath.Join(
+			magicTempDir,
+			filepath.Base(constants.MagicBinaryLocation),
+		)
+		// Also touch the magic file that signifies the image has been built!
+		magicImageDest := filepath.Join(
+			magicTempDir,
+			filepath.Base(constants.MagicImage),
+		)
+		// Clean up after build!
+		var cleanupOnce sync.Once
+		cleanupBuildContext = func() {
+			cleanupOnce.Do(func() {
+				for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir} {
+					if err := opts.Filesystem.Remove(path); err != nil {
+						opts.Logger(log.LevelWarn, "failed to clean up magic temp dir from build context: %w", err)
+					}
+				}
+			})
 		}
+		defer cleanupBuildContext()
+
+		opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
+		if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
+			return fmt.Errorf("copy envbuilder binary to build context: %w", err)
+		}
+
+		opts.Logger(log.LevelDebug, "touching magic image file at %q in build context %q", magicImageDest, buildParams.BuildContext)
+		if err := touchFile(opts.Filesystem, magicImageDest, 0o755); err != nil {
+			return fmt.Errorf("touch magic image file in build context: %w", err)
+		}
+
 	}
 
 	// temp move of all ro mounts
@@ -354,8 +387,10 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 	stderrWriter, closeStderr := log.Writer(opts.Logger)
 	defer closeStderr()
 	build := func() (v1.Image, error) {
-		_, err := opts.Filesystem.Stat(constants.MagicFile)
-		if err == nil && opts.SkipRebuild {
+		defer cleanupBuildContext()
+		_, alreadyBuiltErr := opts.Filesystem.Stat(constants.MagicFile)
+		_, isImageErr := opts.Filesystem.Stat(constants.MagicImage)
+		if (alreadyBuiltErr == nil && opts.SkipRebuild) || isImageErr == nil {
 			endStage := startStage("🏗️ Skipping build because of cache...")
 			imageRef, err := devcontainer.ImageFromDockerfile(buildParams.DockerfileContent)
 			if err != nil {
@@ -381,26 +416,7 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		if err := maybeDeleteFilesystem(opts.Logger, opts.ForceSafe); err != nil {
 			return nil, fmt.Errorf("delete filesystem: %w", err)
 		}
-		/*
-			stdoutReader, stdoutWriter := io.Pipe()
-			stderrReader, stderrWriter := io.Pipe()
-			defer stdoutReader.Close()
-			defer stdoutWriter.Close()
-			defer stderrReader.Close()
-			defer stderrWriter.Close()
-			go func() {
-				scanner := bufio.NewScanner(stdoutReader)
-				for scanner.Scan() {
-					opts.Logger(log.LevelInfo, "%s", scanner.Text())
-				}
-			}()
-			go func() {
-				scanner := bufio.NewScanner(stderrReader)
-				for scanner.Scan() {
-					opts.Logger(log.LevelInfo, "%s", scanner.Text())
-				}
-			}()
-		*/
+
 		cacheTTL := time.Hour * 24 * 7
 		if opts.CacheTTLDays != 0 {
 			cacheTTL = time.Hour * 24 * time.Duration(opts.CacheTTLDays)
@@ -1064,22 +1080,40 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// We expect an image built and pushed by envbuilder to have the envbuilder
 	// binary present at a predefined path. In order to correctly replicate the
 	// build via executor.RunCacheProbe we need to have the *exact* copy of the
-	// envbuilder binary available used to build the image.
-	exePath := opts.BinaryPath
-	// Add an exception for the current running binary in kaniko ignore list
-	if err := util.AddAllowedPathToDefaultIgnoreList(exePath); err != nil {
-		return nil, xerrors.Errorf("add exe path to ignore list: %w", err)
+	// envbuilder binary available used to build the image and we also need to
+	// add the magic directives to the Dockerfile content.
+	buildParams.DockerfileContent += constants.MagicDirectives
+	magicTempDir := filepath.Join(buildParams.BuildContext, constants.MagicTempDir)
+	if err := opts.Filesystem.MkdirAll(magicTempDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create magic temp dir in build context: %w", err)
 	}
+	envbuilderBinDest := filepath.Join(
+		magicTempDir,
+		filepath.Base(constants.MagicBinaryLocation),
+	)
+
 	// Copy the envbuilder binary into the build context.
-	buildParams.DockerfileContent += fmt.Sprintf(`
-COPY --chmod=0755 %s %s
-USER root
-WORKDIR /
-ENTRYPOINT [%q]`, exePath, exePath, exePath)
-	dst := filepath.Join(buildParams.BuildContext, exePath)
-	if err := copyFile(exePath, dst); err != nil {
+	opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, buildParams.BuildContext)
+	if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
 		return nil, xerrors.Errorf("copy envbuilder binary to build context: %w", err)
 	}
+
+	// Also touch the magic file that signifies the image has been built!
+	magicImageDest := filepath.Join(
+		magicTempDir,
+		filepath.Base(constants.MagicImage),
+	)
+	if err := touchFile(opts.Filesystem, magicImageDest, 0o755); err != nil {
+		return nil, fmt.Errorf("touch magic image file in build context: %w", err)
+	}
+	defer func() {
+		// Clean up after we're done!
+		for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir} {
+			if err := opts.Filesystem.Remove(path); err != nil {
+				opts.Logger(log.LevelWarn, "failed to clean up magic temp dir from build context: %w", err)
+			}
+		}
+	}()
 
 	stdoutWriter, closeStdout := log.Writer(opts.Logger)
 	defer closeStdout()
@@ -1138,8 +1172,8 @@ ENTRYPOINT [%q]`, exePath, exePath, exePath)
 		},
 		SrcContext: buildParams.BuildContext,
 
-		// For cached image utilization, produce reproducible builds.
-		Reproducible: opts.PushImage,
+		// When performing a cache probe, always perform reproducible snapshots.
+		Reproducible: true,
 	}
 
 	endStage := startStage("🏗️ Checking for cached image...")
@@ -1382,22 +1416,36 @@ func maybeDeleteFilesystem(logger log.Func, force bool) error {
 	return util.DeleteFilesystem()
 }
 
-func copyFile(src, dst string) error {
-	content, err := os.ReadFile(src)
+func copyFile(fs billy.Filesystem, src, dst string, mode fs.FileMode) error {
+	srcF, err := fs.Open(src)
 	if err != nil {
-		return fmt.Errorf("read file failed: %w", err)
+		return fmt.Errorf("open src file: %w", err)
+	}
+	defer srcF.Close()
+
+	err = fs.MkdirAll(filepath.Dir(dst), mode)
+	if err != nil {
+		return fmt.Errorf("create destination dir failed: %w", err)
 	}
 
-	err = os.MkdirAll(filepath.Dir(dst), 0o755)
+	dstF, err := fs.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
-		return fmt.Errorf("mkdir all failed: %w", err)
+		return fmt.Errorf("open dest file for writing: %w", err)
 	}
+	defer dstF.Close()
 
-	err = os.WriteFile(dst, content, 0o644)
-	if err != nil {
-		return fmt.Errorf("write file failed: %w", err)
+	if _, err := io.Copy(dstF, srcF); err != nil {
+		return fmt.Errorf("copy failed: %w", err)
 	}
 	return nil
+}
+
+func touchFile(fs billy.Filesystem, dst string, mode fs.FileMode) error {
+	f, err := fs.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return xerrors.Errorf("failed to touch file: %w", err)
+	}
+	return f.Close()
 }
 
 func initDockerConfigJSON(dockerConfigBase64 string) (func() error, error) {

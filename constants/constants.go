@@ -2,6 +2,7 @@ package constants
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 )
 
@@ -32,4 +33,32 @@ var (
 	// MagicFile is the location of the build context when
 	// using remote build mode.
 	MagicRemoteRepoDir = filepath.Join(MagicDir, "repo")
+
+	// MagicBinaryLocation is the expected location of the envbuilder binary
+	// inside a builder image.
+	MagicBinaryLocation = filepath.Join(MagicDir, "bin", "envbuilder")
+
+	// MagicImage is a file that is created in the image when
+	// envbuilder has already been run. This is used to skip
+	// the destructive initial build step when 'resuming' envbuilder
+	// from a previously built image.
+	MagicImage = filepath.Join(MagicDir, "image")
+
+	// MagicTempDir is a directory inside the build context inside which
+	// we place files referenced by MagicDirectives.
+	MagicTempDir = ".envbuilder.tmp"
+
+	// MagicDirectives are directives automatically appended to Dockerfiles
+	// when pushing the image. These directives allow the built image to be
+	// 're-used'.
+	MagicDirectives = fmt.Sprintf(`
+COPY --chmod=0755 %[1]s %[2]s
+COPY --chmod=0644 %[3]s %[4]s
+USER root
+WORKDIR /
+ENTRYPOINT [%[2]q]
+`,
+		".envbuilder.tmp/envbuilder", MagicBinaryLocation,
+		".envbuilder.tmp/image", MagicImage,
+	)
 )
