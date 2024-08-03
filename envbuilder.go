@@ -1417,25 +1417,31 @@ func maybeDeleteFilesystem(logger log.Func, force bool) error {
 }
 
 func copyFile(fs billy.Filesystem, src, dst string, mode fs.FileMode) error {
-	content, err := os.ReadFile(src)
+	srcF, err := fs.Open(src)
 	if err != nil {
-		return fmt.Errorf("read src file failed: %w", err)
+		return fmt.Errorf("open src file: %w", err)
 	}
+	defer srcF.Close()
 
-	err = os.MkdirAll(filepath.Dir(dst), mode)
+	err = fs.MkdirAll(filepath.Dir(dst), mode)
 	if err != nil {
 		return fmt.Errorf("create destination dir failed: %w", err)
 	}
 
-	err = os.WriteFile(dst, content, mode)
+	dstF, err := fs.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
-		return fmt.Errorf("write dest file failed: %w", err)
+		return fmt.Errorf("open dest file for writing: %w", err)
+	}
+	defer dstF.Close()
+
+	if _, err := io.Copy(dstF, srcF); err != nil {
+		return fmt.Errorf("copy failed: %w", err)
 	}
 	return nil
 }
 
 func touchFile(fs billy.Filesystem, dst string, mode fs.FileMode) error {
-	f, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode)
+	f, err := fs.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
 		return xerrors.Errorf("failed to touch file: %w", err)
 	}
