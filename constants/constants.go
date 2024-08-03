@@ -44,6 +44,10 @@ var (
 	// from a previously built image.
 	MagicImage = filepath.Join(MagicDir, "image")
 
+	// MagicTempDir is a directory inside the build context inside which
+	// we place files referenced by MagicDirectives.
+	MagicTempDir = ".envbuilder.tmp"
+
 	// MagicDirectives are directives automatically appended to Dockerfiles
 	// when pushing the image. These directives allow the built image to be
 	// 're-used'.
@@ -53,5 +57,8 @@ COPY --chmod=0644 %[3]s %[4]s
 USER root
 WORKDIR /
 ENTRYPOINT [%[2]q]
-`, filepath.Base(MagicBinaryLocation), MagicBinaryLocation, filepath.Base(MagicImage), MagicImage)
+`,
+		".envbuilder.tmp/envbuilder", MagicBinaryLocation,
+		".envbuilder.tmp/image", MagicImage,
+	)
 )

@@ -27,6 +27,7 @@ import (
 	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/git"
 	"github.com/coder/envbuilder/options"
+	"github.com/go-git/go-billy/v5"
 
 	"github.com/GoogleContainerTools/kaniko/pkg/config"
 	"github.com/GoogleContainerTools/kaniko/pkg/creds"
@@ -323,30 +324,39 @@ func Run(ctx context.Context, opts options.Options) error {
 		if err := util.AddAllowedPathToDefaultIgnoreList(constants.MagicImage); err != nil {
 			return fmt.Errorf("add magic image file to ignore list: %w", err)
 		}
+		magicTempDir := filepath.Join(buildParams.BuildContext, constants.MagicTempDir)
+		if err := opts.Filesystem.MkdirAll(magicTempDir, 0o755); err != nil {
+			return fmt.Errorf("create magic temp dir in build context: %w", err)
+		}
 		// Add the magic directives that embed the binary into the built image.
 		buildParams.DockerfileContent += constants.MagicDirectives
 		// Copy the envbuilder binary into the build context.
 		// External callers will need to specify the path to the desired envbuilder binary.
-		envbuilderBinDest := filepath.Join(buildParams.BuildContext, filepath.Base(constants.MagicBinaryLocation))
-		opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, buildParams.BuildContext)
-		if err := copyFile(opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
+		envbuilderBinDest := filepath.Join(
+			magicTempDir,
+			filepath.Base(constants.MagicBinaryLocation),
+		)
+		opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
+		if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
 			return fmt.Errorf("copy envbuilder binary to build context: %w", err)
 		}
 
 		// Also touch the magic file that signifies the image has been built!
-		magicImageDest := filepath.Join(buildParams.BuildContext, filepath.Base(constants.MagicImage))
-		opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, buildParams.BuildContext)
-		if err := touchFile(magicImageDest, 0o755); err != nil {
-			return fmt.Errorf("copy envbuilder binary to build context: %w", err)
+		magicImageDest := filepath.Join(
+			magicTempDir,
+			filepath.Base(constants.MagicImage),
+		)
+		opts.Logger(log.LevelDebug, "touching magic image file at %q in build context %q", magicImageDest, buildParams.BuildContext)
+		if err := touchFile(opts.Filesystem, magicImageDest, 0o755); err != nil {
+			return fmt.Errorf("touch magic image file in build context: %w", err)
 		}
 
 		// Clean up after build!
 		cleanupBuildContext = func() {
-			if err := os.Remove(envbuilderBinDest); err != nil {
-				opts.Logger(log.LevelWarn, "failed to clean up envbuilder binary from build context: %w", err)
-			}
-			if err := os.Remove(magicImageDest); err != nil {
-				opts.Logger(log.LevelWarn, "failed to clean up magic image file from build context: %w", err)
+			for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir} {
+				if err := opts.Filesystem.Remove(path); err != nil {
+					opts.Logger(log.LevelWarn, "failed to clean up magic temp dir from build context: %w", err)
+				}
 			}
 		}
 		defer cleanupBuildContext()
@@ -1069,26 +1079,35 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// envbuilder binary available used to build the image and we also need to
 	// add the magic directives to the Dockerfile content.
 	buildParams.DockerfileContent += constants.MagicDirectives
-	envbuilderBinDest := filepath.Join(buildParams.BuildContext, "envbuilder")
+	magicTempDir := filepath.Join(buildParams.BuildContext, constants.MagicTempDir)
+	if err := opts.Filesystem.MkdirAll(magicTempDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create magic temp dir in build context: %w", err)
+	}
+	envbuilderBinDest := filepath.Join(
+		magicTempDir,
+		filepath.Base(constants.MagicBinaryLocation),
+	)
 
 	// Copy the envbuilder binary into the build context.
 	opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, buildParams.BuildContext)
-	if err := copyFile(opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
+	if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
 		return nil, xerrors.Errorf("copy envbuilder binary to build context: %w", err)
 	}
 
 	// Also touch the magic file that signifies the image has been built!
-	magicImageDest := filepath.Join(buildParams.BuildContext, filepath.Base(constants.MagicImage))
-	if err := touchFile(magicImageDest, 0o755); err != nil {
+	magicImageDest := filepath.Join(
+		magicTempDir,
+		filepath.Base(constants.MagicImage),
+	)
+	if err := touchFile(opts.Filesystem, magicImageDest, 0o755); err != nil {
 		return nil, fmt.Errorf("touch magic image file in build context: %w", err)
 	}
 	defer func() {
 		// Clean up after we're done!
-		if err := os.Remove(envbuilderBinDest); err != nil {
-			opts.Logger(log.LevelWarn, "failed to clean up envbuilder binary from build context: %w", err)
-		}
-		if err := os.Remove(magicImageDest); err != nil {
-			opts.Logger(log.LevelWarn, "failed to clean up magic image file from build context: %w", err)
+		for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir} {
+			if err := opts.Filesystem.Remove(path); err != nil {
+				opts.Logger(log.LevelWarn, "failed to clean up magic temp dir from build context: %w", err)
+			}
 		}
 	}()
 
@@ -1393,7 +1412,7 @@ func maybeDeleteFilesystem(logger log.Func, force bool) error {
 	return util.DeleteFilesystem()
 }
 
-func copyFile(src, dst string, mode fs.FileMode) error {
+func copyFile(fs billy.Filesystem, src, dst string, mode fs.FileMode) error {
 	content, err := os.ReadFile(src)
 	if err != nil {
 		return fmt.Errorf("read src file failed: %w", err)
@@ -1411,7 +1430,7 @@ func copyFile(src, dst string, mode fs.FileMode) error {
 	return nil
 }
 
-func touchFile(dst string, mode fs.FileMode) error {
+func touchFile(fs billy.Filesystem, dst string, mode fs.FileMode) error {
 	f, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
 		return xerrors.Errorf("failed to touch file: %w", err)
