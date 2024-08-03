@@ -336,30 +336,34 @@ func Run(ctx context.Context, opts options.Options) error {
 			magicTempDir,
 			filepath.Base(constants.MagicBinaryLocation),
 		)
-		opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
-		if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
-			return fmt.Errorf("copy envbuilder binary to build context: %w", err)
-		}
-
 		// Also touch the magic file that signifies the image has been built!
 		magicImageDest := filepath.Join(
 			magicTempDir,
 			filepath.Base(constants.MagicImage),
 		)
+		// Clean up after build!
+		var cleanupOnce sync.Once
+		cleanupBuildContext = func() {
+			cleanupOnce.Do(func() {
+				for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir} {
+					if err := opts.Filesystem.Remove(path); err != nil {
+						opts.Logger(log.LevelWarn, "failed to clean up magic temp dir from build context: %w", err)
+					}
+				}
+			})
+		}
+		defer cleanupBuildContext()
+
+		opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
+		if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
+			return fmt.Errorf("copy envbuilder binary to build context: %w", err)
+		}
+
 		opts.Logger(log.LevelDebug, "touching magic image file at %q in build context %q", magicImageDest, buildParams.BuildContext)
 		if err := touchFile(opts.Filesystem, magicImageDest, 0o755); err != nil {
 			return fmt.Errorf("touch magic image file in build context: %w", err)
 		}
 
-		// Clean up after build!
-		cleanupBuildContext = func() {
-			for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir} {
-				if err := opts.Filesystem.Remove(path); err != nil {
-					opts.Logger(log.LevelWarn, "failed to clean up magic temp dir from build context: %w", err)
-				}
-			}
-		}
-		defer cleanupBuildContext()
 	}
 
 	// temp move of all ro mounts
