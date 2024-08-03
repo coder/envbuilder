@@ -68,6 +68,7 @@ func envbuilderCmd() serpent.Command {
 				img, err := envbuilder.RunCacheProbe(inv.Context(), o)
 				if err != nil {
 					o.Logger(log.LevelError, "error: %s", err)
+					return err
 				}
 				digest, err := img.Digest()
 				if err != nil {
