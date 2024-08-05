@@ -6,7 +6,7 @@ set -euo pipefail
 archs=()
 push=false
 base="envbuilder"
-tag="latest"
+tag=""
 
 for arg in "$@"; do
   if [[ $arg == --arch=* ]]; then
@@ -30,6 +30,10 @@ if [ ${#archs[@]} -eq 0 ]; then
   archs=( "$current" ) 
 fi
 
+if [[ -z "${tag}"  ]]; then
+	tag=$(./version.sh)
+fi
+
 # We have to use docker buildx to tag multiple images with
 # platforms tragically, so we have to create a builder.
 BUILDER_NAME="envbuilder"
@@ -46,9 +50,11 @@ fi
 # Ensure the builder is bootstrapped and ready to use
 docker buildx inspect --bootstrap &> /dev/null
 
+ldflags=(-X "'github.com/coder/envbuilder/buildinfo.tag=$tag'")
+
 for arch in "${archs[@]}"; do
   echo "Building for $arch..."
-  GOARCH=$arch CGO_ENABLED=0 go build -o "./envbuilder-${arch}" ../cmd/envbuilder &
+  GOARCH=$arch CGO_ENABLED=0 go build -ldflags="${ldflags[*]}" -o "./envbuilder-${arch}" ../cmd/envbuilder &
 done
 wait
 
@@ -62,10 +68,12 @@ else
   args+=( --load )
 fi
 
+# coerce semver build tags into something docker won't complain about
+tag="${tag//\+/-}"
 docker buildx build --builder $BUILDER_NAME "${args[@]}" -t "${base}:${tag}" -t "${base}:latest" -f Dockerfile .
 
 # Check if archs contains the current. If so, then output a message!
 if [[ -z "${CI:-}" ]] && [[ " ${archs[*]} " =~ ${current} ]]; then
   docker tag "${base}:${tag}" envbuilder:latest
-  echo "Tagged $current as envbuilder:latest!"
+  echo "Tagged $current as ${base}:${tag} ${base}:latest!"
 fi
