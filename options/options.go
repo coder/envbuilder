@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/log"
 	"github.com/coder/serpent"
 	"github.com/go-git/go-billy/v5"
@@ -156,6 +157,10 @@ type Options struct {
 	// used to improving cache utilization when multiple users are building
 	// working on the same repository.
 	RemoteRepoBuildMode bool
+
+	// RemoteRepoClonePath is the destination path for the cloned repo when
+	// using remote repo build mode.
+	RemoteRepoClonePath string
 
 	// BinaryPath is the path to the local envbuilder binary when
 	// attempting to probe the build cache. This is only relevant when
@@ -449,6 +454,14 @@ func (o *Options) CLI() serpent.OptionSet {
 				"to local files and they will not be reflected in the image. This can " +
 				"be used to improving cache utilization when multiple users are building " +
 				"working on the same repository.",
+		},
+		{
+			Flag:        "remote-repo-clone-path",
+			Env:         WithEnvPrefix("REMOTE_REPO_CLONE_PATH"),
+			Value:       serpent.StringOf(&o.RemoteRepoClonePath),
+			Default:     constants.MagicRemoteRepoDir,
+			Hidden:      true,
+			Description: "Specify the destination path for the cloned repo when using remote repo build mode.",
 		},
 		{
 			Flag:        "verbose",
