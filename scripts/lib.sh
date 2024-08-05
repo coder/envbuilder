@@ -34,3 +34,8 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR" && realpath "$(project_root)")"
 cdroot() {
 	cd "$PROJECT_ROOT" || error "Could not change directory to '$PROJECT_ROOT'"
 }
+
+# log prints a message to stderr
+log() {
+	echo "$*" 1>&2
+}

@@ -27,12 +27,12 @@ if [[ -z ${tag_list} ]]; then
 	log
 	log "INFO(version.sh): It appears you've checked out a fork or shallow clone of Envbuilder."
 	log "INFO(version.sh): By default GitHub does not include tags when forking."
-	log "INFO(version.sh): We will use the default version 2.0.0 for this build."
+	log "INFO(version.sh): We will use the default version 0.0.1 for this build."
 	log "INFO(version.sh): To pull tags from upstream, use the following commands:"
 	log "INFO(version.sh):   - git remote add upstream https://github.com/coder/envbuilder.git"
 	log "INFO(version.sh):   - git fetch upstream"
 	log
-	last_tag="v2.0.0"
+	last_tag="v0.0.1"
 else
 	current_commit=$(git rev-parse HEAD)
 	# Try to find the last tag that contains the current commit
@@ -48,7 +48,7 @@ version="${last_tag}"
 
 # If the HEAD has extra commits since the last tag then we are in a dev version.
 #
-# Dev versions are denoted by the "-devel+" suffix with a trailing commit short
+# Dev versions are denoted by the "-dev+" suffix with a trailing commit short
 # SHA.
 if [[ "${ENVBUILDER_RELEASE:-}" == *t* ]]; then
 	# $last_tag will equal `git describe --always` if we currently have the tag
@@ -64,14 +64,15 @@ if [[ "${ENVBUILDER_RELEASE:-}" == *t* ]]; then
 		error "version.sh: the current commit is not tagged with an annotated tag"
 	fi
 else
-	version+="-dev-$(git rev-parse --short HEAD)"
+	rev=$(git rev-parse --short HEAD)
+	version="0.0.0+dev-${rev}"
+	# If the git repo has uncommitted changes, mark the version string as 'dirty'.
+	dirty_files=$(git ls-files --other --modified --exclude-standard)
+	if [[ -n "${dirty_files}" ]]; then
+		version+="-dirty"
+	fi
 fi
 
-# If the git repo has uncommitted changes, mark the version string as 'dirty'.
-dirty_files=$(git ls-files --other --modified --exclude-standard)
-if [[ -n "${dirty_files}" ]]; then
-	version+="-dirty"
-fi
 
 # Remove the "v" prefix.
 echo "${version#v}"

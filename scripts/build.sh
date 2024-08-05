@@ -68,6 +68,8 @@ else
   args+=( --load )
 fi
 
+# coerce semver build tags into something docker won't complain about
+tag="${tag//\+/-}"
 docker buildx build --builder $BUILDER_NAME "${args[@]}" -t "${base}:${tag}" -t "${base}:latest" -f Dockerfile .
 
 # Check if archs contains the current. If so, then output a message!
