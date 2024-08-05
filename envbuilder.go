@@ -90,7 +90,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		}
 	}
 
-	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder %s"), buildinfo.Version())
+	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"), buildinfo.Version())
 
 	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.DockerConfigBase64)
 	if err != nil {
@@ -864,7 +864,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		}
 	}
 
-	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder %s"), buildinfo.Version())
+	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"), buildinfo.Version())
 
 	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.DockerConfigBase64)
 	if err != nil {
