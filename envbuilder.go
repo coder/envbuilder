@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/coder/envbuilder/buildinfo"
 	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/git"
 	"github.com/coder/envbuilder/options"
@@ -89,7 +90,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		}
 	}
 
-	opts.Logger(log.LevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
+	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder %s"), buildinfo.Version())
 
 	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.DockerConfigBase64)
 	if err != nil {
@@ -863,7 +864,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		}
 	}
 
-	opts.Logger(log.LevelInfo, "%s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"))
+	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder %s"), buildinfo.Version())
 
 	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.DockerConfigBase64)
 	if err != nil {

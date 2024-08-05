@@ -99,18 +99,15 @@ jobs:
       - name: Build
         if: github.event_name == 'pull_request'
         run: |
-          VERSION=$(./scripts/version.sh)-dev-$(git rev-parse --short HEAD)
           BASE=ghcr.io/coder/envbuilder-preview
 
           ./scripts/build.sh \
             --arch=amd64 \
-            --base=$BASE \
-            --tag=$VERSION
+            --base=$BASE
 
       - name: Build and Push
         if: github.ref == 'refs/heads/main'
         run: |
-          VERSION=$(./scripts/version.sh)-dev-$(git rev-parse --short HEAD)
           BASE=ghcr.io/coder/envbuilder-preview
 
           ./scripts/build.sh \
@@ -118,5 +115,4 @@ jobs:
             --arch=arm64 \
             --arch=arm \
             --base=$BASE \
-            --tag=$VERSION \
             --push
