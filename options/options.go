@@ -158,9 +158,9 @@ type Options struct {
 	// working on the same repository.
 	RemoteRepoBuildMode bool
 
-	// RemoteRepoClonePath is the destination path for the cloned repo when
-	// using remote repo build mode.
-	RemoteRepoClonePath string
+	// RemoteRepoDir is the destination directory for the cloned repo when using
+	// remote repo build mode.
+	RemoteRepoDir string
 
 	// BinaryPath is the path to the local envbuilder binary when
 	// attempting to probe the build cache. This is only relevant when
@@ -456,12 +456,12 @@ func (o *Options) CLI() serpent.OptionSet {
 				"working on the same repository.",
 		},
 		{
-			Flag:        "remote-repo-clone-path",
-			Env:         WithEnvPrefix("REMOTE_REPO_CLONE_PATH"),
-			Value:       serpent.StringOf(&o.RemoteRepoClonePath),
+			Flag:        "remote-repo-dir",
+			Env:         WithEnvPrefix("REMOTE_REPO_DIR"),
+			Value:       serpent.StringOf(&o.RemoteRepoDir),
 			Default:     constants.MagicRemoteRepoDir,
 			Hidden:      true,
-			Description: "Specify the destination path for the cloned repo when using remote repo build mode.",
+			Description: "Specify the destination directory for the cloned repo when using remote repo build mode.",
 		},
 		{
 			Flag:        "verbose",
