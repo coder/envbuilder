@@ -54,25 +54,17 @@ if [[ "${ENVBUILDER_RELEASE:-}" == *t* ]]; then
 	# $last_tag will equal `git describe --always` if we currently have the tag
 	# checked out.
 	if [[ "${last_tag}" != "$(git describe --always)" ]]; then
-		# make won't exit on $(shell cmd) failures, so we have to kill it :(
-		if [[ "$(ps -o comm= "${PPID}" || true)" == *make* ]]; then
-			log "ERROR: version.sh: the current commit is not tagged with an annotated tag"
-			kill "${PPID}" || true
-			exit 1
-		fi
-
 		error "version.sh: the current commit is not tagged with an annotated tag"
 	fi
 else
-	rev=$(git rev-parse --short HEAD)
-	version="0.0.0+dev-${rev}"
+	rev=$(git log -1 --format='%h' HEAD)
+	version+="+dev-${rev}"
 	# If the git repo has uncommitted changes, mark the version string as 'dirty'.
 	dirty_files=$(git ls-files --other --modified --exclude-standard)
 	if [[ -n "${dirty_files}" ]]; then
 		version+="-dirty"
 	fi
 fi
-
 
 # Remove the "v" prefix.
 echo "${version#v}"
