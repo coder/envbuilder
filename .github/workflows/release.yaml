@@ -19,7 +19,9 @@ jobs:
     name: Build and publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          fetch-tags: true
 
       - name: Echo Go Cache Paths
         id: go-cache-paths
@@ -44,11 +46,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push
+      - name: Get version
+        id: get-version
+        env:
+          ENVBUILDER_RELEASE: "t"
         run: |
-          VERSION=$(./scripts/version.sh)
-          BASE=ghcr.io/coder/envbuilder
+          echo "ENVBUILDER_VERSION=$(./scripts.version.sh)" >> $GITHUB_OUTPUT
 
+      - name: Build and Push
+        env:
+          VERSION: "${{ steps.get-version.outputs.ENVBUILDER_VERSION }}"
+          BASE: "ghcr.io/coder/envbuilder"
+        run: |
           ./scripts/build.sh \
             --arch=amd64 \
             --arch=arm64 \
