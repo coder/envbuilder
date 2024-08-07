@@ -39,3 +39,9 @@ cdroot() {
 log() {
 	echo "$*" 1>&2
 }
+
+# error prints an error message and returns an error exit code.
+error() {
+	log "ERROR: $*"
+	exit 1
+}
