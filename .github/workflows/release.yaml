@@ -20,8 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-tags: true
+
+        # Workaround for actions/checkout#1467
+      - name: Fetch tags
+        run: |
+          git fetch --tags --depth 1 --force
 
       - name: Echo Go Cache Paths
         id: go-cache-paths
