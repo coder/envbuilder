@@ -54,7 +54,7 @@ jobs:
         env:
           ENVBUILDER_RELEASE: "t"
         run: |
-          echo "ENVBUILDER_VERSION=$(./scripts.version.sh)" >> $GITHUB_OUTPUT
+          echo "ENVBUILDER_VERSION=$(./scripts/version.sh)" >> $GITHUB_OUTPUT
 
       - name: Build and Push
         env:
