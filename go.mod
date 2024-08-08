@@ -34,7 +34,7 @@ require (
 	github.com/otiai10/copy v1.14.0
 	github.com/prometheus/procfs v0.15.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/skeema/knownhosts v1.2.2
+	github.com/skeema/knownhosts v1.3.0
 	github.com/stretchr/testify v1.9.0
 	github.com/tailscale/hujson v0.0.0-20221223112325-20486734a56a
 	go.uber.org/mock v0.4.0
