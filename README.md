@@ -176,7 +176,7 @@ resource "docker_container" "dev" {
 If `ENVBUILDER_GIT_URL` does not start with `http://` or `https://`,
 envbuilder will assume SSH authentication. You have the following options:
 
-1. Public/Private key authentication: set `ENVBUILDER_GIT_SSH_KEY_PATH` to the path of an
+1. Public/Private key authentication: set `ENVBUILDER_GIT_SSH_PRIVATE_KEY_PATH` to the path of an
    SSH private key mounted inside the container. Envbuilder will use this SSH
    key to authenticate. Example:
 
@@ -185,7 +185,7 @@ envbuilder will assume SSH authentication. You have the following options:
       -v /tmp/envbuilder:/workspaces \
       -e ENVBUILDER_GIT_URL=git@example.com:path/to/private/repo.git \
       -e ENVBUILDER_INIT_SCRIPT=bash \
-      -e ENVBUILDER_GIT_SSH_KEY_PATH=/.ssh/id_rsa \
+      -e ENVBUILDER_GIT_SSH_PRIVATE_KEY_PATH=/.ssh/id_rsa \
       -v /home/user/id_rsa:/.ssh/id_rsa \
       ghcr.io/coder/envbuilder
    ```
