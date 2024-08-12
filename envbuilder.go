@@ -116,7 +116,8 @@ func Run(ctx context.Context, opts options.Options) error {
 			newColor(color.FgCyan).Sprintf(cloneOpts.Path),
 		)
 
-		w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, line) })
+		stageNum := stageNumber
+		w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNum, line) })
 		defer w.Close()
 		cloneOpts.Progress = w
 
@@ -132,6 +133,8 @@ func Run(ctx context.Context, opts options.Options) error {
 			opts.Logger(log.LevelError, "Falling back to the default image...")
 		}
 
+		_ = w.Close()
+
 		// Always clone the repo in remote repo build mode into a location that
 		// we control that isn't affected by the users changes.
 		if opts.RemoteRepoBuildMode {
@@ -146,7 +149,8 @@ func Run(ctx context.Context, opts options.Options) error {
 				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
 			)
 
-			w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, line) })
+			stageNum := stageNumber
+			w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNum, line) })
 			defer w.Close()
 			cloneOpts.Progress = w
 
@@ -158,6 +162,8 @@ func Run(ctx context.Context, opts options.Options) error {
 				opts.Logger(log.LevelError, "Failed to clone repository for remote repo mode: %s", fallbackErr.Error())
 				opts.Logger(log.LevelError, "Falling back to the default image...")
 			}
+
+			_ = w.Close()
 		}
 	}
 
@@ -893,7 +899,8 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
 			)
 
-			w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, line) })
+			stageNum := stageNumber
+			w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNum, line) })
 			defer w.Close()
 			cloneOpts.Progress = w
 
@@ -908,6 +915,8 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 				opts.Logger(log.LevelError, "Failed to clone repository: %s", fallbackErr.Error())
 				opts.Logger(log.LevelError, "Falling back to the default image...")
 			}
+
+			_ = w.Close()
 		} else {
 			cloneOpts, err := git.CloneOptionsFromOptions(opts)
 			if err != nil {
@@ -920,7 +929,8 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
 			)
 
-			w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, line) })
+			stageNum := stageNumber
+			w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNum, line) })
 			defer w.Close()
 			cloneOpts.Progress = w
 
@@ -932,6 +942,8 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 				opts.Logger(log.LevelError, "Failed to clone repository for remote repo mode: %s", fallbackErr.Error())
 				opts.Logger(log.LevelError, "Falling back to the default image...")
 			}
+
+			_ = w.Close()
 		}
 	}
 
