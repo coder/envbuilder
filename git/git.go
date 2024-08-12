@@ -317,12 +317,14 @@ func CloneOptionsFromOptions(options options.Options) (CloneRepoOptions, error) 
 
 type progressWriter struct {
 	io.WriteCloser
-	r io.ReadCloser
+	r    io.ReadCloser
+	done chan struct{}
 }
 
 func (w *progressWriter) Close() error {
-	err := w.r.Close()
-	err2 := w.WriteCloser.Close()
+	err := w.WriteCloser.Close()
+	<-w.done
+	err2 := w.r.Close()
 	if err != nil {
 		return err
 	}
@@ -331,7 +333,9 @@ func (w *progressWriter) Close() error {
 
 func ProgressWriter(write func(line string)) io.WriteCloser {
 	reader, writer := io.Pipe()
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		data := make([]byte, 4096)
 		for {
 			read, err := reader.Read(data)
@@ -351,5 +355,6 @@ func ProgressWriter(write func(line string)) io.WriteCloser {
 	return &progressWriter{
 		WriteCloser: writer,
 		r:           reader,
+		done:        done,
 	}
 }
