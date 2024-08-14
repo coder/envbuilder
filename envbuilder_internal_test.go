@@ -1,14 +1,46 @@
 package envbuilder
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/coder/envbuilder/options"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRunCacheProbe(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name          string
+		files         map[string]string
+		mutateOptions func(*options.Options)
+		assertImage   func(v1.Image)
+		assertError   func(error)
+	}{} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if tc.assertError == nil && tc.assertImage == nil {
+				require.Failf(t, "%s: either assertError or assertImage must be defined", tc.name)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			t.Cleanup(cancel)
+			var opts options.Options
+			img, err := RunCacheProbe(ctx, opts)
+			if tc.assertImage != nil {
+				tc.assertImage(img)
+			}
+			if tc.assertError != nil {
+				tc.assertError(err)
+			}
+		})
+	}
+}
 
 func TestFindDevcontainerJSON(t *testing.T) {
 	t.Parallel()
