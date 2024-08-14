@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"sync"
@@ -14,8 +15,10 @@ import (
 
 	gossh "golang.org/x/crypto/ssh"
 
+	"github.com/coder/envbuilder/testutil/mwtest"
 	"github.com/gliderlabs/ssh"
 	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
@@ -27,6 +30,33 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/stretchr/testify/require"
 )
+
+type Options struct {
+	Files    map[string]string
+	Username string
+	Password string
+	AuthMW   func(http.Handler) http.Handler
+	TLS      bool
+}
+
+// CreateGitServer creates a git repository with an in-memory filesystem
+// and serves it over HTTP using a httptest.Server.
+func CreateGitServer(t *testing.T, opts Options) *httptest.Server {
+	t.Helper()
+	if opts.AuthMW == nil {
+		opts.AuthMW = mwtest.BasicAuthMW(opts.Username, opts.Password)
+	}
+	commits := make([]CommitFunc, 0)
+	for path, content := range opts.Files {
+		commits = append(commits, Commit(t, path, content, "my test commit"))
+	}
+	fs := memfs.New()
+	_ = NewRepo(t, fs, commits...)
+	if opts.TLS {
+		return httptest.NewTLSServer(opts.AuthMW(NewServer(fs)))
+	}
+	return httptest.NewServer(opts.AuthMW(NewServer(fs)))
+}
 
 // NewServer returns a http.Handler that serves a git repository.
 // It's expected that the repository is already initialized by the caller.
