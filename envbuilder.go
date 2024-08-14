@@ -948,7 +948,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	}
 
 	defaultBuildParams := func() (*devcontainer.Compiled, error) {
-		dockerfile := filepath.Join(constants.MagicDir, "Dockerfile")
+		dockerfile := filepath.Join(buildTimeWorkspaceFolder, "Dockerfile")
 		file, err := opts.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, err
@@ -970,7 +970,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		return &devcontainer.Compiled{
 			DockerfilePath:    dockerfile,
 			DockerfileContent: content,
-			BuildContext:      constants.MagicDir,
+			BuildContext:      buildTimeWorkspaceFolder,
 		}, nil
 	}
 
@@ -1010,7 +1010,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 					opts.Logger(log.LevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
-				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, constants.MagicDir, fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
+				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, buildTimeWorkspaceFolder, fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
 				if err != nil {
 					return nil, fmt.Errorf("compile devcontainer.json: %w", err)
 				}
