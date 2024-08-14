@@ -1242,6 +1242,112 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.NotEmpty(t, strings.TrimSpace(out))
 	})
 
+	t.Run("CacheAndPushDevcontainerOnly", func(t *testing.T) {
+		t.Parallel()
+
+		srv := gittest.CreateGitServer(t, gittest.Options{
+			Files: map[string]string{
+				".devcontainer/devcontainer.json": fmt.Sprintf(`{"image": %q}`, testImageAlpine),
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, runOpts{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+		}})
+		require.ErrorContains(t, err, "error probing build cache: uncached COPY command")
+		// Then: it should fail to build the image and nothing should be pushed
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_, err = runEnvbuilder(t, runOpts{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("PUSH_IMAGE", "1"),
+		}})
+		require.NoError(t, err)
+
+		// Then: the image should be pushed
+		img, err := remote.Image(ref)
+		require.NoError(t, err, "expected image to be present after build + push")
+
+		// Then: the image should have its directives replaced with those required
+		// to run envbuilder automatically
+		configFile, err := img.ConfigFile()
+		require.NoError(t, err, "expected image to return a config file")
+
+		assert.Equal(t, "root", configFile.Config.User, "user must be root")
+		assert.Equal(t, "/", configFile.Config.WorkingDir, "workdir must be /")
+		if assert.Len(t, configFile.Config.Entrypoint, 1) {
+			assert.Equal(t, "/.envbuilder/bin/envbuilder", configFile.Config.Entrypoint[0], "incorrect entrypoint")
+		}
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		ctrID, err := runEnvbuilder(t, runOpts{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+		}})
+		require.NoError(t, err)
+
+		// Then: the cached image ref should be emitted in the container logs
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer cli.Close()
+		logs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
+			ShowStdout: true,
+			ShowStderr: true,
+		})
+		require.NoError(t, err)
+		defer logs.Close()
+		logBytes, err := io.ReadAll(logs)
+		require.NoError(t, err)
+		require.Regexp(t, `ENVBUILDER_CACHED_IMAGE=(\S+)`, string(logBytes))
+
+		// When: we pull the image we just built
+		rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = rc.Close() })
+		_, err = io.ReadAll(rc)
+		require.NoError(t, err)
+
+		// When: we run the image we just built
+		ctr, err := cli.ContainerCreate(ctx, &container.Config{
+			Image:      ref.String(),
+			Entrypoint: []string{"sleep", "infinity"},
+			Labels: map[string]string{
+				testContainerLabel: "true",
+			},
+		}, nil, nil, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+				RemoveVolumes: true,
+				Force:         true,
+			})
+		})
+		err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
+		require.NoError(t, err)
+
+		// Then: the envbuilder binary exists in the image!
+		out := execContainer(t, ctr.ID, "/.envbuilder/bin/envbuilder --help")
+		require.Regexp(t, `(?s)^USAGE:\s+envbuilder`, strings.TrimSpace(out))
+		require.NotEmpty(t, strings.TrimSpace(out))
+	})
+
 	t.Run("CacheAndPushAuth", func(t *testing.T) {
 		t.Parallel()
 
