@@ -19,13 +19,13 @@ require (
 	github.com/coder/serpent v0.7.0
 	github.com/containerd/containerd v1.7.15
 	github.com/distribution/distribution/v3 v3.0.0-alpha.1
-	github.com/docker/cli v27.1.1+incompatible
+	github.com/docker/cli v26.1.5+incompatible
 	github.com/docker/docker v26.1.5+incompatible
 	github.com/fatih/color v1.17.0
 	github.com/gliderlabs/ssh v0.3.7
 	github.com/go-git/go-billy/v5 v5.5.0
 	github.com/go-git/go-git/v5 v5.12.0
-	github.com/google/go-containerregistry v0.20.2
+	github.com/google/go-containerregistry v0.20.1
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
