@@ -17,7 +17,7 @@ require (
 	github.com/coder/coder/v2 v2.10.1-0.20240704130443-c2d44d16a352
 	github.com/coder/retry v1.5.1
 	github.com/coder/serpent v0.7.0
-	github.com/containerd/containerd v1.7.19
+	github.com/containerd/platforms v0.2.1
 	github.com/distribution/distribution/v3 v3.0.0-alpha.1
 	github.com/docker/cli v27.0.3+incompatible
 	github.com/docker/docker v26.1.5+incompatible
@@ -106,12 +106,12 @@ require (
 	github.com/coder/terraform-provider-coder v0.23.0 // indirect
 	github.com/containerd/cgroups v1.1.0 // indirect
 	github.com/containerd/cgroups/v3 v3.0.2 // indirect
+	github.com/containerd/containerd v1.7.19 // indirect
 	github.com/containerd/containerd/api v1.7.19 // indirect
 	github.com/containerd/continuity v0.4.3 // indirect
 	github.com/containerd/errdefs v0.1.0 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
-	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.15.1 // indirect
 	github.com/containerd/ttrpc v1.2.5 // indirect
 	github.com/containerd/typeurl/v2 v2.1.1 // indirect
