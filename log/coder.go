@@ -19,7 +19,10 @@ import (
 )
 
 var (
-	rpcConnectTimeout  = 10 * time.Second
+	// We set a relatively high connection timeout for the initial connection.
+	// There is an unfortunate race between the envbuilder container starting and the
+	// associated provisioner job completing.
+	rpcConnectTimeout  = 30 * time.Second
 	logSendGracePeriod = 10 * time.Second
 	minAgentAPIV2      = "v2.9"
 )
