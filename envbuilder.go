@@ -37,7 +37,7 @@ import (
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/coder/envbuilder/internal/ebutil"
 	"github.com/coder/envbuilder/log"
-	"github.com/containerd/containerd/platforms"
+	"github.com/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry/handlers"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
