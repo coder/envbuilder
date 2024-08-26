@@ -1485,14 +1485,6 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 	})
 
 	t.Run("CacheAndPushMultistage", func(t *testing.T) {
-		// Currently fails with:
-		//         /home/coder/src/coder/envbuilder/integration/integration_test.go:1417: "error: unable to get cached image: error fake building stage: failed to optimize instructions: failed to get files used from context: failed to get fileinfo for /.envbuilder/0/root/date.txt: lstat /.envbuilder/0/root/date.txt: no such file or directory"
-		// /home/coder/src/coder/envbuilder/integration/integration_test.go:1156:
-		// Error Trace:	/home/coder/src/coder/envbuilder/integration/integration_test.go:1156
-		// Error:      	Received unexpected error:
-		// error: unable to get cached image: error fake building stage: failed to optimize instructions: failed to get files used from context: failed to get fileinfo for /.envbuilder/0/root/date.txt: lstat /.envbuilder/0/root/date.txt: no such file or directory
-		// Test:       	TestPushImage/CacheAndPushMultistage
-		t.Skip("TODO: https://github.com/coder/envbuilder/issues/230")
 		t.Parallel()
 
 		srv := gittest.CreateGitServer(t, gittest.Options{
