@@ -278,9 +278,13 @@ func Run(ctx context.Context, opts options.Options) error {
 		}
 	}
 
-	HijackLogrus(func(entry *logrus.Entry) {
+	lvl := log.LevelInfo
+	if opts.Verbose {
+		lvl = log.LevelDebug
+	}
+	log.HijackLogrus(lvl, func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
-			opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, color.HiBlackString(line))
+			opts.Logger(log.FromLogrus(entry.Level), "#%d: %s", stageNumber, color.HiBlackString(line))
 		}
 	})
 
@@ -1050,9 +1054,13 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		return nil, fmt.Errorf("no Dockerfile or devcontainer.json found")
 	}
 
-	HijackLogrus(func(entry *logrus.Entry) {
+	lvl := log.LevelInfo
+	if opts.Verbose {
+		lvl = log.LevelDebug
+	}
+	log.HijackLogrus(lvl, func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
-			opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, color.HiBlackString(line))
+			opts.Logger(log.FromLogrus(entry.Level), "#%d: %s", stageNumber, color.HiBlackString(line))
 		}
 	})
 
