@@ -27,6 +27,7 @@ import (
 	"github.com/coder/envbuilder/buildinfo"
 	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/git"
+	"github.com/coder/envbuilder/log/hijack"
 	"github.com/coder/envbuilder/options"
 	"github.com/go-git/go-billy/v5"
 
@@ -278,7 +279,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		}
 	}
 
-	HijackLogrus(func(entry *logrus.Entry) {
+	hijack.Logrus(func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
 			opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, color.HiBlackString(line))
 		}
@@ -1050,7 +1051,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		return nil, fmt.Errorf("no Dockerfile or devcontainer.json found")
 	}
 
-	HijackLogrus(func(entry *logrus.Entry) {
+	hijack.Logrus(func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
 			opts.Logger(log.LevelInfo, "#%d: %s", stageNumber, color.HiBlackString(line))
 		}
