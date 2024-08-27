@@ -90,9 +90,9 @@ func TestLogrus_Error(t *testing.T) {
 		// The following should be filtered out.
 		logrus.Trace("Tracing!")
 		logrus.Debug("Debugging!")
-		// We should receive the below.
 		logrus.Info("Testing!")
 		logrus.Warn("Warning!")
+		// We should receive the below.
 		logrus.Error("Error!")
 	}()
 
