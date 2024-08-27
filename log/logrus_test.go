@@ -1,4 +1,4 @@
-package hijack_test
+package log_test
 
 import (
 	"context"
@@ -6,12 +6,11 @@ import (
 	"time"
 
 	"github.com/coder/envbuilder/log"
-	"github.com/coder/envbuilder/log/hijack"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
-func TestLogrus_Info(t *testing.T) {
+func TestHijackLogrus_Info(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	t.Cleanup(cancel)
 	messages := make(chan *logrus.Entry)
@@ -21,7 +20,7 @@ func TestLogrus_Info(t *testing.T) {
 		messages <- entry
 	}
 
-	hijack.Logrus(log.LevelInfo, logf)
+	log.HijackLogrus(log.LevelInfo, logf)
 
 	done := make(chan struct{})
 	go func() {
@@ -41,7 +40,7 @@ func TestLogrus_Info(t *testing.T) {
 	<-done
 }
 
-func TestLogrus_Debug(t *testing.T) {
+func TestHijackLogrus_Debug(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	t.Cleanup(cancel)
 	messages := make(chan *logrus.Entry)
@@ -51,7 +50,7 @@ func TestLogrus_Debug(t *testing.T) {
 		messages <- entry
 	}
 
-	hijack.Logrus(log.LevelDebug, logf)
+	log.HijackLogrus(log.LevelDebug, logf)
 
 	done := make(chan struct{})
 	go func() {
@@ -72,7 +71,7 @@ func TestLogrus_Debug(t *testing.T) {
 	<-done
 }
 
-func TestLogrus_Error(t *testing.T) {
+func TestHijackLogrus_Error(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	t.Cleanup(cancel)
 	messages := make(chan *logrus.Entry)
@@ -82,7 +81,7 @@ func TestLogrus_Error(t *testing.T) {
 		messages <- entry
 	}
 
-	hijack.Logrus(log.LevelError, logf)
+	log.HijackLogrus(log.LevelError, logf)
 
 	done := make(chan struct{})
 	go func() {

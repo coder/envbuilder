@@ -27,7 +27,6 @@ import (
 	"github.com/coder/envbuilder/buildinfo"
 	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/git"
-	"github.com/coder/envbuilder/log/hijack"
 	"github.com/coder/envbuilder/options"
 	"github.com/go-git/go-billy/v5"
 
@@ -283,9 +282,9 @@ func Run(ctx context.Context, opts options.Options) error {
 	if opts.Verbose {
 		lvl = log.LevelDebug
 	}
-	hijack.Logrus(lvl, func(entry *logrus.Entry) {
+	log.HijackLogrus(lvl, func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
-			opts.Logger(hijack.LogLevel(entry.Level), "#%d: %s", stageNumber, color.HiBlackString(line))
+			opts.Logger(log.FromLogrus(entry.Level), "#%d: %s", stageNumber, color.HiBlackString(line))
 		}
 	})
 
@@ -1059,9 +1058,9 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	if opts.Verbose {
 		lvl = log.LevelDebug
 	}
-	hijack.Logrus(lvl, func(entry *logrus.Entry) {
+	log.HijackLogrus(lvl, func(entry *logrus.Entry) {
 		for _, line := range strings.Split(entry.Message, "\r") {
-			opts.Logger(hijack.LogLevel(entry.Level), "#%d: %s", stageNumber, color.HiBlackString(line))
+			opts.Logger(log.FromLogrus(entry.Level), "#%d: %s", stageNumber, color.HiBlackString(line))
 		}
 	})
 
