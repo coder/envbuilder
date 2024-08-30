@@ -99,13 +99,14 @@ jobs:
       - name: Build
         if: github.event_name == 'pull_request'
         run: |
-          BASE=ghcr.io/coder/envbuilder-preview
+          ./scripts/build.sh \
+            --arch=amd64
 
           ./scripts/build.sh \
-            --arch=amd64 \
-            --arch=arm64 \
-            --arch=arm \
-            --base=$BASE
+            --arch=arm64
+
+          ./scripts/build.sh \
+            --arch=arm
 
       - name: Build and Push
         if: github.ref == 'refs/heads/main'
