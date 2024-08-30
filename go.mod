@@ -39,7 +39,7 @@ require (
 	github.com/tailscale/hujson v0.0.0-20221223112325-20486734a56a
 	go.uber.org/mock v0.4.0
 	golang.org/x/crypto v0.26.0
-	golang.org/x/mod v0.18.0
+	golang.org/x/mod v0.20.0
 	golang.org/x/sync v0.8.0
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028
 )
