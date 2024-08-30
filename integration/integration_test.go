@@ -1489,10 +1489,22 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 
 		srv := gittest.CreateGitServer(t, gittest.Options{
 			Files: map[string]string{
-				"Dockerfile": fmt.Sprintf(`FROM %s AS a
-RUN date --utc > /root/date.txt
-FROM %s as b
-COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
+				"Dockerfile": fmt.Sprintf(`
+FROM %[1]s AS prebuild
+RUN mkdir /the-past /the-future \
+	&& echo "hello from the past" > /the-past/hello.txt \
+	&& cd /the-past \
+	&& ln -s hello.txt hello.link \
+	&& echo "hello from the future" > /the-future/hello.txt
+
+FROM %[1]s
+USER root
+ARG WORKDIR=/
+WORKDIR $WORKDIR
+ENV FOO=bar
+COPY --from=prebuild /the-past /the-past
+COPY --from=prebuild /the-future/hello.txt /the-future/hello.txt
+`, testImageAlpine),
 			},
 		})
 
@@ -1517,16 +1529,122 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		ctrID, err := runEnvbuilder(t, runOpts{env: []string{
+		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("PUSH_IMAGE", "1"),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		}})
 		require.NoError(t, err)
-		// Then: The file copied from stage a should be present
-		out := execContainer(t, ctrID, "cat /date.txt")
-		require.NotEmpty(t, out)
+
+		// Then: the image should be pushed
+		_, err = remote.Image(ref)
+		require.NoError(t, err, "expected image to be present after build + push")
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		ctrID, err := runEnvbuilder(t, runOpts{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.NoError(t, err)
+
+		// Then: the cached image ref should be emitted in the container logs
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer cli.Close()
+		logs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
+			ShowStdout: true,
+			ShowStderr: true,
+		})
+		require.NoError(t, err)
+		defer logs.Close()
+		logBytes, err := io.ReadAll(logs)
+		require.NoError(t, err)
+		require.Regexp(t, `ENVBUILDER_CACHED_IMAGE=(\S+)`, string(logBytes))
+
+		// When: we pull the image we just built
+		rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = rc.Close() })
+		_, err = io.ReadAll(rc)
+		require.NoError(t, err)
+
+		// When: we run the image we just built
+		ctr, err := cli.ContainerCreate(ctx, &container.Config{
+			Image:      ref.String(),
+			Entrypoint: []string{"sleep", "infinity"},
+			Labels: map[string]string{
+				testContainerLabel: "true",
+			},
+		}, nil, nil, nil, "")
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+				RemoveVolumes: true,
+				Force:         true,
+			})
+		})
+		err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
+		require.NoError(t, err)
+
+		// Then: The files from the prebuild stage are present.
+		out := execContainer(t, ctr.ID, "/bin/sh -c 'cat /the-past/hello.txt /the-future/hello.txt; readlink -f /the-past/hello.link'")
+		require.Equal(t, "hello from the past\nhello from the future\n/the-past/hello.txt", strings.TrimSpace(out))
+	})
+
+	t.Run("MultistgeCacheMissAfterChange", func(t *testing.T) {
+		t.Parallel()
+		dockerfilePrebuildContents := fmt.Sprintf(`
+FROM %[1]s AS prebuild
+RUN mkdir /the-past /the-future \
+	&& echo "hello from the past" > /the-past/hello.txt \
+	&& cd /the-past \
+	&& ln -s hello.txt hello.link \
+	&& echo "hello from the future" > /the-future/hello.txt
+
+# Workaround for https://github.com/coder/envbuilder/issues/231
+FROM %[1]s
+`, testImageAlpine)
+
+		dockerfileContents := fmt.Sprintf(`
+FROM %s
+USER root
+ARG WORKDIR=/
+WORKDIR $WORKDIR
+ENV FOO=bar
+COPY --from=prebuild /the-past /the-past
+COPY --from=prebuild /the-future/hello.txt /the-future/hello.txt
+RUN echo $FOO > /root/foo.txt
+RUN date --utc > /root/date.txt
+`, testImageAlpine)
+
+		newServer := func(dockerfile string) *httptest.Server {
+			return gittest.CreateGitServer(t, gittest.Options{
+				Files: map[string]string{"Dockerfile": dockerfile},
+			})
+		}
+		srv := newServer(dockerfilePrebuildContents + dockerfileContents)
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_, err = runEnvbuilder(t, runOpts{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("PUSH_IMAGE", "1"),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.NoError(t, err)
 
 		// Then: the image should be pushed
 		_, err = remote.Image(ref)
@@ -1540,6 +1658,33 @@ COPY --from=a /root/date.txt /date.txt`, testImageAlpine, testImageAlpine),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 		}})
 		require.NoError(t, err)
+
+		// When: we change the Dockerfile
+		srv.Close()
+		dockerfilePrebuildContents = strings.Replace(dockerfilePrebuildContents, "hello from the future", "hello from the future, but different", 1)
+		srv = newServer(dockerfilePrebuildContents)
+
+		// When: we rebuild the prebuild stage so that the cache is created
+		_, err = runEnvbuilder(t, runOpts{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("PUSH_IMAGE", "1"),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}})
+		require.NoError(t, err)
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should still fail
+		// on the second stage because the first stage file has changed.
+		srv.Close()
+		srv = newServer(dockerfilePrebuildContents + dockerfileContents)
+		_, err = runEnvbuilder(t, runOpts{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			envbuilderEnv("VERBOSE", "1"),
+		}})
+		require.ErrorContains(t, err, "error probing build cache: uncached COPY command")
 	})
 
 	t.Run("PushImageRequiresCache", func(t *testing.T) {
