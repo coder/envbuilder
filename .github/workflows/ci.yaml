@@ -103,6 +103,8 @@ jobs:
 
           ./scripts/build.sh \
             --arch=amd64 \
+            --arch=arm64 \
+            --arch=arm \
             --base=$BASE
 
       - name: Build and Push
