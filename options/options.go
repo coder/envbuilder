@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/coder/envbuilder/constants"
@@ -166,6 +167,11 @@ type Options struct {
 	// attempting to probe the build cache. This is only relevant when
 	// GetCachedImage is true.
 	BinaryPath string
+
+	// MagicDir is the path to the directory where all envbuilder files should be
+	// stored. By default, this is set to `/.envbuilder`. This is intentionally
+	// excluded from the CLI options.
+	MagicDir constants.MagicDir
 }
 
 const envPrefix = "ENVBUILDER_"
@@ -459,7 +465,7 @@ func (o *Options) CLI() serpent.OptionSet {
 			Flag:        "remote-repo-dir",
 			Env:         WithEnvPrefix("REMOTE_REPO_DIR"),
 			Value:       serpent.StringOf(&o.RemoteRepoDir),
-			Default:     constants.MagicRemoteRepoDir,
+			Default:     filepath.Join(constants.MagicDir("").String(), "repo"),
 			Hidden:      true,
 			Description: "Specify the destination directory for the cloned repo when using remote repo build mode.",
 		},
