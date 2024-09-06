@@ -1497,9 +1497,15 @@ func initDockerConfigJSON(logf log.Func, magicDir magicdir.MagicDir, dockerConfi
 		return noop, fmt.Errorf("write docker config: %w", err)
 	}
 	logf(log.LevelInfo, "Wrote Docker config JSON to %s", cfgPath)
+	oldDockerConfig := os.Getenv("DOCKER_CONFIG")
+	os.Setenv("DOCKER_CONFIG", magicDir.String())
+	logf(log.LevelInfo, "Set DOCKER_CONFIG to %s", magicDir.String())
 	cleanup := func() error {
 		var cleanupErr error
 		cleanupOnce.Do(func() {
+			// Restore the old DOCKER_CONFIG value.
+			os.Setenv("DOCKER_CONFIG", oldDockerConfig)
+			logf(log.LevelInfo, "Restored DOCKER_CONFIG to %s", oldDockerConfig)
 			// Remove the Docker config secret file!
 			if cleanupErr = os.Remove(cfgPath); err != nil {
 				if !errors.Is(err, fs.ErrNotExist) {
