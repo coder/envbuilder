@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/coder/envbuilder/buildinfo"
-	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/git"
 	"github.com/coder/envbuilder/options"
 	"github.com/go-git/go-billy/v5"
@@ -36,6 +35,7 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/util"
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/coder/envbuilder/internal/ebutil"
+	"github.com/coder/envbuilder/internal/magicdir"
 	"github.com/coder/envbuilder/log"
 	"github.com/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
@@ -51,6 +51,9 @@ import (
 	"github.com/tailscale/hujson"
 	"golang.org/x/xerrors"
 )
+
+// ErrNoFallbackImage is returned when no fallback image has been specified.
+var ErrNoFallbackImage = errors.New("no fallback image has been specified")
 
 // DockerConfig represents the Docker configuration file.
 type DockerConfig configfile.ConfigFile
@@ -68,6 +71,9 @@ func Run(ctx context.Context, opts options.Options) error {
 	if opts.CacheRepo == "" && opts.PushImage {
 		return fmt.Errorf("--cache-repo must be set when using --push-image")
 	}
+
+	magicDir := magicdir.At(opts.MagicDirBase)
+
 	// Default to the shell!
 	initArgs := []string{"-c", opts.InitScript}
 	if opts.InitArgs != "" {
@@ -92,7 +98,7 @@ func Run(ctx context.Context, opts options.Options) error {
 
 	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"), buildinfo.Version())
 
-	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.DockerConfigBase64)
+	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.Logger, magicDir, opts.DockerConfigBase64)
 	if err != nil {
 		return err
 	}
@@ -168,7 +174,7 @@ func Run(ctx context.Context, opts options.Options) error {
 	}
 
 	defaultBuildParams := func() (*devcontainer.Compiled, error) {
-		dockerfile := filepath.Join(constants.MagicDir, "Dockerfile")
+		dockerfile := magicDir.Join("Dockerfile")
 		file, err := opts.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, err
@@ -176,11 +182,11 @@ func Run(ctx context.Context, opts options.Options) error {
 		defer file.Close()
 		if opts.FallbackImage == "" {
 			if fallbackErr != nil {
-				return nil, xerrors.Errorf("%s: %w", fallbackErr.Error(), constants.ErrNoFallbackImage)
+				return nil, xerrors.Errorf("%s: %w", fallbackErr.Error(), ErrNoFallbackImage)
 			}
 			// We can't use errors.Join here because our tests
 			// don't support parsing a multiline error.
-			return nil, constants.ErrNoFallbackImage
+			return nil, ErrNoFallbackImage
 		}
 		content := "FROM " + opts.FallbackImage
 		_, err = file.Write([]byte(content))
@@ -190,7 +196,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		return &devcontainer.Compiled{
 			DockerfilePath:    dockerfile,
 			DockerfileContent: content,
-			BuildContext:      constants.MagicDir,
+			BuildContext:      magicDir.Path(),
 		}, nil
 	}
 
@@ -232,7 +238,7 @@ func Run(ctx context.Context, opts options.Options) error {
 					opts.Logger(log.LevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
-				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, constants.MagicDir, fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
+				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, magicDir.Path(), fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
 				if err != nil {
 					return fmt.Errorf("compile devcontainer.json: %w", err)
 				}
@@ -304,7 +310,7 @@ func Run(ctx context.Context, opts options.Options) error {
 	// So we add them to the default ignore list. See:
 	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
 	ignorePaths := append([]string{
-		constants.MagicDir,
+		magicDir.Path(),
 		opts.WorkspaceFolder,
 		// See: https://github.com/coder/envbuilder/issues/37
 		"/etc/resolv.conf",
@@ -332,31 +338,25 @@ func Run(ctx context.Context, opts options.Options) error {
 		if err := util.AddAllowedPathToDefaultIgnoreList(opts.BinaryPath); err != nil {
 			return fmt.Errorf("add envbuilder binary to ignore list: %w", err)
 		}
-		if err := util.AddAllowedPathToDefaultIgnoreList(constants.MagicImage); err != nil {
+		if err := util.AddAllowedPathToDefaultIgnoreList(magicDir.Image()); err != nil {
 			return fmt.Errorf("add magic image file to ignore list: %w", err)
 		}
-		magicTempDir := filepath.Join(buildParams.BuildContext, constants.MagicTempDir)
-		if err := opts.Filesystem.MkdirAll(magicTempDir, 0o755); err != nil {
+		magicTempDir := magicdir.At(buildParams.BuildContext, magicdir.TempDir)
+		if err := opts.Filesystem.MkdirAll(magicTempDir.Path(), 0o755); err != nil {
 			return fmt.Errorf("create magic temp dir in build context: %w", err)
 		}
 		// Add the magic directives that embed the binary into the built image.
-		buildParams.DockerfileContent += constants.MagicDirectives
+		buildParams.DockerfileContent += magicdir.Directives
 		// Copy the envbuilder binary into the build context.
 		// External callers will need to specify the path to the desired envbuilder binary.
-		envbuilderBinDest := filepath.Join(
-			magicTempDir,
-			filepath.Base(constants.MagicBinaryLocation),
-		)
+		envbuilderBinDest := filepath.Join(magicTempDir.Path(), "envbuilder")
 		// Also touch the magic file that signifies the image has been built!
-		magicImageDest := filepath.Join(
-			magicTempDir,
-			filepath.Base(constants.MagicImage),
-		)
+		magicImageDest := magicTempDir.Image()
 		// Clean up after build!
 		var cleanupOnce sync.Once
 		cleanupBuildContext = func() {
 			cleanupOnce.Do(func() {
-				for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir} {
+				for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir.Path()} {
 					if err := opts.Filesystem.Remove(path); err != nil {
 						opts.Logger(log.LevelWarn, "failed to clean up magic temp dir from build context: %w", err)
 					}
@@ -370,15 +370,14 @@ func Run(ctx context.Context, opts options.Options) error {
 			return fmt.Errorf("copy envbuilder binary to build context: %w", err)
 		}
 
-		opts.Logger(log.LevelDebug, "touching magic image file at %q in build context %q", magicImageDest, buildParams.BuildContext)
+		opts.Logger(log.LevelDebug, "touching magic image file at %q in build context %q", magicImageDest, magicTempDir)
 		if err := touchFile(opts.Filesystem, magicImageDest, 0o755); err != nil {
 			return fmt.Errorf("touch magic image file in build context: %w", err)
 		}
-
 	}
 
 	// temp move of all ro mounts
-	tempRemountDest := filepath.Join("/", constants.MagicDir, "mnt")
+	tempRemountDest := magicDir.Join("mnt")
 	// ignorePrefixes is a superset of ignorePaths that we pass to kaniko's
 	// IgnoreList.
 	ignorePrefixes := append([]string{"/dev", "/proc", "/sys"}, ignorePaths...)
@@ -399,8 +398,8 @@ func Run(ctx context.Context, opts options.Options) error {
 	defer closeStderr()
 	build := func() (v1.Image, error) {
 		defer cleanupBuildContext()
-		_, alreadyBuiltErr := opts.Filesystem.Stat(constants.MagicFile)
-		_, isImageErr := opts.Filesystem.Stat(constants.MagicImage)
+		_, alreadyBuiltErr := opts.Filesystem.Stat(magicDir.Built())
+		_, isImageErr := opts.Filesystem.Stat(magicDir.Image())
 		if (alreadyBuiltErr == nil && opts.SkipRebuild) || isImageErr == nil {
 			endStage := startStage("🏗️ Skipping build because of cache...")
 			imageRef, err := devcontainer.ImageFromDockerfile(buildParams.DockerfileContent)
@@ -545,7 +544,7 @@ func Run(ctx context.Context, opts options.Options) error {
 
 	// Create the magic file to indicate that this build
 	// has already been ran before!
-	file, err := opts.Filesystem.Create(constants.MagicFile)
+	file, err := opts.Filesystem.Create(magicDir.Built())
 	if err != nil {
 		return fmt.Errorf("create magic file: %w", err)
 	}
@@ -752,7 +751,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		opts.Logger(log.LevelInfo, "=== Running the setup command %q as the root user...", opts.SetupScript)
 
 		envKey := "ENVBUILDER_ENV"
-		envFile := filepath.Join("/", constants.MagicDir, "environ")
+		envFile := magicDir.Join("environ")
 		file, err := os.Create(envFile)
 		if err != nil {
 			return fmt.Errorf("create environ file: %w", err)
@@ -862,6 +861,8 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		return nil, fmt.Errorf("--cache-repo must be set when using --get-cached-image")
 	}
 
+	magicDir := magicdir.At(opts.MagicDirBase)
+
 	stageNumber := 0
 	startStage := func(format string, args ...any) func(format string, args ...any) {
 		now := time.Now()
@@ -876,7 +877,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 
 	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"), buildinfo.Version())
 
-	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.DockerConfigBase64)
+	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.Logger, magicDir, opts.DockerConfigBase64)
 	if err != nil {
 		return nil, err
 	}
@@ -960,11 +961,11 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		defer file.Close()
 		if opts.FallbackImage == "" {
 			if fallbackErr != nil {
-				return nil, fmt.Errorf("%s: %w", fallbackErr.Error(), constants.ErrNoFallbackImage)
+				return nil, fmt.Errorf("%s: %w", fallbackErr.Error(), ErrNoFallbackImage)
 			}
 			// We can't use errors.Join here because our tests
 			// don't support parsing a multiline error.
-			return nil, constants.ErrNoFallbackImage
+			return nil, ErrNoFallbackImage
 		}
 		content := "FROM " + opts.FallbackImage
 		_, err = file.Write([]byte(content))
@@ -1080,7 +1081,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// So we add them to the default ignore list. See:
 	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
 	ignorePaths := append([]string{
-		constants.MagicDir,
+		magicDir.Path(),
 		opts.WorkspaceFolder,
 		// See: https://github.com/coder/envbuilder/issues/37
 		"/etc/resolv.conf",
@@ -1103,29 +1104,25 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// build via executor.RunCacheProbe we need to have the *exact* copy of the
 	// envbuilder binary available used to build the image and we also need to
 	// add the magic directives to the Dockerfile content.
-	buildParams.DockerfileContent += constants.MagicDirectives
-	magicTempDir := filepath.Join(buildParams.BuildContext, constants.MagicTempDir)
+	// MAGICDIR
+	buildParams.DockerfileContent += magicdir.Directives
+	magicTempDir := filepath.Join(buildParams.BuildContext, magicdir.TempDir)
 	if err := opts.Filesystem.MkdirAll(magicTempDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create magic temp dir in build context: %w", err)
 	}
-	envbuilderBinDest := filepath.Join(
-		magicTempDir,
-		filepath.Base(constants.MagicBinaryLocation),
-	)
+	envbuilderBinDest := filepath.Join(magicTempDir, "envbuilder")
 
 	// Copy the envbuilder binary into the build context.
-	opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, buildParams.BuildContext)
+	opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
 	if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
 		return nil, xerrors.Errorf("copy envbuilder binary to build context: %w", err)
 	}
 
-	// Also touch the magic file that signifies the image has been built!
-	magicImageDest := filepath.Join(
-		magicTempDir,
-		filepath.Base(constants.MagicImage),
-	)
+	// Also touch the magic file that signifies the image has been built!A
+	magicImageDest := filepath.Join(magicTempDir, "image")
+	opts.Logger(log.LevelDebug, "touching magic image file at %q in build context %q", magicImageDest, magicTempDir)
 	if err := touchFile(opts.Filesystem, magicImageDest, 0o755); err != nil {
-		return nil, fmt.Errorf("touch magic image file in build context: %w", err)
+		return nil, fmt.Errorf("touch magic image file at %q: %w", magicImageDest, err)
 	}
 	defer func() {
 		// Clean up after we're done!
@@ -1417,20 +1414,23 @@ func findDevcontainerJSON(workspaceFolder string, options options.Options) (stri
 // maybeDeleteFilesystem wraps util.DeleteFilesystem with a guard to hopefully stop
 // folks from unwittingly deleting their entire root directory.
 func maybeDeleteFilesystem(logger log.Func, force bool) error {
+	// We always expect the magic directory to be set to the default, signifying that
+	// the user is running envbuilder in a container.
+	// If this is set to anything else we should bail out to prevent accidental data loss.
+	// defaultMagicDir := magicdir.MagicDir("")
 	kanikoDir, ok := os.LookupEnv("KANIKO_DIR")
-	if !ok || strings.TrimSpace(kanikoDir) != constants.MagicDir {
-		if force {
-			bailoutSecs := 10
-			logger(log.LevelWarn, "WARNING! BYPASSING SAFETY CHECK! THIS WILL DELETE YOUR ROOT FILESYSTEM!")
-			logger(log.LevelWarn, "You have %d seconds to bail out!", bailoutSecs)
-			for i := bailoutSecs; i > 0; i-- {
-				logger(log.LevelWarn, "%d...", i)
-				<-time.After(time.Second)
-			}
-		} else {
-			logger(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", constants.MagicDir)
+	if !ok || strings.TrimSpace(kanikoDir) != magicdir.Default.Path() {
+		if !force {
+			logger(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", magicdir.Default.Path())
 			logger(log.LevelError, "To bypass this check, set FORCE_SAFE=true.")
 			return errors.New("safety check failed")
+		}
+		bailoutSecs := 10
+		logger(log.LevelWarn, "WARNING! BYPASSING SAFETY CHECK! THIS WILL DELETE YOUR ROOT FILESYSTEM!")
+		logger(log.LevelWarn, "You have %d seconds to bail out!", bailoutSecs)
+		for i := bailoutSecs; i > 0; i-- {
+			logger(log.LevelWarn, "%d...", i)
+			<-time.After(time.Second)
 		}
 	}
 
@@ -1469,13 +1469,13 @@ func touchFile(fs billy.Filesystem, dst string, mode fs.FileMode) error {
 	return f.Close()
 }
 
-func initDockerConfigJSON(dockerConfigBase64 string) (func() error, error) {
+func initDockerConfigJSON(logf log.Func, magicDir magicdir.MagicDir, dockerConfigBase64 string) (func() error, error) {
 	var cleanupOnce sync.Once
 	noop := func() error { return nil }
 	if dockerConfigBase64 == "" {
 		return noop, nil
 	}
-	cfgPath := filepath.Join(constants.MagicDir, "config.json")
+	cfgPath := filepath.Join(magicDir.Path(), "config.json")
 	decoded, err := base64.StdEncoding.DecodeString(dockerConfigBase64)
 	if err != nil {
 		return noop, fmt.Errorf("decode docker config: %w", err)
@@ -1489,10 +1489,14 @@ func initDockerConfigJSON(dockerConfigBase64 string) (func() error, error) {
 	if err != nil {
 		return noop, fmt.Errorf("parse docker config: %w", err)
 	}
+	for k := range configFile.AuthConfigs {
+		logf(log.LevelInfo, "Docker config contains auth for registry %q", k)
+	}
 	err = os.WriteFile(cfgPath, decoded, 0o644)
 	if err != nil {
 		return noop, fmt.Errorf("write docker config: %w", err)
 	}
+	logf(log.LevelInfo, "Wrote Docker config JSON to %s", cfgPath)
 	cleanup := func() error {
 		var cleanupErr error
 		cleanupOnce.Do(func() {
@@ -1501,7 +1505,7 @@ func initDockerConfigJSON(dockerConfigBase64 string) (func() error, error) {
 				if !errors.Is(err, fs.ErrNotExist) {
 					cleanupErr = fmt.Errorf("remove docker config: %w", cleanupErr)
 				}
-				_, _ = fmt.Fprintf(os.Stderr, "failed to remove the Docker config secret file: %s\n", cleanupErr)
+				logf(log.LevelError, "Failed to remove the Docker config secret file: %s", cleanupErr)
 			}
 		})
 		return cleanupErr
