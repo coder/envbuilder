@@ -23,21 +23,22 @@ const (
 	// MagicTempDir is a directory inside the build context inside which
 	// we place files referenced by MagicDirectives.
 	MagicTempDir = ".envbuilder.tmp"
+)
 
+var (
+	// ErrNoFallbackImage is returned when no fallback image has been specified.
+	ErrNoFallbackImage = errors.New("no fallback image has been specified")
 	// MagicDirectives are directives automatically appended to Dockerfiles
 	// when pushing the image. These directives allow the built image to be
 	// 're-used'.
-	MagicDirectives = `
-COPY --chmod=0755 .envbuilder.tmp/envbuilder /.envbuilder/bin/envbuilder
-COPY --chmod=0644 .envbuilder.tmp/image /.envbuilder/image
+	MagicDirectives = fmt.Sprintf(`
+COPY --chmod=0755 %[1]s/envbuilder %[2]s/bin/envbuilder
+COPY --chmod=0644 %[1]s/image %[2]s/image
 USER root
 WORKDIR /
-ENTRYPOINT ["/.envbuilder/bin/envbuilder"]
-`
+ENTRYPOINT ["%[2]s/bin/envbuilder"]
+`, MagicTempDir, defaultMagicDir)
 )
-
-// ErrNoFallbackImage is returned when no fallback image has been specified.
-var ErrNoFallbackImage = errors.New("no fallback image has been specified")
 
 // MagicDir is a working directory for envbuilder. It
 // will also be present in images built by envbuilder.
