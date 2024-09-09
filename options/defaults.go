@@ -8,6 +8,7 @@ import (
 
 	giturls "github.com/chainguard-dev/git-urls"
 	"github.com/coder/envbuilder/internal/chmodfs"
+	"github.com/coder/envbuilder/internal/magicdir"
 )
 
 // EmptyWorkspaceDir is the path to a workspace that has
@@ -58,7 +59,13 @@ func (o *Options) SetDefaults() {
 	if o.WorkspaceFolder == "" {
 		o.WorkspaceFolder = DefaultWorkspaceFolder(o.GitURL)
 	}
+	if o.RemoteRepoDir == "" {
+		o.RemoteRepoDir = magicdir.Default.Join("repo")
+	}
 	if o.BinaryPath == "" {
 		o.BinaryPath = "/.envbuilder/bin/envbuilder"
+	}
+	if o.MagicDirBase == "" {
+		o.MagicDirBase = magicdir.Default.Path()
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/coder/envbuilder/internal/magicdir"
 	"github.com/coder/envbuilder/log"
 	"github.com/coder/serpent"
 	"github.com/go-git/go-billy/v5"
@@ -461,10 +460,10 @@ func (o *Options) CLI() serpent.OptionSet {
 				"working on the same repository.",
 		},
 		{
-			Flag:        "remote-repo-dir",
-			Env:         WithEnvPrefix("REMOTE_REPO_DIR"),
-			Value:       serpent.StringOf(&o.RemoteRepoDir),
-			Default:     magicdir.Default.Join("repo"),
+			Flag:  "remote-repo-dir",
+			Env:   WithEnvPrefix("REMOTE_REPO_DIR"),
+			Value: serpent.StringOf(&o.RemoteRepoDir),
+			// Default:     magicdir.Default.Join("repo"), // TODO: reinstate once legacy opts are removed.
 			Hidden:      true,
 			Description: "Specify the destination directory for the cloned repo when using remote repo build mode.",
 		},
