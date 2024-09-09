@@ -167,10 +167,10 @@ type Options struct {
 	// GetCachedImage is true.
 	BinaryPath string
 
-	// MagicDir is the path to the directory where all envbuilder files should be
+	// MagicDirBase is the path to the directory where all envbuilder files should be
 	// stored. By default, this is set to `/.envbuilder`. This is intentionally
 	// excluded from the CLI options.
-	MagicDir constants.MagicDir
+	MagicDirBase string
 }
 
 const envPrefix = "ENVBUILDER_"

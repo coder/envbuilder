@@ -52,6 +52,9 @@ type MagicDir struct {
 
 // MagicDirAt returns a MagicDir rooted at filepath.Join(paths...)
 func MagicDirAt(paths ...string) MagicDir {
+	if len(paths) == 0 {
+		return MagicDir{}
+	}
 	return MagicDir{base: filepath.Join(paths...)}
 }
 

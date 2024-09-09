@@ -68,6 +68,9 @@ func Run(ctx context.Context, opts options.Options) error {
 	if opts.CacheRepo == "" && opts.PushImage {
 		return fmt.Errorf("--cache-repo must be set when using --push-image")
 	}
+
+	magicDir := constants.MagicDirAt(opts.MagicDirBase)
+
 	// Default to the shell!
 	initArgs := []string{"-c", opts.InitScript}
 	if opts.InitArgs != "" {
@@ -92,7 +95,7 @@ func Run(ctx context.Context, opts options.Options) error {
 
 	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"), buildinfo.Version())
 
-	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.Logger, opts.MagicDir, opts.DockerConfigBase64)
+	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.Logger, magicDir, opts.DockerConfigBase64)
 	if err != nil {
 		return err
 	}
@@ -168,7 +171,7 @@ func Run(ctx context.Context, opts options.Options) error {
 	}
 
 	defaultBuildParams := func() (*devcontainer.Compiled, error) {
-		dockerfile := filepath.Join(opts.MagicDir.Path(), "Dockerfile")
+		dockerfile := magicDir.Join("Dockerfile")
 		file, err := opts.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, err
@@ -190,7 +193,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		return &devcontainer.Compiled{
 			DockerfilePath:    dockerfile,
 			DockerfileContent: content,
-			BuildContext:      opts.MagicDir.Path(),
+			BuildContext:      magicDir.Path(),
 		}, nil
 	}
 
@@ -232,7 +235,7 @@ func Run(ctx context.Context, opts options.Options) error {
 					opts.Logger(log.LevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
-				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, opts.MagicDir.Path(), fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
+				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, magicDir.Path(), fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
 				if err != nil {
 					return fmt.Errorf("compile devcontainer.json: %w", err)
 				}
@@ -304,7 +307,7 @@ func Run(ctx context.Context, opts options.Options) error {
 	// So we add them to the default ignore list. See:
 	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
 	ignorePaths := append([]string{
-		opts.MagicDir.Path(),
+		magicDir.Path(),
 		opts.WorkspaceFolder,
 		// See: https://github.com/coder/envbuilder/issues/37
 		"/etc/resolv.conf",
@@ -332,7 +335,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		if err := util.AddAllowedPathToDefaultIgnoreList(opts.BinaryPath); err != nil {
 			return fmt.Errorf("add envbuilder binary to ignore list: %w", err)
 		}
-		if err := util.AddAllowedPathToDefaultIgnoreList(opts.MagicDir.Image()); err != nil {
+		if err := util.AddAllowedPathToDefaultIgnoreList(magicDir.Image()); err != nil {
 			return fmt.Errorf("add magic image file to ignore list: %w", err)
 		}
 		magicTempDir := constants.MagicDirAt(buildParams.BuildContext, constants.MagicTempDir)
@@ -371,7 +374,7 @@ func Run(ctx context.Context, opts options.Options) error {
 	}
 
 	// temp move of all ro mounts
-	tempRemountDest := filepath.Join(opts.MagicDir.Path(), "mnt")
+	tempRemountDest := magicDir.Join("mnt")
 	// ignorePrefixes is a superset of ignorePaths that we pass to kaniko's
 	// IgnoreList.
 	ignorePrefixes := append([]string{"/dev", "/proc", "/sys"}, ignorePaths...)
@@ -392,8 +395,8 @@ func Run(ctx context.Context, opts options.Options) error {
 	defer closeStderr()
 	build := func() (v1.Image, error) {
 		defer cleanupBuildContext()
-		_, alreadyBuiltErr := opts.Filesystem.Stat(opts.MagicDir.Built())
-		_, isImageErr := opts.Filesystem.Stat(opts.MagicDir.Image())
+		_, alreadyBuiltErr := opts.Filesystem.Stat(magicDir.Built())
+		_, isImageErr := opts.Filesystem.Stat(magicDir.Image())
 		if (alreadyBuiltErr == nil && opts.SkipRebuild) || isImageErr == nil {
 			endStage := startStage("🏗️ Skipping build because of cache...")
 			imageRef, err := devcontainer.ImageFromDockerfile(buildParams.DockerfileContent)
@@ -538,7 +541,7 @@ func Run(ctx context.Context, opts options.Options) error {
 
 	// Create the magic file to indicate that this build
 	// has already been ran before!
-	file, err := opts.Filesystem.Create(opts.MagicDir.Built())
+	file, err := opts.Filesystem.Create(magicDir.Built())
 	if err != nil {
 		return fmt.Errorf("create magic file: %w", err)
 	}
@@ -745,7 +748,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		opts.Logger(log.LevelInfo, "=== Running the setup command %q as the root user...", opts.SetupScript)
 
 		envKey := "ENVBUILDER_ENV"
-		envFile := filepath.Join(opts.MagicDir.Path(), "environ")
+		envFile := magicDir.Join("environ")
 		file, err := os.Create(envFile)
 		if err != nil {
 			return fmt.Errorf("create environ file: %w", err)
@@ -855,6 +858,8 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		return nil, fmt.Errorf("--cache-repo must be set when using --get-cached-image")
 	}
 
+	magicDir := constants.MagicDirAt(opts.MagicDirBase)
+
 	stageNumber := 0
 	startStage := func(format string, args ...any) func(format string, args ...any) {
 		now := time.Now()
@@ -869,7 +874,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 
 	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"), buildinfo.Version())
 
-	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.Logger, opts.MagicDir, opts.DockerConfigBase64)
+	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.Logger, magicDir, opts.DockerConfigBase64)
 	if err != nil {
 		return nil, err
 	}
@@ -1073,7 +1078,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// So we add them to the default ignore list. See:
 	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
 	ignorePaths := append([]string{
-		opts.MagicDir.Path(),
+		magicDir.Path(),
 		opts.WorkspaceFolder,
 		// See: https://github.com/coder/envbuilder/issues/37
 		"/etc/resolv.conf",
