@@ -39,8 +39,8 @@ ENTRYPOINT ["/.envbuilder/bin/envbuilder"]
 // ErrNoFallbackImage is returned when no fallback image has been specified.
 var ErrNoFallbackImage = errors.New("no fallback image has been specified")
 
-// MagicDir is a working directory for envbuilder. We use this to
-// store files that are used when building images.
+// MagicDir is a working directory for envbuilder. It
+// will also be present in images built by envbuilder.
 type MagicDir string
 
 // String returns the string representation of the MagicDir.
