@@ -345,7 +345,6 @@ func Run(ctx context.Context, opts options.Options) error {
 		// External callers will need to specify the path to the desired envbuilder binary.
 		envbuilderBinDest := filepath.Join(magicTempDir.Path(), "envbuilder")
 		// Also touch the magic file that signifies the image has been built!
-		// magicImageDest := filepath.Join(magicTempDir, "image")
 		magicImageDest := magicTempDir.Image()
 		// Clean up after build!
 		var cleanupOnce sync.Once
