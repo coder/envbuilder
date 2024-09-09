@@ -44,7 +44,7 @@ var ErrNoFallbackImage = errors.New("no fallback image has been specified")
 type MagicDir string
 
 // String returns the string representation of the MagicDir.
-func (m MagicDir) String() string {
+func (m MagicDir) Path() string {
 	if m == "" {
 		// Instead of the zero value, use defaultMagicDir.
 		return defaultMagicDir
@@ -52,15 +52,12 @@ func (m MagicDir) String() string {
 	return filepath.Join("/", string(m))
 }
 
-// MagicDir implements fmt.Stringer.
-var _ fmt.Stringer = MagicDir("")
-
 // MagicFile is a file that is created in the workspace
 // when envbuilder has already been run. This is used
 // to skip building when a container is restarting.
 // e.g. docker stop -> docker start
 func (m MagicDir) Built() string {
-	return filepath.Join(m.String(), "built")
+	return filepath.Join(m.Path(), "built")
 }
 
 // MagicImage is a file that is created in the image when
@@ -68,5 +65,5 @@ func (m MagicDir) Built() string {
 // the destructive initial build step when 'resuming' envbuilder
 // from a previously built image.
 func (m MagicDir) Image() string {
-	return filepath.Join(m.String(), "image")
+	return filepath.Join(m.Path(), "image")
 }

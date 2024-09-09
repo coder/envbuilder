@@ -168,7 +168,7 @@ func Run(ctx context.Context, opts options.Options) error {
 	}
 
 	defaultBuildParams := func() (*devcontainer.Compiled, error) {
-		dockerfile := filepath.Join(opts.MagicDir.String(), "Dockerfile")
+		dockerfile := filepath.Join(opts.MagicDir.Path(), "Dockerfile")
 		file, err := opts.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, err
@@ -190,7 +190,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		return &devcontainer.Compiled{
 			DockerfilePath:    dockerfile,
 			DockerfileContent: content,
-			BuildContext:      opts.MagicDir.String(),
+			BuildContext:      opts.MagicDir.Path(),
 		}, nil
 	}
 
@@ -232,7 +232,7 @@ func Run(ctx context.Context, opts options.Options) error {
 					opts.Logger(log.LevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
-				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, opts.MagicDir.String(), fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
+				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, opts.MagicDir.Path(), fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
 				if err != nil {
 					return fmt.Errorf("compile devcontainer.json: %w", err)
 				}
@@ -304,7 +304,7 @@ func Run(ctx context.Context, opts options.Options) error {
 	// So we add them to the default ignore list. See:
 	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
 	ignorePaths := append([]string{
-		opts.MagicDir.String(),
+		opts.MagicDir.Path(),
 		opts.WorkspaceFolder,
 		// See: https://github.com/coder/envbuilder/issues/37
 		"/etc/resolv.conf",
@@ -336,14 +336,14 @@ func Run(ctx context.Context, opts options.Options) error {
 			return fmt.Errorf("add magic image file to ignore list: %w", err)
 		}
 		magicTempDir := constants.MagicDir(filepath.Join(buildParams.BuildContext, constants.MagicTempDir))
-		if err := opts.Filesystem.MkdirAll(magicTempDir.String(), 0o755); err != nil {
+		if err := opts.Filesystem.MkdirAll(magicTempDir.Path(), 0o755); err != nil {
 			return fmt.Errorf("create magic temp dir in build context: %w", err)
 		}
 		// Add the magic directives that embed the binary into the built image.
 		buildParams.DockerfileContent += constants.MagicDirectives
 		// Copy the envbuilder binary into the build context.
 		// External callers will need to specify the path to the desired envbuilder binary.
-		envbuilderBinDest := filepath.Join(magicTempDir.String(), "envbuilder")
+		envbuilderBinDest := filepath.Join(magicTempDir.Path(), "envbuilder")
 		// Also touch the magic file that signifies the image has been built!
 		// magicImageDest := filepath.Join(magicTempDir, "image")
 		magicImageDest := magicTempDir.Image()
@@ -351,7 +351,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		var cleanupOnce sync.Once
 		cleanupBuildContext = func() {
 			cleanupOnce.Do(func() {
-				for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir.String()} {
+				for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir.Path()} {
 					if err := opts.Filesystem.Remove(path); err != nil {
 						opts.Logger(log.LevelWarn, "failed to clean up magic temp dir from build context: %w", err)
 					}
@@ -372,7 +372,7 @@ func Run(ctx context.Context, opts options.Options) error {
 	}
 
 	// temp move of all ro mounts
-	tempRemountDest := filepath.Join(opts.MagicDir.String(), "mnt")
+	tempRemountDest := filepath.Join(opts.MagicDir.Path(), "mnt")
 	// ignorePrefixes is a superset of ignorePaths that we pass to kaniko's
 	// IgnoreList.
 	ignorePrefixes := append([]string{"/dev", "/proc", "/sys"}, ignorePaths...)
@@ -746,7 +746,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		opts.Logger(log.LevelInfo, "=== Running the setup command %q as the root user...", opts.SetupScript)
 
 		envKey := "ENVBUILDER_ENV"
-		envFile := filepath.Join(opts.MagicDir.String(), "environ")
+		envFile := filepath.Join(opts.MagicDir.Path(), "environ")
 		file, err := os.Create(envFile)
 		if err != nil {
 			return fmt.Errorf("create environ file: %w", err)
@@ -1074,7 +1074,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// So we add them to the default ignore list. See:
 	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
 	ignorePaths := append([]string{
-		opts.MagicDir.String(),
+		opts.MagicDir.Path(),
 		opts.WorkspaceFolder,
 		// See: https://github.com/coder/envbuilder/issues/37
 		"/etc/resolv.conf",
@@ -1412,9 +1412,9 @@ func maybeDeleteFilesystem(logger log.Func, force bool) error {
 	// If this is set to anything else we should bail out to prevent accidental data loss.
 	defaultMagicDir := constants.MagicDir("")
 	kanikoDir, ok := os.LookupEnv("KANIKO_DIR")
-	if !ok || strings.TrimSpace(kanikoDir) != defaultMagicDir.String() {
+	if !ok || strings.TrimSpace(kanikoDir) != defaultMagicDir.Path() {
 		if !force {
-			logger(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", defaultMagicDir.String())
+			logger(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", defaultMagicDir.Path())
 			logger(log.LevelError, "To bypass this check, set FORCE_SAFE=true.")
 			return errors.New("safety check failed")
 		}
@@ -1468,7 +1468,7 @@ func initDockerConfigJSON(logf log.Func, magicDir constants.MagicDir, dockerConf
 	if dockerConfigBase64 == "" {
 		return noop, nil
 	}
-	cfgPath := filepath.Join(magicDir.String(), "config.json")
+	cfgPath := filepath.Join(magicDir.Path(), "config.json")
 	decoded, err := base64.StdEncoding.DecodeString(dockerConfigBase64)
 	if err != nil {
 		return noop, fmt.Errorf("decode docker config: %w", err)
