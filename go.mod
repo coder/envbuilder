@@ -20,7 +20,7 @@ require (
 	github.com/containerd/platforms v0.2.1
 	github.com/distribution/distribution/v3 v3.0.0-alpha.1
 	github.com/docker/cli v27.2.0+incompatible
-	github.com/docker/docker v26.1.5+incompatible
+	github.com/docker/docker v27.0.3+incompatible
 	github.com/fatih/color v1.17.0
 	github.com/gliderlabs/ssh v0.3.7
 	github.com/go-git/go-billy/v5 v5.5.0
@@ -30,7 +30,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/mattn/go-isatty v0.0.20
-	github.com/moby/buildkit v0.13.1
+	github.com/moby/buildkit v0.15.2
 	github.com/otiai10/copy v1.14.0
 	github.com/prometheus/procfs v0.15.1
 	github.com/sirupsen/logrus v1.9.3
@@ -99,13 +99,11 @@ require (
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/charmbracelet/lipgloss v0.8.0 // indirect
 	github.com/chrismellard/docker-credential-acr-env v0.0.0-20230304212654-82a0ddb27589 // indirect
-	github.com/cilium/ebpf v0.12.3 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0 // indirect
 	github.com/coder/quartz v0.1.0 // indirect
 	github.com/coder/terraform-provider-coder v0.23.0 // indirect
 	github.com/containerd/cgroups v1.1.0 // indirect
-	github.com/containerd/cgroups/v3 v3.0.2 // indirect
 	github.com/containerd/containerd v1.7.19 // indirect
 	github.com/containerd/containerd/api v1.7.19 // indirect
 	github.com/containerd/continuity v0.4.3 // indirect
@@ -117,7 +115,6 @@ require (
 	github.com/containerd/typeurl/v2 v2.1.1 // indirect
 	github.com/coreos/go-iptables v0.6.0 // indirect
 	github.com/coreos/go-oidc/v3 v3.10.0 // indirect
-	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
@@ -151,7 +148,7 @@ require (
 	github.com/google/btree v1.1.2 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/nftables v0.2.0 // indirect
-	github.com/google/pprof v0.0.0-20230817174616-7a8ec2ada47b // indirect
+	github.com/google/pprof v0.0.0-20240424215950-a892ee059fd6 // indirect
 	github.com/gorilla/handlers v1.5.1 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.18.0 // indirect
@@ -164,7 +161,7 @@ require (
 	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/golang-lru/arc/v2 v2.0.5 // indirect
-	github.com/hashicorp/golang-lru/v2 v2.0.5 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hashicorp/hcl/v2 v2.21.0 // indirect
 	github.com/hashicorp/logutils v1.0.0 // indirect
 	github.com/hashicorp/terraform-plugin-go v0.12.0 // indirect
@@ -245,6 +242,7 @@ require (
 	github.com/tailscale/wireguard-go v0.0.0-20231121184858-cc193a0b3272 // indirect
 	github.com/tcnksm/go-httpstat v0.2.0 // indirect
 	github.com/tinylib/msgp v1.1.8 // indirect
+	github.com/tonistiigi/go-csvvalue v0.0.0-20240710180619-ddb21b71c0b4 // indirect
 	github.com/twpayne/go-vfs/v5 v5.0.4 // indirect
 	github.com/u-root/uio v0.0.0-20240209044354-b3d14b93376a // indirect
 	github.com/valyala/fasthttp v1.55.0 // indirect
