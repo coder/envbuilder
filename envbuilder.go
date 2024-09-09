@@ -1475,7 +1475,7 @@ func initDockerConfigJSON(logf log.Func, magicDir magicdir.MagicDir, dockerConfi
 	if dockerConfigBase64 == "" {
 		return noop, nil
 	}
-	cfgPath := filepath.Join(magicDir.Path(), "config.json")
+	cfgPath := magicDir.Join("config.json")
 	decoded, err := base64.StdEncoding.DecodeString(dockerConfigBase64)
 	if err != nil {
 		return noop, fmt.Errorf("decode docker config: %w", err)
@@ -1498,8 +1498,9 @@ func initDockerConfigJSON(logf log.Func, magicDir magicdir.MagicDir, dockerConfi
 	}
 	logf(log.LevelInfo, "Wrote Docker config JSON to %s", cfgPath)
 	oldDockerConfig := os.Getenv("DOCKER_CONFIG")
-	os.Setenv("DOCKER_CONFIG", magicDir.String())
-	logf(log.LevelInfo, "Set DOCKER_CONFIG to %s", magicDir.String())
+	_ = os.Setenv("DOCKER_CONFIG", magicDir.Path())
+	newDockerConfig := os.Getenv("DOCKER_CONFIG")
+	logf(log.LevelInfo, "Set DOCKER_CONFIG to %s", newDockerConfig)
 	cleanup := func() error {
 		var cleanupErr error
 		cleanupOnce.Do(func() {
