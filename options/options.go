@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/log"
 	"github.com/coder/serpent"
 	"github.com/go-git/go-billy/v5"
@@ -166,6 +165,11 @@ type Options struct {
 	// attempting to probe the build cache. This is only relevant when
 	// GetCachedImage is true.
 	BinaryPath string
+
+	// MagicDirBase is the path to the directory where all envbuilder files should be
+	// stored. By default, this is set to `/.envbuilder`. This is intentionally
+	// excluded from the CLI options.
+	MagicDirBase string
 }
 
 const envPrefix = "ENVBUILDER_"
@@ -456,10 +460,10 @@ func (o *Options) CLI() serpent.OptionSet {
 				"working on the same repository.",
 		},
 		{
-			Flag:        "remote-repo-dir",
-			Env:         WithEnvPrefix("REMOTE_REPO_DIR"),
-			Value:       serpent.StringOf(&o.RemoteRepoDir),
-			Default:     constants.MagicRemoteRepoDir,
+			Flag:  "remote-repo-dir",
+			Env:   WithEnvPrefix("REMOTE_REPO_DIR"),
+			Value: serpent.StringOf(&o.RemoteRepoDir),
+			// Default:     magicdir.Default.Join("repo"), // TODO: reinstate once legacy opts are removed.
 			Hidden:      true,
 			Description: "Specify the destination directory for the cloned repo when using remote repo build mode.",
 		},

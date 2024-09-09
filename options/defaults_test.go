@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/options"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +43,7 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 		{
 			name:     "empty",
 			gitURL:   "",
-			expected: constants.EmptyWorkspaceDir,
+			expected: options.EmptyWorkspaceDir,
 		},
 	}
 	for _, tt := range successTests {
@@ -70,7 +69,7 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 	for _, tt := range invalidTests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := options.DefaultWorkspaceFolder(tt.invalidURL)
-			require.Equal(t, constants.EmptyWorkspaceDir, dir)
+			require.Equal(t, options.EmptyWorkspaceDir, dir)
 		})
 	}
 }
@@ -84,7 +83,9 @@ func TestOptions_SetDefaults(t *testing.T) {
 		IgnorePaths:     []string{"/var/run", "/product_uuid", "/product_name"},
 		Filesystem:      chmodfs.New(osfs.New("/")),
 		GitURL:          "",
-		WorkspaceFolder: constants.EmptyWorkspaceDir,
+		WorkspaceFolder: options.EmptyWorkspaceDir,
+		MagicDirBase:    "/.envbuilder",
+		RemoteRepoDir:   "/.envbuilder/repo",
 		BinaryPath:      "/.envbuilder/bin/envbuilder",
 	}
 
