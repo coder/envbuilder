@@ -52,6 +52,9 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// ErrNoFallbackImage is returned when no fallback image has been specified.
+var ErrNoFallbackImage = errors.New("no fallback image has been specified")
+
 // DockerConfig represents the Docker configuration file.
 type DockerConfig configfile.ConfigFile
 
@@ -179,11 +182,11 @@ func Run(ctx context.Context, opts options.Options) error {
 		defer file.Close()
 		if opts.FallbackImage == "" {
 			if fallbackErr != nil {
-				return nil, xerrors.Errorf("%s: %w", fallbackErr.Error(), constants.ErrNoFallbackImage)
+				return nil, xerrors.Errorf("%s: %w", fallbackErr.Error(), ErrNoFallbackImage)
 			}
 			// We can't use errors.Join here because our tests
 			// don't support parsing a multiline error.
-			return nil, constants.ErrNoFallbackImage
+			return nil, ErrNoFallbackImage
 		}
 		content := "FROM " + opts.FallbackImage
 		_, err = file.Write([]byte(content))
@@ -958,11 +961,11 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		defer file.Close()
 		if opts.FallbackImage == "" {
 			if fallbackErr != nil {
-				return nil, fmt.Errorf("%s: %w", fallbackErr.Error(), constants.ErrNoFallbackImage)
+				return nil, fmt.Errorf("%s: %w", fallbackErr.Error(), ErrNoFallbackImage)
 			}
 			// We can't use errors.Join here because our tests
 			// don't support parsing a multiline error.
-			return nil, constants.ErrNoFallbackImage
+			return nil, ErrNoFallbackImage
 		}
 		content := "FROM " + opts.FallbackImage
 		_, err = file.Write([]byte(content))

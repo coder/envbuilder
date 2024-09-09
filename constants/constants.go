@@ -1,7 +1,6 @@
 package constants
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 )
@@ -22,8 +21,6 @@ var (
 	// This defaults to /.envbuilder. It should only be used when Envbuilder
 	// is known to be running as root inside a container.
 	DefaultMagicDir MagicDir
-	// ErrNoFallbackImage is returned when no fallback image has been specified.
-	ErrNoFallbackImage = errors.New("no fallback image has been specified")
 	// MagicDirectives are directives automatically appended to Dockerfiles
 	// when pushing the image. These directives allow the built image to be
 	// 're-used'.
