@@ -7,24 +7,27 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 
 	giturls "github.com/chainguard-dev/git-urls"
-	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/internal/chmodfs"
 )
+
+// EmptyWorkspaceDir is the path to a workspace that has
+// nothing going on... it's empty!
+var EmptyWorkspaceDir = "/workspaces/empty"
 
 // DefaultWorkspaceFolder returns the default workspace folder
 // for a given repository URL.
 func DefaultWorkspaceFolder(repoURL string) string {
 	if repoURL == "" {
-		return constants.EmptyWorkspaceDir
+		return EmptyWorkspaceDir
 	}
 	parsed, err := giturls.Parse(repoURL)
 	if err != nil {
-		return constants.EmptyWorkspaceDir
+		return EmptyWorkspaceDir
 	}
 	name := strings.Split(parsed.Path, "/")
 	hasOwnerAndRepo := len(name) >= 2
 	if !hasOwnerAndRepo {
-		return constants.EmptyWorkspaceDir
+		return EmptyWorkspaceDir
 	}
 	repo := strings.TrimSuffix(name[len(name)-1], ".git")
 	return fmt.Sprintf("/workspaces/%s", repo)

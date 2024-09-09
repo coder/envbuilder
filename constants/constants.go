@@ -7,14 +7,6 @@ import (
 )
 
 const (
-	// WorkspacesDir is the path to the directory where
-	// all workspaces are stored by default.
-	WorkspacesDir = "/workspaces"
-
-	// EmptyWorkspaceDir is the path to a workspace that has
-	// nothing going on... it's empty!
-	EmptyWorkspaceDir = WorkspacesDir + "/empty"
-
 	// defaultMagicDirBase is the default working location for envbuilder.
 	// This is a special directory that must not be modified by the user
 	// or images. This is intentionally unexported.
