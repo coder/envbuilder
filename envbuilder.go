@@ -1498,7 +1498,7 @@ func initDockerConfigJSON(logf log.Func, magicDir constants.MagicDir, dockerConf
 				if !errors.Is(err, fs.ErrNotExist) {
 					cleanupErr = fmt.Errorf("remove docker config: %w", cleanupErr)
 				}
-				logf(log.LevelError, "failed to remove the Docker config secret file: %s", cleanupErr)
+				logf(log.LevelError, "Failed to remove the Docker config secret file: %s", cleanupErr)
 			}
 		})
 		return cleanupErr
