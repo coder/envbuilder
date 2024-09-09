@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"github.com/coder/envbuilder"
-	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/devcontainer/features"
+	"github.com/coder/envbuilder/internal/magicdir"
 	"github.com/coder/envbuilder/options"
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/coder/envbuilder/testutil/mwtest"
@@ -365,7 +365,7 @@ func TestBuildFromDockerfile(t *testing.T) {
 	require.Equal(t, "hello", strings.TrimSpace(output))
 
 	// Verify that the Docker configuration secret file is removed
-	configJSONContainerPath := constants.DefaultMagicDir.Join("config.json")
+	configJSONContainerPath := magicdir.Default.Join("config.json")
 	output = execContainer(t, ctr, "stat "+configJSONContainerPath)
 	require.Contains(t, output, "No such file or directory")
 }

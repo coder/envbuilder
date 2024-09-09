@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/coder/envbuilder/buildinfo"
-	"github.com/coder/envbuilder/constants"
 	"github.com/coder/envbuilder/git"
 	"github.com/coder/envbuilder/options"
 	"github.com/go-git/go-billy/v5"
@@ -36,6 +35,7 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/util"
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/coder/envbuilder/internal/ebutil"
+	"github.com/coder/envbuilder/internal/magicdir"
 	"github.com/coder/envbuilder/log"
 	"github.com/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
@@ -72,7 +72,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		return fmt.Errorf("--cache-repo must be set when using --push-image")
 	}
 
-	magicDir := constants.MagicDirAt(opts.MagicDirBase)
+	magicDir := magicdir.At(opts.MagicDirBase)
 
 	// Default to the shell!
 	initArgs := []string{"-c", opts.InitScript}
@@ -341,12 +341,12 @@ func Run(ctx context.Context, opts options.Options) error {
 		if err := util.AddAllowedPathToDefaultIgnoreList(magicDir.Image()); err != nil {
 			return fmt.Errorf("add magic image file to ignore list: %w", err)
 		}
-		magicTempDir := constants.MagicDirAt(buildParams.BuildContext, constants.MagicTempDir)
+		magicTempDir := magicdir.At(buildParams.BuildContext, magicdir.TempDir)
 		if err := opts.Filesystem.MkdirAll(magicTempDir.Path(), 0o755); err != nil {
 			return fmt.Errorf("create magic temp dir in build context: %w", err)
 		}
 		// Add the magic directives that embed the binary into the built image.
-		buildParams.DockerfileContent += constants.MagicDirectives
+		buildParams.DockerfileContent += magicdir.Directives
 		// Copy the envbuilder binary into the build context.
 		// External callers will need to specify the path to the desired envbuilder binary.
 		envbuilderBinDest := filepath.Join(magicTempDir.Path(), "envbuilder")
@@ -861,7 +861,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		return nil, fmt.Errorf("--cache-repo must be set when using --get-cached-image")
 	}
 
-	magicDir := constants.MagicDirAt(opts.MagicDirBase)
+	magicDir := magicdir.At(opts.MagicDirBase)
 
 	stageNumber := 0
 	startStage := func(format string, args ...any) func(format string, args ...any) {
@@ -1105,8 +1105,8 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// envbuilder binary available used to build the image and we also need to
 	// add the magic directives to the Dockerfile content.
 	// MAGICDIR
-	buildParams.DockerfileContent += constants.MagicDirectives
-	magicTempDir := filepath.Join(buildParams.BuildContext, constants.MagicTempDir)
+	buildParams.DockerfileContent += magicdir.Directives
+	magicTempDir := filepath.Join(buildParams.BuildContext, magicdir.TempDir)
 	if err := opts.Filesystem.MkdirAll(magicTempDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create magic temp dir in build context: %w", err)
 	}
@@ -1417,11 +1417,11 @@ func maybeDeleteFilesystem(logger log.Func, force bool) error {
 	// We always expect the magic directory to be set to the default, signifying that
 	// the user is running envbuilder in a container.
 	// If this is set to anything else we should bail out to prevent accidental data loss.
-	// defaultMagicDir := constants.MagicDir("")
+	// defaultMagicDir := magicdir.MagicDir("")
 	kanikoDir, ok := os.LookupEnv("KANIKO_DIR")
-	if !ok || strings.TrimSpace(kanikoDir) != constants.DefaultMagicDir.Path() {
+	if !ok || strings.TrimSpace(kanikoDir) != magicdir.Default.Path() {
 		if !force {
-			logger(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", constants.DefaultMagicDir.Path())
+			logger(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", magicdir.Default.Path())
 			logger(log.LevelError, "To bypass this check, set FORCE_SAFE=true.")
 			return errors.New("safety check failed")
 		}
@@ -1469,7 +1469,7 @@ func touchFile(fs billy.Filesystem, dst string, mode fs.FileMode) error {
 	return f.Close()
 }
 
-func initDockerConfigJSON(logf log.Func, magicDir constants.MagicDir, dockerConfigBase64 string) (func() error, error) {
+func initDockerConfigJSON(logf log.Func, magicDir magicdir.MagicDir, dockerConfigBase64 string) (func() error, error) {
 	var cleanupOnce sync.Once
 	noop := func() error { return nil }
 	if dockerConfigBase64 == "" {
