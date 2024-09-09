@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/coder/envbuilder/constants"
@@ -465,7 +464,7 @@ func (o *Options) CLI() serpent.OptionSet {
 			Flag:        "remote-repo-dir",
 			Env:         WithEnvPrefix("REMOTE_REPO_DIR"),
 			Value:       serpent.StringOf(&o.RemoteRepoDir),
-			Default:     filepath.Join(constants.MagicDir("").Path(), "repo"),
+			Default:     constants.DefaultMagicDir.Join("repo"),
 			Hidden:      true,
 			Description: "Specify the destination directory for the cloned repo when using remote repo build mode.",
 		},

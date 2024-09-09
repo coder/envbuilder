@@ -365,7 +365,7 @@ func TestBuildFromDockerfile(t *testing.T) {
 	require.Equal(t, "hello", strings.TrimSpace(output))
 
 	// Verify that the Docker configuration secret file is removed
-	configJSONContainerPath := filepath.Join(constants.MagicDir("").Path(), "config.json")
+	configJSONContainerPath := constants.DefaultMagicDir.Join("config.json")
 	output = execContainer(t, ctr, "stat "+configJSONContainerPath)
 	require.Contains(t, output, "No such file or directory")
 }

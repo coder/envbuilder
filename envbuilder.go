@@ -335,7 +335,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		if err := util.AddAllowedPathToDefaultIgnoreList(opts.MagicDir.Image()); err != nil {
 			return fmt.Errorf("add magic image file to ignore list: %w", err)
 		}
-		magicTempDir := constants.MagicDir(filepath.Join(buildParams.BuildContext, constants.MagicTempDir))
+		magicTempDir := constants.MagicDirAt(buildParams.BuildContext, constants.MagicTempDir)
 		if err := opts.Filesystem.MkdirAll(magicTempDir.Path(), 0o755); err != nil {
 			return fmt.Errorf("create magic temp dir in build context: %w", err)
 		}
@@ -1409,11 +1409,11 @@ func maybeDeleteFilesystem(logger log.Func, force bool) error {
 	// We always expect the magic directory to be set to the default, signifying that
 	// the user is running envbuilder in a container.
 	// If this is set to anything else we should bail out to prevent accidental data loss.
-	defaultMagicDir := constants.MagicDir("")
+	// defaultMagicDir := constants.MagicDir("")
 	kanikoDir, ok := os.LookupEnv("KANIKO_DIR")
-	if !ok || strings.TrimSpace(kanikoDir) != defaultMagicDir.Path() {
+	if !ok || strings.TrimSpace(kanikoDir) != constants.DefaultMagicDir.Path() {
 		if !force {
-			logger(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", defaultMagicDir.Path())
+			logger(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", constants.DefaultMagicDir.Path())
 			logger(log.LevelError, "To bypass this check, set FORCE_SAFE=true.")
 			return errors.New("safety check failed")
 		}
