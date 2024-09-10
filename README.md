@@ -37,7 +37,7 @@ docker run -it --rm \
 Edit `.devcontainer/Dockerfile` to add `htop`:
 
 ```bash
-$ vim .devcontainer/Dockerfile
+vim .devcontainer/Dockerfile
 ```
 
 ```diff
@@ -52,6 +52,22 @@ Exit the container, and re-run the `docker run` command... after the build compl
 > loss, it will refuse to run if it detects that KANIKO_DIR is not set to a specific value.
 > If you need to bypass this behavior for any reason, you can bypass this safety check by setting
 > `ENVBUILDER_FORCE_SAFE=true`.
+
+If you don't have a remote Git repo or you want to quickly iterate with some
+local files, simply omit `ENVBUILDER_GIT_URL` and instead mount the directory
+containing your code to `/workspaces/empty` inside the Envbuilder container.
+
+For example:
+
+```shell
+# Create a sample Devcontainer and Dockerfile in the current directory
+printf '{"build": { "dockerfile": "Dockerfile"}}' > devcontainer.json
+printf 'FROM debian:bookworm\nRUN apt-get update && apt-get install -y cowsay' > Dockerfile
+
+# Run envbuilder with the current directory mounted into `/workspaces/empty`.
+# The instructions to add /usr/games to $PATH have been omitted for brevity.
+docker run -it --rm -e ENVBUILDER_INIT_SCRIPT='/usr/games/cowsay "happy hacking"' -v $PWD:/workspaces/empty ghcr.io/coder/envbuilder:latest
+```
 
 ## Usage with Coder
 
