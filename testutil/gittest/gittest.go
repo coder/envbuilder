@@ -259,14 +259,15 @@ func Commit(t *testing.T, path, content, msg string) CommitFunc {
 			},
 		})
 		require.NoError(t, err)
-		_, err = repo.CommitObject(commit)
+		obj, err := repo.CommitObject(commit)
 		require.NoError(t, err)
+		t.Logf("commited object %s", obj.Hash.String())
 	}
 }
 
 type GitRepo struct {
-	repo *git.Repository
-	fs   billy.Filesystem
+	Repo *git.Repository
+	FS   billy.Filesystem
 }
 
 // NewRepo returns a new Git repository.
@@ -282,14 +283,14 @@ func NewRepo(t *testing.T, fs billy.Filesystem) *GitRepo {
 	require.NoError(t, err)
 
 	return &GitRepo{
-		repo: repo,
-		fs:   fs,
+		Repo: repo,
+		FS:   fs,
 	}
 }
 
 func (g *GitRepo) Commit(commits ...CommitFunc) *GitRepo {
 	for _, commit := range commits {
-		commit(g.fs, g.repo)
+		commit(g.FS, g.Repo)
 	}
 	return g
 }
@@ -297,7 +298,7 @@ func (g *GitRepo) Commit(commits ...CommitFunc) *GitRepo {
 // WriteFile writes a file to the filesystem.
 func WriteFile(t *testing.T, fs billy.Filesystem, path, content string) {
 	t.Helper()
-	file, err := fs.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	file, err := fs.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 	require.NoError(t, err)
 	_, err = file.Write([]byte(content))
 	require.NoError(t, err)
