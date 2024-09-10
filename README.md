@@ -76,7 +76,7 @@ you may need to specify the relative path to the file with
 ```shell
 ls build/
 Dockerfile devcontainer.json
-docker run -it --rm -e ENVBUILDER_INIT_SCRIPT='echo $PATH' -e ENVBUILDER_DEVCONTAINER_DIR=build -v $PWD:/workspaces/empty envbuilder:latest
+docker run -it --rm -e ENVBUILDER_INIT_SCRIPT='echo $PATH' -e ENVBUILDER_DEVCONTAINER_DIR=build -v $PWD:/workspaces/empty ghcr.io/coder/envbuilder:latest
 ```
 
 ## Usage with Coder
