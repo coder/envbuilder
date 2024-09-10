@@ -1682,7 +1682,7 @@ RUN echo $FOO > /root/foo.txt
 RUN date --utc > /root/date.txt
 `, testImageAlpine)
 
-		newServer := func(dockerfile string) *httptest.Server {
+		newServer := func(dockerfile string) *gittest.GitServer {
 			return gittest.CreateGitServer(t, gittest.Options{
 				Files: map[string]string{"Dockerfile": dockerfile},
 			})

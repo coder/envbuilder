@@ -39,9 +39,14 @@ type Options struct {
 	TLS      bool
 }
 
+type GitServer struct {
+	*httptest.Server
+	Repo *GitRepo
+}
+
 // CreateGitServer creates a git repository with an in-memory filesystem
 // and serves it over HTTP using a httptest.Server.
-func CreateGitServer(t *testing.T, opts Options) *httptest.Server {
+func CreateGitServer(t *testing.T, opts Options) *GitServer {
 	t.Helper()
 	if opts.AuthMW == nil {
 		opts.AuthMW = mwtest.BasicAuthMW(opts.Username, opts.Password)
@@ -51,11 +56,19 @@ func CreateGitServer(t *testing.T, opts Options) *httptest.Server {
 		commits = append(commits, Commit(t, path, content, "my test commit"))
 	}
 	fs := memfs.New()
-	_ = NewRepo(t, fs, commits...)
+	repo := NewRepo(t, fs).Commit(commits...)
+	var srv *httptest.Server
 	if opts.TLS {
-		return httptest.NewTLSServer(opts.AuthMW(NewServer(fs)))
+		srv = httptest.NewTLSServer(opts.AuthMW(NewServer(fs)))
+		// return httptest.NewTLSServer(opts.AuthMW(NewServer(fs)))
+	} else {
+		srv = httptest.NewServer(opts.AuthMW(NewServer(fs)))
 	}
-	return httptest.NewServer(opts.AuthMW(NewServer(fs)))
+	// return httptest.NewServer(opts.AuthMW(NewServer(fs)))
+	return &GitServer{
+		Server: srv,
+		Repo:   repo,
+	}
 }
 
 // NewServer returns a http.Handler that serves a git repository.
@@ -251,8 +264,13 @@ func Commit(t *testing.T, path, content, msg string) CommitFunc {
 	}
 }
 
+type GitRepo struct {
+	repo *git.Repository
+	fs   billy.Filesystem
+}
+
 // NewRepo returns a new Git repository.
-func NewRepo(t *testing.T, fs billy.Filesystem, commits ...CommitFunc) *git.Repository {
+func NewRepo(t *testing.T, fs billy.Filesystem) *GitRepo {
 	t.Helper()
 	storage := filesystem.NewStorage(fs, cache.NewObjectLRU(cache.DefaultMaxSize))
 	repo, err := git.Init(storage, fs)
@@ -263,10 +281,17 @@ func NewRepo(t *testing.T, fs billy.Filesystem, commits ...CommitFunc) *git.Repo
 	err = storage.SetReference(h)
 	require.NoError(t, err)
 
-	for _, commit := range commits {
-		commit(fs, repo)
+	return &GitRepo{
+		repo: repo,
+		fs:   fs,
 	}
-	return repo
+}
+
+func (g *GitRepo) Commit(commits ...CommitFunc) *GitRepo {
+	for _, commit := range commits {
+		commit(g.fs, g.repo)
+	}
+	return g
 }
 
 // WriteFile writes a file to the filesystem.

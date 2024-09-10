@@ -83,7 +83,7 @@ func TestCloneRepo(t *testing.T) {
 			// We do not overwrite a repo if one is already present.
 			t.Run("AlreadyCloned", func(t *testing.T) {
 				srvFS := memfs.New()
-				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+				_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
 				clientFS := memfs.New()
@@ -102,7 +102,7 @@ func TestCloneRepo(t *testing.T) {
 			t.Run("BasicAuth", func(t *testing.T) {
 				t.Parallel()
 				srvFS := memfs.New()
-				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+				_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
 				clientFS := memfs.New()
@@ -135,7 +135,7 @@ func TestCloneRepo(t *testing.T) {
 			t.Run("InURL", func(t *testing.T) {
 				t.Parallel()
 				srvFS := memfs.New()
-				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+				_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
 
@@ -173,7 +173,7 @@ func TestShallowCloneRepo(t *testing.T) {
 	t.Run("NotEmpty", func(t *testing.T) {
 		t.Parallel()
 		srvFS := memfs.New()
-		_ = gittest.NewRepo(t, srvFS,
+		_ = gittest.NewRepo(t, srvFS).Commit(
 			gittest.Commit(t, "README.md", "Hello, world!", "Many wow!"),
 			gittest.Commit(t, "foo", "bar!", "Such commit!"),
 			gittest.Commit(t, "baz", "qux", "V nice!"),
@@ -207,7 +207,7 @@ func TestShallowCloneRepo(t *testing.T) {
 
 		t.Parallel()
 		srvFS := memfs.New()
-		_ = gittest.NewRepo(t, srvFS,
+		_ = gittest.NewRepo(t, srvFS).Commit(
 			gittest.Commit(t, "README.md", "Hello, world!", "Many wow!"),
 			gittest.Commit(t, "foo", "bar!", "Such commit!"),
 			gittest.Commit(t, "baz", "qux", "V nice!"),
@@ -244,7 +244,7 @@ func TestCloneRepoSSH(t *testing.T) {
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
-		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+		_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 		key := randKeygen(t)
 		tr := gittest.NewServerSSH(t, srvFS, key.PublicKey())
 		gitURL := tr.String()
@@ -275,7 +275,7 @@ func TestCloneRepoSSH(t *testing.T) {
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
-		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+		_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 		key := randKeygen(t)
 		tr := gittest.NewServerSSH(t, srvFS, key.PublicKey())
 		gitURL := tr.String()
@@ -306,7 +306,7 @@ func TestCloneRepoSSH(t *testing.T) {
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
-		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+		_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 		key := randKeygen(t)
 		tr := gittest.NewServerSSH(t, srvFS, key.PublicKey())
 		gitURL := tr.String()
