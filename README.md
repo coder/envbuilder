@@ -66,17 +66,24 @@ printf 'FROM debian:bookworm\nRUN apt-get update && apt-get install -y cowsay' >
 
 # Run envbuilder with the current directory mounted into `/workspaces/empty`.
 # The instructions to add /usr/games to $PATH have been omitted for brevity.
-docker run -it --rm -e ENVBUILDER_INIT_SCRIPT='/usr/games/cowsay "happy hacking"' -v $PWD:/workspaces/empty ghcr.io/coder/envbuilder:latest
+docker run -it --rm -e ENVBUILDER_INIT_SCRIPT='bash' -v $PWD:/workspaces/empty ghcr.io/coder/envbuilder:latest
 ```
 
-If your `devcontainer.json` is not present in the root of the workspace folder,
-you may need to specify the relative path to the file with
-`ENVBUILDER_DEVCONTAINER_DIR`:
+Alternatively, if you prefer to mount your project files elsewhere, tell
+Envbuilder where to find them by specifying `ENVBUILDER_WORKSPACE_FOLDER`:
+
+```shell
+docker run -it --rm -e ENVBUILDER_INIT_SCRIPT='bash ' -e ENVBUILDER_WORKSPACE_FOLDER=/src -v $PWD:/src ghcr.io/coder/envbuilder:latest
+```
+
+By default, Envbuilder will look for a `devcontainer.json` or `Dockerfile` in
+both `${ENVBUILDER_WORKSPACE_FOLDER}` and `${ENVBUILDER_WORKSPACE_FOLDER}/.devcontainer`.
+You can control where it looks with `ENVBUILDER_DEVCONTAINER_DIR` if needed.
 
 ```shell
 ls build/
 Dockerfile devcontainer.json
-docker run -it --rm -e ENVBUILDER_INIT_SCRIPT='echo $PATH' -e ENVBUILDER_DEVCONTAINER_DIR=build -v $PWD:/workspaces/empty ghcr.io/coder/envbuilder:latest
+docker run -it --rm -e ENVBUILDER_INIT_SCRIPT='bash' -e ENVBUILDER_DEVCONTAINER_DIR=build -v $PWD:/src ghcr.io/coder/envbuilder:latest
 ```
 
 ## Usage with Coder
