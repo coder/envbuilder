@@ -157,10 +157,6 @@ type Options struct {
 	// working on the same repository.
 	RemoteRepoBuildMode bool
 
-	// RemoteRepoDir is the destination directory for the cloned repo when using
-	// remote repo build mode.
-	RemoteRepoDir string
-
 	// BinaryPath is the path to the local envbuilder binary when
 	// attempting to probe the build cache. This is only relevant when
 	// GetCachedImage is true.
@@ -458,14 +454,6 @@ func (o *Options) CLI() serpent.OptionSet {
 				"to local files and they will not be reflected in the image. This can " +
 				"be used to improving cache utilization when multiple users are building " +
 				"working on the same repository.",
-		},
-		{
-			Flag:  "remote-repo-dir",
-			Env:   WithEnvPrefix("REMOTE_REPO_DIR"),
-			Value: serpent.StringOf(&o.RemoteRepoDir),
-			// Default:     magicdir.Default.Join("repo"), // TODO: reinstate once legacy opts are removed.
-			Hidden:      true,
-			Description: "Specify the destination directory for the cloned repo when using remote repo build mode.",
 		},
 		{
 			Flag:        "verbose",
