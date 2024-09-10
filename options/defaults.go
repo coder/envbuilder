@@ -59,9 +59,6 @@ func (o *Options) SetDefaults() {
 	if o.WorkspaceFolder == "" {
 		o.WorkspaceFolder = DefaultWorkspaceFolder(o.GitURL)
 	}
-	if o.RemoteRepoDir == "" {
-		o.RemoteRepoDir = magicdir.Default.Join("repo")
-	}
 	if o.BinaryPath == "" {
 		o.BinaryPath = "/.envbuilder/bin/envbuilder"
 	}

@@ -148,7 +148,7 @@ func Run(ctx context.Context, opts options.Options) error {
 			if err != nil {
 				return fmt.Errorf("git clone options: %w", err)
 			}
-			cloneOpts.Path = opts.RemoteRepoDir
+			cloneOpts.Path = magicDir.Join("repo")
 
 			endStage := startStage("📦 Remote repo build mode enabled, cloning %s to %s for build context...",
 				newColor(color.FgCyan).Sprintf(opts.GitURL),
@@ -927,7 +927,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 			if err != nil {
 				return nil, fmt.Errorf("git clone options: %w", err)
 			}
-			cloneOpts.Path = opts.RemoteRepoDir
+			cloneOpts.Path = magicDir.Join("repo")
 
 			endStage := startStage("📦 Remote repo build mode enabled, cloning %s to %s for build context...",
 				newColor(color.FgCyan).Sprintf(opts.GitURL),
