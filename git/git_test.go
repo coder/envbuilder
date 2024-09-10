@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/coder/envbuilder/git"
 	"github.com/coder/envbuilder/options"
@@ -232,6 +234,59 @@ func TestShallowCloneRepo(t *testing.T) {
 			require.NoError(t, err)
 		}
 	})
+}
+
+func TestFetchAfterClone(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	// setup a git repo
+	srvDir := t.TempDir()
+	srvFS := osfs.New(srvDir, osfs.WithChrootOS())
+	repo := gittest.NewRepo(t, srvFS)
+	repo.Commit(gittest.Commit(t, "README.md", "Hello, worldd!", "initial commit"))
+	headBefore, err := repo.Repo.Head()
+	require.NoError(t, err)
+	srv := httptest.NewServer(gittest.NewServer(srvFS))
+
+	// clone to a tempdir
+	clientDir := t.TempDir()
+	clientFS := osfs.New(clientDir, osfs.WithChrootOS())
+	cloned, err := git.CloneRepo(ctx, git.CloneRepoOptions{
+		Path:    "/repo",
+		RepoURL: srv.URL,
+		Storage: clientFS,
+	})
+
+	require.NoError(t, err)
+	require.True(t, cloned)
+
+	// add some commits on the server
+	repo.Commit(gittest.Commit(t, "README.md", "Hello, world!", "fix typo"))
+	// ensure state
+	bs, err := os.ReadFile(filepath.Join(srvDir, "README.md"))
+	require.NoError(t, err)
+	require.Equal(t, "Hello, world!", strings.TrimSpace(string(bs)))
+	headAfter, err := repo.Repo.Head()
+	require.NoError(t, err)
+	require.NotEqual(t, headBefore.Hash(), headAfter.Hash())
+
+	// run CloneRepo again
+	clonedAgain, err := git.CloneRepo(ctx, git.CloneRepoOptions{
+		Path:    "/repo",
+		RepoURL: srv.URL,
+		Storage: clientFS,
+	})
+	require.NoError(t, err)
+	require.True(t, clonedAgain)
+
+	// Inspect the cloned repo and check last commit
+	headFile, err := clientFS.Open(filepath.Join(".git/refs/heads/main"))
+	require.NoError(t, err)
+	var sb strings.Builder
+	_, err = io.Copy(&sb, headFile)
+	require.NoError(t, err)
+	require.Equal(t, headAfter, sb.String())
 }
 
 func TestCloneRepoSSH(t *testing.T) {
