@@ -59,7 +59,7 @@ Coder provides sample
 [Docker](https://github.com/coder/coder/tree/main/examples/templates/devcontainer-docker)
 and
 [Kubernetes](https://github.com/coder/coder/tree/main/examples/templates/devcontainer-kubernetes)
-for use with Envbuilder. You can import these template and modify them to fit
+templates for use with Envbuilder. You can import these templates and modify them to fit
 your specific requirements.
 
 Below are some specific points to be aware of when using Envbuilder with a Coder
