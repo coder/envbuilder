@@ -1475,7 +1475,7 @@ func initDockerConfigJSON(logf log.Func, magicDir magicdir.MagicDir, dockerConfi
 	if dockerConfigBase64 == "" {
 		return noop, nil
 	}
-	cfgPath := filepath.Join(magicDir.Path(), "config.json")
+	cfgPath := magicDir.Join("config.json")
 	decoded, err := base64.StdEncoding.DecodeString(dockerConfigBase64)
 	if err != nil {
 		return noop, fmt.Errorf("decode docker config: %w", err)
@@ -1497,9 +1497,16 @@ func initDockerConfigJSON(logf log.Func, magicDir magicdir.MagicDir, dockerConfi
 		return noop, fmt.Errorf("write docker config: %w", err)
 	}
 	logf(log.LevelInfo, "Wrote Docker config JSON to %s", cfgPath)
+	oldDockerConfig := os.Getenv("DOCKER_CONFIG")
+	_ = os.Setenv("DOCKER_CONFIG", magicDir.Path())
+	newDockerConfig := os.Getenv("DOCKER_CONFIG")
+	logf(log.LevelInfo, "Set DOCKER_CONFIG to %s", newDockerConfig)
 	cleanup := func() error {
 		var cleanupErr error
 		cleanupOnce.Do(func() {
+			// Restore the old DOCKER_CONFIG value.
+			os.Setenv("DOCKER_CONFIG", oldDockerConfig)
+			logf(log.LevelInfo, "Restored DOCKER_CONFIG to %s", oldDockerConfig)
 			// Remove the Docker config secret file!
 			if cleanupErr = os.Remove(cfgPath); err != nil {
 				if !errors.Is(err, fs.ErrNotExist) {
