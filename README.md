@@ -69,6 +69,16 @@ printf 'FROM debian:bookworm\nRUN apt-get update && apt-get install -y cowsay' >
 docker run -it --rm -e ENVBUILDER_INIT_SCRIPT='/usr/games/cowsay "happy hacking"' -v $PWD:/workspaces/empty ghcr.io/coder/envbuilder:latest
 ```
 
+If your `devcontainer.json` is not present in the root of the workspace folder,
+you may need to specify the relative path to the file with
+`ENVBUILDER_DEVCONTAINER_DIR`:
+
+```shell
+ls build/
+Dockerfile devcontainer.json
+docker run -it --rm -e ENVBUILDER_INIT_SCRIPT='echo $PATH' -e ENVBUILDER_DEVCONTAINER_DIR=build -v $PWD:/workspaces/empty envbuilder:latest
+```
+
 ## Usage with Coder
 
 Coder provides sample
