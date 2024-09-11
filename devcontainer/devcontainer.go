@@ -15,6 +15,8 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/moby/buildkit/frontend/dockerfile/instructions"
+	"github.com/moby/buildkit/frontend/dockerfile/parser"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/tailscale/hujson"
 )
@@ -202,16 +204,9 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, 
 		// We should make a best-effort attempt to find the user.
 		// Features must be executed as root, so we need to swap back
 		// to the running user afterwards.
-		params.User = UserFromDockerfile(params.DockerfileContent)
-	}
-	if params.User == "" {
-		imageRef, err := ImageFromDockerfile(params.DockerfileContent)
+		params.User, err = UserFromDockerfile(params.DockerfileContent)
 		if err != nil {
-			return nil, fmt.Errorf("parse image from dockerfile: %w", err)
-		}
-		params.User, err = UserFromImage(imageRef)
-		if err != nil {
-			return nil, fmt.Errorf("get user from image: %w", err)
+			return nil, fmt.Errorf("user from dockerfile: %w", err)
 		}
 	}
 	remoteUser := s.RemoteUser
@@ -313,17 +308,82 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 
 // UserFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the user that will be used to run the container.
-func UserFromDockerfile(dockerfileContent string) string {
-	lines := strings.Split(dockerfileContent, "\n")
-	// Iterate over lines in reverse
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := lines[i]
-		if !strings.HasPrefix(line, "USER ") {
+func UserFromDockerfile(dockerfileContent string) (user string, err error) {
+	res, err := parser.Parse(strings.NewReader(dockerfileContent))
+	if err != nil {
+		return "", fmt.Errorf("parse dockerfile: %w", err)
+	}
+
+	// Parse stages and user commands to determine the relevant user
+	// from the final stage.
+	var (
+		stages       []*instructions.Stage
+		stageNames   = make(map[string]*instructions.Stage)
+		stageUser    = make(map[*instructions.Stage]*instructions.UserCommand)
+		currentStage *instructions.Stage
+	)
+	for _, child := range res.AST.Children {
+		inst, err := instructions.ParseInstruction(child)
+		if err != nil {
+			return "", fmt.Errorf("parse instruction: %w", err)
+		}
+
+		switch i := inst.(type) {
+		case *instructions.Stage:
+			stages = append(stages, i)
+			if i.Name != "" {
+				stageNames[i.Name] = i
+			}
+			currentStage = i
+		case *instructions.UserCommand:
+			if currentStage == nil {
+				continue
+			}
+			stageUser[currentStage] = i
+		}
+	}
+
+	// Iterate over stages in bottom-up order to find the user,
+	// skipping any stages not referenced by the final stage.
+	lookupStage := stages[len(stages)-1]
+	for i := len(stages) - 1; i >= 0; i-- {
+		stage := stages[i]
+		if stage != lookupStage {
 			continue
 		}
-		return strings.TrimSpace(strings.TrimPrefix(line, "USER "))
+
+		if user, ok := stageUser[stage]; ok {
+			return user.User, nil
+		}
+
+		// If we reach the scratch stage, we can't determine the user.
+		if stage.BaseName == "scratch" {
+			return "", nil
+		}
+
+		// Check if this FROM references another stage.
+		if stage.BaseName != "" {
+			var ok bool
+			lookupStage, ok = stageNames[stage.BaseName]
+			if ok {
+				continue
+			}
+		}
+
+		// If we can't find a user command, try to find the user from
+		// the image.
+		ref, err := name.ParseReference(strings.TrimSpace(stage.BaseName))
+		if err != nil {
+			return "", fmt.Errorf("parse image ref %q: %w", stage.BaseName, err)
+		}
+		user, err := UserFromImage(ref)
+		if err != nil {
+			return "", fmt.Errorf("user from image %s: %w", ref.Name(), err)
+		}
+		return user, nil
 	}
-	return ""
+
+	return "", nil
 }
 
 // ImageFromDockerfile inspects the contents of a provided Dockerfile

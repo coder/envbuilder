@@ -190,12 +190,6 @@ func TestCompileDevContainer(t *testing.T) {
 	})
 }
 
-func TestUserFromDockerfile(t *testing.T) {
-	t.Parallel()
-	user := devcontainer.UserFromDockerfile("FROM ubuntu\nUSER kyle")
-	require.Equal(t, "kyle", user)
-}
-
 func TestImageFromDockerfile(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -224,27 +218,156 @@ func TestImageFromDockerfile(t *testing.T) {
 	}
 }
 
-func TestUserFromImage(t *testing.T) {
+func TestUserFrom(t *testing.T) {
 	t.Parallel()
-	registry := registrytest.New(t)
-	image, err := partial.UncompressedToImage(emptyImage{configFile: &v1.ConfigFile{
-		Config: v1.Config{
-			User: "example",
-		},
-	}})
-	require.NoError(t, err)
 
-	parsed, err := url.Parse(registry)
-	require.NoError(t, err)
-	parsed.Path = "coder/test:latest"
-	ref, err := name.ParseReference(strings.TrimPrefix(parsed.String(), "http://"))
-	require.NoError(t, err)
-	err = remote.Write(ref, image)
-	require.NoError(t, err)
+	t.Run("Image", func(t *testing.T) {
+		t.Parallel()
+		registry := registrytest.New(t)
+		image, err := partial.UncompressedToImage(emptyImage{configFile: &v1.ConfigFile{
+			Config: v1.Config{
+				User: "example",
+			},
+		}})
+		require.NoError(t, err)
 
-	user, err := devcontainer.UserFromImage(ref)
-	require.NoError(t, err)
-	require.Equal(t, "example", user)
+		parsed, err := url.Parse(registry)
+		require.NoError(t, err)
+		parsed.Path = "coder/test:latest"
+		ref, err := name.ParseReference(strings.TrimPrefix(parsed.String(), "http://"))
+		require.NoError(t, err)
+		err = remote.Write(ref, image)
+		require.NoError(t, err)
+
+		user, err := devcontainer.UserFromImage(ref)
+		require.NoError(t, err)
+		require.Equal(t, "example", user)
+	})
+
+	t.Run("Dockerfile", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			name    string
+			content string
+			user    string
+		}{
+			{
+				name:    "Empty",
+				content: "FROM scratch",
+				user:    "",
+			},
+			{
+				name:    "User",
+				content: "FROM scrach\nUSER kyle",
+				user:    "kyle",
+			},
+			{
+				name:    "Env with default",
+				content: "FROM scratch\nENV MYUSER=maf\nUSER ${MYUSER}",
+				user:    "${MYUSER}", // This should be "maf" but the current implementation doesn't support this.
+			},
+			{
+				name:    "Env var with default",
+				content: "FROM scratch\nUSER ${MYUSER:-maf}",
+				user:    "${MYUSER:-maf}", // This should be "maf" but the current implementation doesn't support this.
+			},
+			{
+				name:    "Arg",
+				content: "FROM scratch\nARG MYUSER\nUSER ${MYUSER}",
+				user:    "${MYUSER}", // This should be "" or populated but the current implementation doesn't support this.
+			},
+			{
+				name:    "Arg with default",
+				content: "FROM scratch\nARG MYUSER=maf\nUSER ${MYUSER}",
+				user:    "${MYUSER}", // This should be "maf" but the current implementation doesn't support this.
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				user, err := devcontainer.UserFromDockerfile(tt.content)
+				require.NoError(t, err)
+				require.Equal(t, tt.user, user)
+			})
+		}
+	})
+
+	t.Run("Multi-stage", func(t *testing.T) {
+		t.Parallel()
+
+		registry := registrytest.New(t)
+		for tag, user := range map[string]string{
+			"one": "maf",
+			"two": "fam",
+		} {
+			image, err := partial.UncompressedToImage(emptyImage{configFile: &v1.ConfigFile{
+				Config: v1.Config{
+					User: user,
+				},
+			}})
+			require.NoError(t, err)
+			parsed, err := url.Parse(registry)
+			require.NoError(t, err)
+			parsed.Path = "coder/test:" + tag
+			ref, err := name.ParseReference(strings.TrimPrefix(parsed.String(), "http://"))
+			fmt.Println(ref)
+			require.NoError(t, err)
+			err = remote.Write(ref, image)
+			require.NoError(t, err)
+		}
+
+		tests := []struct {
+			name    string
+			images  map[string]string
+			content string
+			user    string
+		}{
+			{
+				name:    "Single",
+				content: "FROM coder/test:one",
+				user:    "maf",
+			},
+			{
+				name:    "Multi",
+				content: "FROM ubuntu AS u\nFROM coder/test:two",
+				user:    "fam",
+			},
+			{
+				name:    "Multi-2",
+				content: "FROM coder/test:two AS two\nUSER maffam\nFROM coder/test:one AS one",
+				user:    "maf",
+			},
+			{
+				name:    "Multi-3",
+				content: "FROM coder/test:two AS two\nFROM coder/test:one AS one\nUSER fammaf",
+				user:    "fammaf",
+			},
+			{
+				name: "Multi-4",
+				content: `FROM ubuntu AS a
+USER root
+RUN useradd --create-home pickme
+USER pickme
+FROM a AS other
+USER root
+RUN useradd --create-home notme
+USER notme
+FROM a`,
+				user: "pickme",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				content := strings.ReplaceAll(tt.content, "coder/test", strings.TrimPrefix(registry, "http://")+"/coder/test")
+
+				user, err := devcontainer.UserFromDockerfile(content)
+				require.NoError(t, err)
+				require.Equal(t, tt.user, user)
+			})
+		}
+	})
 }
 
 type emptyImage struct {
