@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/coder/envbuilder/log"
 	"github.com/coder/envbuilder/options"
 
 	giturls "github.com/chainguard-dev/git-urls"
@@ -30,6 +31,7 @@ import (
 type CloneRepoOptions struct {
 	Path    string
 	Storage billy.Filesystem
+	Logger  log.Func
 
 	RepoURL      string
 	RepoAuth     transport.AuthMethod
@@ -45,6 +47,7 @@ type CloneRepoOptions struct {
 // If a repository is already initialized at the given path, it will not
 // be cloned again.
 //
+// The string returned is the hash of the repository HEAD.
 // The bool returned states whether the repository was cloned or not.
 func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOptions) (bool, error) {
 	parsed, err := giturls.Parse(opts.RepoURL)
@@ -104,10 +107,13 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 		return false, fmt.Errorf("open %q: %w", opts.RepoURL, err)
 	}
 	if repo != nil {
+		if head, err := repo.Head(); err == nil && head != nil {
+			logf("existing repo HEAD: %s", head.Hash().String())
+		}
 		return false, nil
 	}
 
-	_, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
+	repo, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
 		URL:             parsed.String(),
 		Auth:            opts.RepoAuth,
 		Progress:        opts.Progress,
@@ -124,6 +130,9 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 	if err != nil {
 		return false, fmt.Errorf("clone %q: %w", opts.RepoURL, err)
 	}
+	if head, err := repo.Head(); err == nil && head != nil {
+		logf("cloned repo HEAD: %s", head.Hash().String())
+	}
 	return true, nil
 }
 
@@ -131,6 +140,7 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 // with a depth of 1. If the destination folder exists and is not empty, the
 // clone will not be performed.
 //
+// The string returned is the hash of the repository HEAD.
 // The bool returned states whether the repository was cloned or not.
 func ShallowCloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOptions) error {
 	opts.Depth = 1

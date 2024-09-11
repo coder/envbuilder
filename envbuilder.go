@@ -164,7 +164,7 @@ func Run(ctx context.Context, opts options.Options) error {
 
 			fallbackErr = git.ShallowCloneRepo(ctx, logStage, cloneOpts)
 			if fallbackErr == nil {
-				endStage("📦 Cloned repository!")
+				endStage("📦 Cloned repository")
 				buildTimeWorkspaceFolder = cloneOpts.Path
 			} else {
 				opts.Logger(log.LevelError, "Failed to clone repository for remote repo mode: %s", fallbackErr.Error())
