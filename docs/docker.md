@@ -1,7 +1,23 @@
 # Docker inside Envbuilder
 
 There are a number of approaches you can use to have access to a Docker daemon
-from inside Envbuilder:
+from inside Envbuilder.
+
+> Note: some of the below methods involve setting `ENVBUILDER_INIT_SCRIPT` to
+> work around the lack of an init system inside the Docker container.
+> If you are attempting to use the below approaches with [Coder](https://github.com/coder/coder),
+> you may need to instead add the relevant content of the init script to your
+> agent startup script in your template.
+> For example:
+> ```
+>   resource "coder_agent" "dev" {
+>     ...
+>     startup_script = <<-EOT
+>         set -eux -o pipefail
+>         nohup dockerd > /var/log/docker.log 2>&1 &
+>     EOT
+>   }
+> ```
 
 ## Docker Outside of Docker (DooD)
 
