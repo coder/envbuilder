@@ -55,6 +55,7 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 		return false, fmt.Errorf("parse url %q: %w", opts.RepoURL, err)
 	}
 	logf("Parsed Git URL as %q", parsed.Redacted())
+	opts.RepoURL = parsed.String()
 	if parsed.Hostname() == "dev.azure.com" {
 		// Azure DevOps requires capabilities multi_ack / multi_ack_detailed,
 		// which are not fully implemented and by default are included in
@@ -100,19 +101,17 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 	gitStorage := filesystem.NewStorage(gitDir, cache.NewObjectLRU(cache.DefaultMaxSize*10))
 	fsStorage := filesystem.NewStorage(fs, cache.NewObjectLRU(cache.DefaultMaxSize*10))
 	repo, err := git.Open(fsStorage, gitDir)
-	if errors.Is(err, git.ErrRepositoryNotExists) {
-		err = nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("open %q: %w", opts.RepoURL, err)
-	}
-	if repo != nil {
-		if head, err := repo.Head(); err == nil && head != nil {
-			logf("existing repo HEAD: %s", head.Hash().String())
-		}
-		return false, nil
+	if err == nil {
+		// Repo exists, so fast-forward it.
+		return fastForwardRepo(ctx, logf, opts, repo, reference)
 	}
 
+	// Something went wrong opening the repo.
+	if !errors.Is(err, git.ErrRepositoryNotExists) {
+		return false, fmt.Errorf("open %q: %w", opts.RepoURL, err)
+	}
+
+	// Repo does not exist, so clone it.
 	repo, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
 		URL:             parsed.String(),
 		Auth:            opts.RepoAuth,
@@ -134,6 +133,40 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 		logf("cloned repo HEAD: %s", head.Hash().String())
 	}
 	return true, nil
+}
+
+func fastForwardRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOptions, repo *git.Repository, referenceName string) (bool, error) {
+	if head, err := repo.Head(); err == nil && head != nil {
+		logf("existing repo HEAD: %s", head.Hash().String())
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		return false, fmt.Errorf("worktree: %w", err)
+	}
+	err = wt.PullContext(ctx, &git.PullOptions{
+		RemoteName:      "", // use default remote
+		ReferenceName:   plumbing.ReferenceName(referenceName),
+		SingleBranch:    opts.SingleBranch,
+		Depth:           opts.Depth,
+		Auth:            opts.RepoAuth,
+		Progress:        opts.Progress,
+		Force:           false,
+		InsecureSkipTLS: opts.Insecure,
+		CABundle:        opts.CABundle,
+		ProxyOptions:    opts.ProxyOptions,
+	})
+	if err == nil {
+		if head, err := repo.Head(); err == nil && head != nil {
+			logf("fast-forwarded to %s", head.Hash().String())
+		}
+		return true, nil
+	}
+	if errors.Is(err, git.NoErrAlreadyUpToDate) {
+		logf("existing repo already up-to-date")
+		return false, nil
+	}
+	logf("failed to fast-forward: %s", err.Error())
+	return false, err
 }
 
 // ShallowCloneRepo will clone the repository at the given URL into the given path

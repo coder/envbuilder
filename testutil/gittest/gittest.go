@@ -262,6 +262,8 @@ func Commit(t *testing.T, path, content, msg string) CommitFunc {
 		obj, err := repo.CommitObject(commit)
 		require.NoError(t, err)
 		t.Logf("commited object %s", obj.Hash.String())
+		err = repo.Storer.SetReference(plumbing.NewHashReference("refs/heads/main", obj.Hash))
+		require.NoError(t, err)
 	}
 }
 

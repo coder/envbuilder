@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
-	"time"
 
 	"github.com/coder/envbuilder/git"
 	"github.com/coder/envbuilder/options"
@@ -39,6 +38,7 @@ func TestCloneRepo(t *testing.T) {
 		mungeURL    func(*string)
 		expectError string
 		expectClone bool
+		prepFS      func(billy.Filesystem)
 	}{
 		{
 			name:        "no auth",
@@ -237,19 +237,21 @@ func TestShallowCloneRepo(t *testing.T) {
 
 func TestFetchAfterClone(t *testing.T) {
 	t.Parallel()
-	t.Skip()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
+
+	ctx := context.Background()
+	// ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	// defer cancel()
+
 	// setup a git repo
 	srvDir := t.TempDir()
-	srvFS := osfs.New(srvDir, osfs.WithChrootOS())
+	srvFS := osfs.New(srvDir)
 	repo := gittest.NewRepo(t, srvFS)
 	repo.Commit(gittest.Commit(t, "README.md", "Hello, worldd!", "initial commit"))
 	srv := httptest.NewServer(gittest.NewServer(srvFS))
 
 	// clone to a tempdir
 	clientDir := t.TempDir()
-	clientFS := osfs.New(clientDir, osfs.WithChrootOS())
+	clientFS := osfs.New(clientDir)
 	cloned, err := git.CloneRepo(ctx, t.Logf, git.CloneRepoOptions{
 		Path:    "/repo",
 		RepoURL: srv.URL,
@@ -273,7 +275,7 @@ func TestFetchAfterClone(t *testing.T) {
 	require.NoError(t, err)
 	content, err := io.ReadAll(contentAfter)
 	require.NoError(t, err)
-	require.Equal(t, "Hello, worldd!", string(content), "expected client repo to be updated after fetch")
+	require.Equal(t, "Hello, world!", string(content), "expected client repo to be updated after fetch")
 }
 
 func TestCloneRepoSSH(t *testing.T) {
