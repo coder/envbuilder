@@ -102,6 +102,63 @@ func TestInitScriptInitCommand(t *testing.T) {
 	require.NoError(t, ctx.Err(), "init script did not execute for legacy env vars")
 }
 
+func TestDanglingBuildStage(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	srv := gittest.CreateGitServer(t, gittest.Options{
+		Files: map[string]string{
+			"devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			"Dockerfile": fmt.Sprintf(`FROM %s as a
+RUN date > /root/date.txt`, testImageUbuntu),
+		},
+	})
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /date.txt")
+	require.NotEmpty(t, strings.TrimSpace(output))
+}
+
+func TestUserFromMultistage(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	srv := gittest.CreateGitServer(t, gittest.Options{
+		Files: map[string]string{
+			"devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			"Dockerfile": fmt.Sprintf(`FROM %s AS a
+USER root
+RUN useradd --create-home pickme
+USER pickme
+FROM a AS other
+USER root
+RUN useradd --create-home notme
+USER notme
+FROM a AS b`, testImageUbuntu),
+		},
+	})
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "ps aux | awk '/^pickme / {print $1}' | sort -u")
+	require.Equal(t, "pickme", strings.TrimSpace(output))
+}
+
 func TestUidGid(t *testing.T) {
 	t.Parallel()
 	t.Run("MultiStage", func(t *testing.T) {
