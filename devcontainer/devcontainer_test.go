@@ -258,7 +258,7 @@ func TestUserFrom(t *testing.T) {
 			},
 			{
 				name:    "User",
-				content: "FROM scrach\nUSER kyle",
+				content: "FROM scratch\nUSER kyle",
 				user:    "kyle",
 			},
 			{
