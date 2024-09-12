@@ -95,6 +95,7 @@ func TestCloneRepo(t *testing.T) {
 					Path:    "/",
 					RepoURL: srv.URL,
 					Storage: clientFS,
+					Logf:    testLog(t),
 				})
 				require.NoError(t, err)
 				require.False(t, cloned)
@@ -117,6 +118,7 @@ func TestCloneRepo(t *testing.T) {
 						Username: tc.username,
 						Password: tc.password,
 					},
+					Logf: testLog(t),
 				})
 				require.Equal(t, tc.expectClone, cloned)
 				if tc.expectError != "" {
@@ -150,6 +152,7 @@ func TestCloneRepo(t *testing.T) {
 					Path:    "/workspace",
 					RepoURL: authURL.String(),
 					Storage: clientFS,
+					Logf:    testLog(t),
 				})
 				require.Equal(t, tc.expectClone, cloned)
 				if tc.expectError != "" {
@@ -199,6 +202,7 @@ func TestShallowCloneRepo(t *testing.T) {
 				Username: "test",
 				Password: "test",
 			},
+			Logf: testLog(t),
 		})
 		require.Error(t, err)
 	})
@@ -227,6 +231,7 @@ func TestShallowCloneRepo(t *testing.T) {
 				Username: "test",
 				Password: "test",
 			},
+			Logf: testLog(t),
 		})
 		require.NoError(t, err)
 		for _, path := range []string{"README.md", "foo", "baz"} {
@@ -264,6 +269,7 @@ func TestCloneRepoSSH(t *testing.T) {
 					HostKeyCallback: gossh.InsecureIgnoreHostKey(),
 				},
 			},
+			Logf: testLog(t),
 		})
 		// TODO: ideally, we want to test the entire cloning flow.
 		// For now, this indicates successful ssh key auth.
@@ -296,6 +302,7 @@ func TestCloneRepoSSH(t *testing.T) {
 					HostKeyCallback: gossh.InsecureIgnoreHostKey(),
 				},
 			},
+			Logf: testLog(t),
 		})
 		require.ErrorContains(t, err, "handshake failed")
 		require.False(t, cloned)
@@ -325,6 +332,7 @@ func TestCloneRepoSSH(t *testing.T) {
 					HostKeyCallback: gossh.FixedHostKey(randKeygen(t).PublicKey()),
 				},
 			},
+			Logf: testLog(t),
 		})
 		require.ErrorContains(t, err, "ssh: host key mismatch")
 		require.False(t, cloned)
@@ -452,6 +460,33 @@ func TestSetupRepoAuth(t *testing.T) {
 		}
 		auth := git.SetupRepoAuth(opts)
 		require.Nil(t, auth) // TODO: actually test SSH_AUTH_SOCK
+	})
+
+	t.Run("NoHostname/RepoOnly", func(t *testing.T) {
+		opts := &options.Options{
+			GitURL: "repo",
+			Logger: testLog(t),
+		}
+		auth := git.SetupRepoAuth(opts)
+		require.Nil(t, auth)
+	})
+
+	t.Run("NoHostname/Org/Repo", func(t *testing.T) {
+		opts := &options.Options{
+			GitURL: "org/repo",
+			Logger: testLog(t),
+		}
+		auth := git.SetupRepoAuth(opts)
+		require.Nil(t, auth)
+	})
+
+	t.Run("NoHostname/AbsolutePathish", func(t *testing.T) {
+		opts := &options.Options{
+			GitURL: "/org/repo",
+			Logger: testLog(t),
+		}
+		auth := git.SetupRepoAuth(opts)
+		require.Nil(t, auth)
 	})
 }
 

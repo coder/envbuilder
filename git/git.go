@@ -40,6 +40,7 @@ type CloneRepoOptions struct {
 	Depth        int
 	CABundle     []byte
 	ProxyOptions transport.ProxyOptions
+	Logf         log.Func
 }
 
 // CloneRepo will clone the repository at the given URL into the given path.
@@ -52,6 +53,7 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("parse url %q: %w", opts.RepoURL, err)
 	}
+	opts.Logf(log.LevelInfo, "#1: Parsed Git URL as %q", parsed.Redacted())
 	if parsed.Hostname() == "dev.azure.com" {
 		// Azure DevOps requires capabilities multi_ack / multi_ack_detailed,
 		// which are not fully implemented and by default are included in
@@ -73,6 +75,7 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
 		transport.UnsupportedCapabilities = []capability.Capability{
 			capability.ThinPack,
 		}
+		opts.Logf(log.LevelInfo, "#1: Workaround for Azure DevOps: marking thin-pack as unsupported")
 	}
 
 	err = opts.Storage.MkdirAll(opts.Path, 0o755)
@@ -219,7 +222,12 @@ func SetupRepoAuth(options *options.Options) transport.AuthMethod {
 		options.Logger(log.LevelInfo, "#1: ❔ No Git URL supplied!")
 		return nil
 	}
-	if strings.HasPrefix(options.GitURL, "http://") || strings.HasPrefix(options.GitURL, "https://") {
+	parsedURL, err := giturls.Parse(options.GitURL)
+	if err != nil {
+		options.Logger(log.LevelError, "#1: ❌ Failed to parse Git URL: %s", err.Error())
+	}
+
+	if parsedURL.Scheme == "http" || parsedURL.Scheme == "https" {
 		// Special case: no auth
 		if options.GitUsername == "" && options.GitPassword == "" {
 			options.Logger(log.LevelInfo, "#1: 👤 Using no authentication!")
@@ -233,6 +241,15 @@ func SetupRepoAuth(options *options.Options) transport.AuthMethod {
 			Username: options.GitUsername,
 			Password: options.GitPassword,
 		}
+	}
+
+	if parsedURL.Scheme == "file" {
+		// go-git will try to fallback to using the `git` command for local
+		// filesystem clones. However, it's more likely than not that the
+		// `git` command is not present in the container image. Log a warning
+		// but continue. Also, no auth.
+		options.Logger(log.LevelWarn, "#1: 🚧 Using local filesystem clone! This requires the git executable to be present!")
+		return nil
 	}
 
 	// Generally git clones over SSH use the 'git' user, but respect
@@ -302,6 +319,7 @@ func CloneOptionsFromOptions(options options.Options) (CloneRepoOptions, error) 
 		SingleBranch: options.GitCloneSingleBranch,
 		Depth:        int(options.GitCloneDepth),
 		CABundle:     caBundle,
+		Logf:         options.Logger,
 	}
 
 	cloneOpts.RepoAuth = SetupRepoAuth(&options)
