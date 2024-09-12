@@ -126,7 +126,7 @@ func Run(ctx context.Context, opts options.Options) error {
 			return fmt.Errorf("git clone options: %w", err)
 		}
 
-		w := git.ProgressWriter(func(line string) { logStage(line) })
+		w := git.ProgressWriter(logStage)
 		defer w.Close()
 		cloneOpts.Progress = w
 
@@ -158,7 +158,7 @@ func Run(ctx context.Context, opts options.Options) error {
 				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
 			)
 
-			w := git.ProgressWriter(func(line string) { logStage(line) })
+			w := git.ProgressWriter(logStage)
 			defer w.Close()
 			cloneOpts.Progress = w
 
@@ -910,7 +910,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 				return nil, fmt.Errorf("git clone options: %w", err)
 			}
 
-			w := git.ProgressWriter(func(line string) { logStage(line) })
+			w := git.ProgressWriter(logStage)
 			defer w.Close()
 			cloneOpts.Progress = w
 
@@ -939,7 +939,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
 			)
 
-			w := git.ProgressWriter(func(line string) { logStage(line) })
+			w := git.ProgressWriter(logStage)
 			defer w.Close()
 			cloneOpts.Progress = w
 

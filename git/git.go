@@ -349,7 +349,7 @@ func (w *progressWriter) Close() error {
 	return err2
 }
 
-func ProgressWriter(write func(line string)) io.WriteCloser {
+func ProgressWriter(write func(line string, args ...any)) io.WriteCloser {
 	reader, writer := io.Pipe()
 	done := make(chan struct{})
 	go func() {
@@ -365,6 +365,8 @@ func ProgressWriter(write func(line string)) io.WriteCloser {
 				if line == "" {
 					continue
 				}
+				// Escape % signs so that they don't get interpreted as format specifiers
+				line = strings.Replace(line, "%", "%%", -1)
 				write(strings.TrimSpace(line))
 			}
 		}
