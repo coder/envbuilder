@@ -206,6 +206,8 @@ func LogHostKeyCallback(logger log.Func) gossh.HostKeyCallback {
 // | https?://host.tld/repo  | Not Set      | Set          | HTTP Basic  |
 // | https?://host.tld/repo  | Set          | Not Set      | HTTP Basic  |
 // | https?://host.tld/repo  | Set          | Set          | HTTP Basic  |
+// | file://path/to/repo     | -            | -            | None        |
+// | path/to/repo            | -            | -            | None        |
 // | All other formats       | -            | -            | SSH         |
 //
 // For SSH authentication, the default username is "git" but will honour
@@ -225,6 +227,7 @@ func SetupRepoAuth(options *options.Options) transport.AuthMethod {
 	parsedURL, err := giturls.Parse(options.GitURL)
 	if err != nil {
 		options.Logger(log.LevelError, "#1: ❌ Failed to parse Git URL: %s", err.Error())
+		return nil
 	}
 
 	if parsedURL.Scheme == "http" || parsedURL.Scheme == "https" {
