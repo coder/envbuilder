@@ -112,22 +112,25 @@ func Run(ctx context.Context, opts options.Options) error {
 	var fallbackErr error
 	var cloned bool
 	if opts.GitURL != "" {
-		cloneOpts, err := git.CloneOptionsFromOptions(opts)
+		endStage := startStage("📦 Cloning %s to %s...",
+			newColor(color.FgCyan).Sprintf(opts.GitURL),
+			newColor(color.FgCyan).Sprintf(opts.WorkspaceFolder),
+		)
+		stageNum := stageNumber
+		logStage := func(format string, args ...any) {
+			opts.Logger(log.LevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
+		}
+
+		cloneOpts, err := git.CloneOptionsFromOptions(logStage, opts)
 		if err != nil {
 			return fmt.Errorf("git clone options: %w", err)
 		}
 
-		endStage := startStage("📦 Cloning %s to %s...",
-			newColor(color.FgCyan).Sprintf(opts.GitURL),
-			newColor(color.FgCyan).Sprintf(cloneOpts.Path),
-		)
-
-		stageNum := stageNumber
-		w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNum, line) })
+		w := git.ProgressWriter(func(line string) { logStage(line) })
 		defer w.Close()
 		cloneOpts.Progress = w
 
-		cloned, fallbackErr = git.CloneRepo(ctx, cloneOpts)
+		cloned, fallbackErr = git.CloneRepo(ctx, logStage, cloneOpts)
 		if fallbackErr == nil {
 			if cloned {
 				endStage("📦 Cloned repository!")
@@ -144,7 +147,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		// Always clone the repo in remote repo build mode into a location that
 		// we control that isn't affected by the users changes.
 		if opts.RemoteRepoBuildMode {
-			cloneOpts, err := git.CloneOptionsFromOptions(opts)
+			cloneOpts, err := git.CloneOptionsFromOptions(logStage, opts)
 			if err != nil {
 				return fmt.Errorf("git clone options: %w", err)
 			}
@@ -155,12 +158,11 @@ func Run(ctx context.Context, opts options.Options) error {
 				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
 			)
 
-			stageNum := stageNumber
-			w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNum, line) })
+			w := git.ProgressWriter(func(line string) { logStage(line) })
 			defer w.Close()
 			cloneOpts.Progress = w
 
-			fallbackErr = git.ShallowCloneRepo(ctx, cloneOpts)
+			fallbackErr = git.ShallowCloneRepo(ctx, logStage, cloneOpts)
 			if fallbackErr == nil {
 				endStage("📦 Cloned repository!")
 				buildTimeWorkspaceFolder = cloneOpts.Path
@@ -891,25 +893,28 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	var fallbackErr error
 	var cloned bool
 	if opts.GitURL != "" {
+		endStage := startStage("📦 Cloning %s to %s...",
+			newColor(color.FgCyan).Sprintf(opts.GitURL),
+			newColor(color.FgCyan).Sprintf(opts.WorkspaceFolder),
+		)
+		stageNum := stageNumber
+		logStage := func(format string, args ...any) {
+			opts.Logger(log.LevelInfo, "#%d: %s", stageNum, fmt.Sprintf(format, args...))
+		}
+
 		// In cache probe mode we should only attempt to clone the full
 		// repository if remote repo build mode isn't enabled.
 		if !opts.RemoteRepoBuildMode {
-			cloneOpts, err := git.CloneOptionsFromOptions(opts)
+			cloneOpts, err := git.CloneOptionsFromOptions(logStage, opts)
 			if err != nil {
 				return nil, fmt.Errorf("git clone options: %w", err)
 			}
 
-			endStage := startStage("📦 Cloning %s to %s...",
-				newColor(color.FgCyan).Sprintf(opts.GitURL),
-				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
-			)
-
-			stageNum := stageNumber
-			w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNum, line) })
+			w := git.ProgressWriter(func(line string) { logStage(line) })
 			defer w.Close()
 			cloneOpts.Progress = w
 
-			cloned, fallbackErr = git.CloneRepo(ctx, cloneOpts)
+			cloned, fallbackErr = git.CloneRepo(ctx, logStage, cloneOpts)
 			if fallbackErr == nil {
 				if cloned {
 					endStage("📦 Cloned repository!")
@@ -923,7 +928,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 
 			_ = w.Close()
 		} else {
-			cloneOpts, err := git.CloneOptionsFromOptions(opts)
+			cloneOpts, err := git.CloneOptionsFromOptions(logStage, opts)
 			if err != nil {
 				return nil, fmt.Errorf("git clone options: %w", err)
 			}
@@ -934,12 +939,11 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
 			)
 
-			stageNum := stageNumber
-			w := git.ProgressWriter(func(line string) { opts.Logger(log.LevelInfo, "#%d: %s", stageNum, line) })
+			w := git.ProgressWriter(func(line string) { logStage(line) })
 			defer w.Close()
 			cloneOpts.Progress = w
 
-			fallbackErr = git.ShallowCloneRepo(ctx, cloneOpts)
+			fallbackErr = git.ShallowCloneRepo(ctx, logStage, cloneOpts)
 			if fallbackErr == nil {
 				endStage("📦 Cloned repository!")
 				buildTimeWorkspaceFolder = cloneOpts.Path

@@ -12,7 +12,6 @@ import (
 	"github.com/coder/envbuilder/options"
 
 	giturls "github.com/chainguard-dev/git-urls"
-	"github.com/coder/envbuilder/log"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -40,7 +39,6 @@ type CloneRepoOptions struct {
 	Depth        int
 	CABundle     []byte
 	ProxyOptions transport.ProxyOptions
-	Logf         log.Func
 }
 
 // CloneRepo will clone the repository at the given URL into the given path.
@@ -48,12 +46,12 @@ type CloneRepoOptions struct {
 // be cloned again.
 //
 // The bool returned states whether the repository was cloned or not.
-func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
+func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOptions) (bool, error) {
 	parsed, err := giturls.Parse(opts.RepoURL)
 	if err != nil {
 		return false, fmt.Errorf("parse url %q: %w", opts.RepoURL, err)
 	}
-	opts.Logf(log.LevelInfo, "#1: Parsed Git URL as %q", parsed.Redacted())
+	logf("Parsed Git URL as %q", parsed.Redacted())
 	if parsed.Hostname() == "dev.azure.com" {
 		// Azure DevOps requires capabilities multi_ack / multi_ack_detailed,
 		// which are not fully implemented and by default are included in
@@ -75,7 +73,7 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
 		transport.UnsupportedCapabilities = []capability.Capability{
 			capability.ThinPack,
 		}
-		opts.Logf(log.LevelInfo, "#1: Workaround for Azure DevOps: marking thin-pack as unsupported")
+		logf("Workaround for Azure DevOps: marking thin-pack as unsupported")
 	}
 
 	err = opts.Storage.MkdirAll(opts.Path, 0o755)
@@ -134,7 +132,7 @@ func CloneRepo(ctx context.Context, opts CloneRepoOptions) (bool, error) {
 // clone will not be performed.
 //
 // The bool returned states whether the repository was cloned or not.
-func ShallowCloneRepo(ctx context.Context, opts CloneRepoOptions) error {
+func ShallowCloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOptions) error {
 	opts.Depth = 1
 	opts.SingleBranch = true
 
@@ -153,7 +151,7 @@ func ShallowCloneRepo(ctx context.Context, opts CloneRepoOptions) error {
 		}
 	}
 
-	cloned, err := CloneRepo(ctx, opts)
+	cloned, err := CloneRepo(ctx, logf, opts)
 	if err != nil {
 		return err
 	}
@@ -185,14 +183,14 @@ func ReadPrivateKey(path string) (gossh.Signer, error) {
 
 // LogHostKeyCallback is a HostKeyCallback that just logs host keys
 // and does nothing else.
-func LogHostKeyCallback(logger log.Func) gossh.HostKeyCallback {
+func LogHostKeyCallback(logger func(string, ...any)) gossh.HostKeyCallback {
 	return func(hostname string, remote net.Addr, key gossh.PublicKey) error {
 		var sb strings.Builder
 		_ = knownhosts.WriteKnownHost(&sb, hostname, remote, key)
 		// skeema/knownhosts uses a fake public key to determine the host key
 		// algorithms. Ignore this one.
 		if s := sb.String(); !strings.Contains(s, "fake-public-key ZmFrZSBwdWJsaWMga2V5") {
-			logger(log.LevelInfo, "#1: 🔑 Got host key: %s", strings.TrimSpace(s))
+			logger("🔑 Got host key: %s", strings.TrimSpace(s))
 		}
 		return nil
 	}
@@ -219,27 +217,27 @@ func LogHostKeyCallback(logger log.Func) gossh.HostKeyCallback {
 // If SSH_KNOWN_HOSTS is not set, the SSH auth method will be configured
 // to accept and log all host keys. Otherwise, host key checking will be
 // performed as usual.
-func SetupRepoAuth(options *options.Options) transport.AuthMethod {
+func SetupRepoAuth(logf func(string, ...any), options *options.Options) transport.AuthMethod {
 	if options.GitURL == "" {
-		options.Logger(log.LevelInfo, "#1: ❔ No Git URL supplied!")
+		logf("❔ No Git URL supplied!")
 		return nil
 	}
 	parsedURL, err := giturls.Parse(options.GitURL)
 	if err != nil {
-		options.Logger(log.LevelError, "#1: ❌ Failed to parse Git URL: %s", err.Error())
+		logf("❌ Failed to parse Git URL: %s", err.Error())
 		return nil
 	}
 
 	if parsedURL.Scheme == "http" || parsedURL.Scheme == "https" {
 		// Special case: no auth
 		if options.GitUsername == "" && options.GitPassword == "" {
-			options.Logger(log.LevelInfo, "#1: 👤 Using no authentication!")
+			logf("👤 Using no authentication!")
 			return nil
 		}
 		// Basic Auth
 		// NOTE: we previously inserted the credentials into the repo URL.
 		// This was removed in https://github.com/coder/envbuilder/pull/141
-		options.Logger(log.LevelInfo, "#1: 🔒 Using HTTP basic authentication!")
+		logf("🔒 Using HTTP basic authentication!")
 		return &githttp.BasicAuth{
 			Username: options.GitUsername,
 			Password: options.GitPassword,
@@ -251,7 +249,7 @@ func SetupRepoAuth(options *options.Options) transport.AuthMethod {
 		// filesystem clones. However, it's more likely than not that the
 		// `git` command is not present in the container image. Log a warning
 		// but continue. Also, no auth.
-		options.Logger(log.LevelWarn, "#1: 🚧 Using local filesystem clone! This requires the git executable to be present!")
+		logf("🚧 Using local filesystem clone! This requires the git executable to be present!")
 		return nil
 	}
 
@@ -262,30 +260,30 @@ func SetupRepoAuth(options *options.Options) transport.AuthMethod {
 	}
 
 	// Assume SSH auth for all other formats.
-	options.Logger(log.LevelInfo, "#1: 🔑 Using SSH authentication!")
+	logf("🔑 Using SSH authentication!")
 
 	var signer ssh.Signer
 	if options.GitSSHPrivateKeyPath != "" {
 		s, err := ReadPrivateKey(options.GitSSHPrivateKeyPath)
 		if err != nil {
-			options.Logger(log.LevelError, "#1: ❌ Failed to read private key from %s: %s", options.GitSSHPrivateKeyPath, err.Error())
+			logf("❌ Failed to read private key from %s: %s", options.GitSSHPrivateKeyPath, err.Error())
 		} else {
-			options.Logger(log.LevelInfo, "#1: 🔑 Using %s key!", s.PublicKey().Type())
+			logf("🔑 Using %s key!", s.PublicKey().Type())
 			signer = s
 		}
 	}
 
 	// If no SSH key set, fall back to agent auth.
 	if signer == nil {
-		options.Logger(log.LevelError, "#1: 🔑 No SSH key found, falling back to agent!")
+		logf("🔑 No SSH key found, falling back to agent!")
 		auth, err := gitssh.NewSSHAgentAuth(options.GitUsername)
 		if err != nil {
-			options.Logger(log.LevelError, "#1: ❌ Failed to connect to SSH agent: %s", err.Error())
+			logf("❌ Failed to connect to SSH agent: " + err.Error())
 			return nil // nothing else we can do
 		}
 		if os.Getenv("SSH_KNOWN_HOSTS") == "" {
-			options.Logger(log.LevelWarn, "#1: 🔓 SSH_KNOWN_HOSTS not set, accepting all host keys!")
-			auth.HostKeyCallback = LogHostKeyCallback(options.Logger)
+			logf("🔓 SSH_KNOWN_HOSTS not set, accepting all host keys!")
+			auth.HostKeyCallback = LogHostKeyCallback(logf)
 		}
 		return auth
 	}
@@ -303,35 +301,34 @@ func SetupRepoAuth(options *options.Options) transport.AuthMethod {
 
 	// Duplicated code due to Go's type system.
 	if os.Getenv("SSH_KNOWN_HOSTS") == "" {
-		options.Logger(log.LevelWarn, "#1: 🔓 SSH_KNOWN_HOSTS not set, accepting all host keys!")
-		auth.HostKeyCallback = LogHostKeyCallback(options.Logger)
+		logf("🔓 SSH_KNOWN_HOSTS not set, accepting all host keys!")
+		auth.HostKeyCallback = LogHostKeyCallback(logf)
 	}
 	return auth
 }
 
-func CloneOptionsFromOptions(options options.Options) (CloneRepoOptions, error) {
+func CloneOptionsFromOptions(logf func(string, ...any), options options.Options) (CloneRepoOptions, error) {
 	caBundle, err := options.CABundle()
 	if err != nil {
 		return CloneRepoOptions{}, err
 	}
 
 	cloneOpts := CloneRepoOptions{
+		RepoURL:      options.GitURL,
 		Path:         options.WorkspaceFolder,
 		Storage:      options.Filesystem,
 		Insecure:     options.Insecure,
 		SingleBranch: options.GitCloneSingleBranch,
 		Depth:        int(options.GitCloneDepth),
 		CABundle:     caBundle,
-		Logf:         options.Logger,
 	}
 
-	cloneOpts.RepoAuth = SetupRepoAuth(&options)
+	cloneOpts.RepoAuth = SetupRepoAuth(logf, &options)
 	if options.GitHTTPProxyURL != "" {
 		cloneOpts.ProxyOptions = transport.ProxyOptions{
 			URL: options.GitHTTPProxyURL,
 		}
 	}
-	cloneOpts.RepoURL = options.GitURL
 
 	return cloneOpts, nil
 }
