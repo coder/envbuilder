@@ -15,6 +15,7 @@ import (
 	giturls "github.com/chainguard-dev/git-urls"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
+	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
@@ -99,8 +100,7 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 		return false, fmt.Errorf("chroot .git: %w", err)
 	}
 	gitStorage := filesystem.NewStorage(gitDir, cache.NewObjectLRU(cache.DefaultMaxSize*10))
-	fsStorage := filesystem.NewStorage(fs, cache.NewObjectLRU(cache.DefaultMaxSize*10))
-	repo, err := git.Open(fsStorage, gitDir)
+	repo, err := git.Open(gitStorage, fs)
 	if err == nil {
 		// Repo exists, so fast-forward it.
 		return fastForwardRepo(ctx, logf, opts, repo, reference)
@@ -129,44 +129,107 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 	if err != nil {
 		return false, fmt.Errorf("clone %q: %w", opts.RepoURL, err)
 	}
-	if head, err := repo.Head(); err == nil && head != nil {
-		logf("cloned repo HEAD: %s", head.Hash().String())
+	if head, err := repoHead(repo); err != nil {
+		logf("failed to get repo HEAD: %s", err)
+	} else {
+		logf("cloned repo at %s", head)
 	}
 	return true, nil
 }
 
 func fastForwardRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOptions, repo *git.Repository, referenceName string) (bool, error) {
-	if head, err := repo.Head(); err == nil && head != nil {
-		logf("existing repo HEAD: %s", head.Hash().String())
+	if referenceName == "" {
+		referenceName = "refs/heads/main"
 	}
+	ref := plumbing.ReferenceName(referenceName)
+	headBefore, err := repoHead(repo)
+	if err != nil {
+		return false, err
+	}
+	logf("existing repo HEAD: %s", headBefore)
+
+	remote, err := repo.Remote("origin")
+	if err != nil {
+		return false, fmt.Errorf("remote: %w", err)
+	}
+
+	if len(remote.Config().URLs) == 0 {
+		logf("remote %q has no URLs configured!", remote.String())
+		return false, nil
+	}
+
+	// If the remote URL differs, stop! We don't want to accidentally
+	// fetch from a different remote.
+	for _, u := range remote.Config().URLs {
+		if u != opts.RepoURL {
+			logf("remote %q has URL %q, expected %q", remote.String(), u, opts.RepoURL)
+			return false, nil
+		}
+	}
+
+	var refSpecs []gitconfig.RefSpec
+	if referenceName != "" {
+		// git checkout -b <branch> --track <remote>/<branch>
+		refSpecs = []gitconfig.RefSpec{
+			gitconfig.RefSpec(fmt.Sprintf("%s:%s", referenceName, referenceName)),
+		}
+	}
+
+	if err := remote.FetchContext(ctx, &git.FetchOptions{
+		Auth:            opts.RepoAuth,
+		CABundle:        opts.CABundle,
+		Depth:           opts.Depth,
+		Force:           false,
+		InsecureSkipTLS: opts.Insecure,
+		Progress:        opts.Progress,
+		ProxyOptions:    opts.ProxyOptions,
+		RefSpecs:        refSpecs,
+		RemoteName:      "origin",
+	}); err != nil {
+		if err != git.NoErrAlreadyUpToDate {
+			return false, fmt.Errorf("fetch changes from remote: %w", err)
+		}
+		logf("repository is already up-to-date")
+	}
+
+	// Now that we've fetched changes from the remote,
+	// attempt to check out the requested reference.
 	wt, err := repo.Worktree()
 	if err != nil {
 		return false, fmt.Errorf("worktree: %w", err)
 	}
-	err = wt.PullContext(ctx, &git.PullOptions{
-		RemoteName:      "", // use default remote
-		ReferenceName:   plumbing.ReferenceName(referenceName),
-		SingleBranch:    opts.SingleBranch,
-		Depth:           opts.Depth,
-		Auth:            opts.RepoAuth,
-		Progress:        opts.Progress,
-		Force:           false,
-		InsecureSkipTLS: opts.Insecure,
-		CABundle:        opts.CABundle,
-		ProxyOptions:    opts.ProxyOptions,
-	})
-	if err == nil {
-		if head, err := repo.Head(); err == nil && head != nil {
-			logf("fast-forwarded to %s", head.Hash().String())
-		}
-		return true, nil
+	st, err := wt.Status()
+	if err != nil {
+		return false, fmt.Errorf("status: %w", err)
 	}
-	if errors.Is(err, git.NoErrAlreadyUpToDate) {
-		logf("existing repo already up-to-date")
+	// If the working tree is dirty, assume that the user wishes to
+	// test local changes. Skip the checkout.
+	if !st.IsClean() {
+		logf("working tree is dirty, skipping checkout")
 		return false, nil
 	}
-	logf("failed to fast-forward: %s", err.Error())
-	return false, err
+	if err := wt.Checkout(&git.CheckoutOptions{
+		Branch: ref,
+		// Note: we already checked that the working tree is clean, but I'd rather
+		//       err on the side of caution.
+		Keep: true,
+	}); err != nil {
+		return false, fmt.Errorf("checkout branch %s: %w", ref.String(), err)
+	}
+	headAfter, err := repoHead(repo)
+	if err != nil {
+		return false, fmt.Errorf("check repo HEAD: %w", err)
+	}
+	logf("checked out %s", headAfter)
+	return headBefore != headAfter, nil
+}
+
+func repoHead(repo *git.Repository) (string, error) {
+	head, err := repo.Head()
+	if err != nil {
+		return "", err
+	}
+	return head.Hash().String(), nil
 }
 
 // ShallowCloneRepo will clone the repository at the given URL into the given path

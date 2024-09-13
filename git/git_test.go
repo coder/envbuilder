@@ -22,6 +22,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -89,14 +90,24 @@ func TestCloneRepo(t *testing.T) {
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
 				clientFS := memfs.New()
 				// A repo already exists!
-				_ = gittest.NewRepo(t, clientFS)
+				_ = gittest.NewRepo(t, clientFS).Commit(gittest.Commit(t, "WRITEME.md", "I'm already here!", "Wow!"))
 				cloned, err := git.CloneRepo(context.Background(), t.Logf, git.CloneRepoOptions{
-					Path:    "/",
+					Path:    "/workspace",
 					RepoURL: srv.URL,
 					Storage: clientFS,
+					RepoAuth: &githttp.BasicAuth{
+						Username: tc.username,
+						Password: tc.password,
+					},
 				})
-				require.NoError(t, err)
-				require.False(t, cloned)
+				if tc.expectError != "" {
+					assert.ErrorContains(t, err, tc.expectError)
+				}
+				assert.False(t, cloned)
+
+				// Ensure we do not overwrite the existing repo.
+				readme := mustRead(t, clientFS, "/workspace/WRITEME.md")
+				assert.Equal(t, "I'm already here!", readme)
 			})
 
 			// Basic Auth
