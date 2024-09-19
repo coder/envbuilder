@@ -19,4 +19,4 @@ for attempt in $(seq 1 10); do
 done
 # Change the owner of the Docker socket so that the coder user can use it.
 # Using `newgrp docker` is kind of annoying.
-sudo chown coder:coder /var/run/docker.sock
+sudo chown coder:docker /var/run/docker.sock
