@@ -10,7 +10,7 @@ from inside Envbuilder.
 > agent startup script in your template.
 > For example:
 >
-> ```
+> ```terraform
 >   resource "coder_agent" "dev" {
 >     ...
 >     startup_script = <<-EOT
@@ -76,7 +76,13 @@ The above can also be accomplished using the [`docker-in-docker` Devcontainer
 feature](https://github.com/devcontainers/features/tree/main/src/docker-in-docker).
 
 > Note: we still need `onCreateCommand` to start the docker startup script.
-> See https://github.com/devcontainers/features/blob/main/src/docker-in-docker/devcontainer-feature.json#L60
+> See
+> [here](https://github.com/devcontainers/features/blob/main/src/docker-in-docker/devcontainer-feature.json#L65)
+> for more details.
+>
+> Known issue: for some reason, you still need `sudo` to execute Docker
+> commands despite the permissions on the socket being set. More investigation
+> required.
 
 Example:
 

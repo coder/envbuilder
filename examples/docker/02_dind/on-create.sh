@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
-# Start Docker in the background
-sudo -u root /bin/sh -c 'nohup dockerd 2>&1 > /var/log/docker.log &'
+# Start Docker in the background.
+sudo -u root /bin/sh -c 'nohup dockerd > /var/log/docker.log &'
 
-# Wait for Docker to start
+# Wait up to 10 seconds for Docker to start.
 for attempt in $(seq 1 10); do
   if [[ $attempt -eq 10 ]]; then
     echo "Failed to start Docker"
@@ -17,6 +17,6 @@ for attempt in $(seq 1 10); do
     break
   fi
 done
-# Change the owner of the Docker socket so that the coder user can use it.
-# Using `newgrp docker` is kind of annoying.
-sudo chown coder:docker /var/run/docker.sock
+
+# Change the owner of the Docker socket so that the non-root user can use it.
+sudo chown ubuntu:docker /var/run/docker.sock
