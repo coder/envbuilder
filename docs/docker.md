@@ -80,9 +80,9 @@ feature](https://github.com/devcontainers/features/tree/main/src/docker-in-docke
 > [here](https://github.com/devcontainers/features/blob/main/src/docker-in-docker/devcontainer-feature.json#L65)
 > for more details.
 >
-> Known issue: for some reason, you still need `sudo` to execute Docker
-> commands despite the permissions on the socket being set. More investigation
-> required.
+> Known issue: `/run` does not get symlinked correctly to `/var/run`.
+> To work around this, we create the symlink manually before running
+> the script to start the Docker daemon.
 
 Example:
 
