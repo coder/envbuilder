@@ -75,7 +75,7 @@ docker run -it --rm \
 The above can also be accomplished using the [`docker-in-docker` Devcontainer
 feature](https://github.com/devcontainers/features/tree/main/src/docker-in-docker).
 
-> Note: we still need `onCreateCommand` to start the docker startup script.
+> Note: we still need the `onCreateCommand` to start the docker startup script.
 > See
 > [here](https://github.com/devcontainers/features/blob/main/src/docker-in-docker/devcontainer-feature.json#L65)
 > for more details.
