@@ -1707,6 +1707,58 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		out := execContainer(t, ctr.ID, "/usr/local/bin/color")
 		require.Contains(t, strings.TrimSpace(out), "my favorite color is green")
 	})
+
+	t.Run("CacheAndPushUser", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		srv := gittest.CreateGitServer(t, gittest.Options{
+			Files: map[string]string{
+				".devcontainer/devcontainer.json": `{
+					"name": "Test",
+					"build": {
+						"dockerfile": "Dockerfile"
+					},
+				}`,
+				".devcontainer/Dockerfile": fmt.Sprintf(`FROM %s
+RUN useradd -m -s /bin/bash devalot
+USER devalot
+`, testImageUbuntu),
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		opts := []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+		}
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_ = pushImage(t, ref, nil, opts...)
+
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer cli.Close()
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
+
+		// When: we run the image we just built
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
+
+		// Check that the user is present in the image.
+		out := execContainer(t, ctr.ID, "ps aux | awk '/^devalot / {print $1}' | sort -u")
+		require.Contains(t, strings.TrimSpace(out), "devalot")
+	})
 }
 
 func TestChownHomedir(t *testing.T) {
@@ -1889,8 +1941,7 @@ func startContainerFromRef(ctx context.Context, t *testing.T, cli *client.Client
 
 	// Start the container.
 	ctr, err := cli.ContainerCreate(ctx, &container.Config{
-		Image:      ref.String(),
-		Entrypoint: []string{"sleep", "infinity"},
+		Image: ref.String(),
 		Labels: map[string]string{
 			testContainerLabel: "true",
 		},
