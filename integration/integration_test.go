@@ -157,8 +157,17 @@ FROM a AS b`, testImageUbuntu),
 	}})
 	require.NoError(t, err)
 
-	output := execContainer(t, ctr, "ps aux | awk '/^pickme / {print $1}' | sort -u")
-	require.Equal(t, "pickme", strings.TrimSpace(output))
+	// Check that envbuilder started command as user.
+	// Since envbuilder starts as root, probe for up to 10 seconds.
+	for i := 0; i < 10; i++ {
+		out := execContainer(t, ctr, "ps aux | awk '/^pickme * 1 / {print $1}' | sort -u")
+		got := strings.TrimSpace(out)
+		if got == "pickme" {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	require.Fail(t, "expected pid 1 to be running as pickme")
 }
 
 func TestUidGid(t *testing.T) {
@@ -1755,9 +1764,17 @@ USER devalot
 		// When: we run the image we just built
 		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
 
-		// Check that the user is present in the image.
-		out := execContainer(t, ctr.ID, "ps aux | awk '/^devalot / {print $1}' | sort -u")
-		require.Contains(t, strings.TrimSpace(out), "devalot")
+		// Check that envbuilder started command as user.
+		// Since envbuilder starts as root, probe for up to 10 seconds.
+		for i := 0; i < 10; i++ {
+			out := execContainer(t, ctr.ID, "ps aux | awk '/^devalot * 1 / {print $1}' | sort -u")
+			got := strings.TrimSpace(out)
+			if got == "devalot" {
+				return
+			}
+			time.Sleep(time.Second)
+		}
+		require.Fail(t, "expected pid 1 to be running as devalot")
 	})
 }
 
