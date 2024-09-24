@@ -276,407 +276,425 @@ func Run(ctx context.Context, opts options.Options) error {
 		}
 	}
 
-	if buildParams == nil {
-		// If there isn't a devcontainer.json file in the repository,
-		// we fallback to whatever the `DefaultImage` is.
-		var err error
-		buildParams, err = defaultBuildParams()
-		if err != nil {
-			return fmt.Errorf("no Dockerfile or devcontainer.json found: %w", err)
+	var (
+		username       string
+		skippedRebuild bool
+	)
+	if _, err := os.Stat(magicDir.Image()); errors.Is(err, fs.ErrNotExist) {
+		if buildParams == nil {
+			// If there isn't a devcontainer.json file in the repository,
+			// we fallback to whatever the `DefaultImage` is.
+			var err error
+			buildParams, err = defaultBuildParams()
+			if err != nil {
+				return fmt.Errorf("no Dockerfile or devcontainer.json found: %w", err)
+			}
 		}
-	}
 
-	lvl := log.LevelInfo
-	if opts.Verbose {
-		lvl = log.LevelDebug
-	}
-	log.HijackLogrus(lvl, func(entry *logrus.Entry) {
-		for _, line := range strings.Split(entry.Message, "\r") {
-			opts.Logger(log.FromLogrus(entry.Level), "#%d: %s", stageNumber, color.HiBlackString(line))
+		lvl := log.LevelInfo
+		if opts.Verbose {
+			lvl = log.LevelDebug
 		}
-	})
-
-	if opts.LayerCacheDir != "" {
-		if opts.CacheRepo != "" {
-			opts.Logger(log.LevelWarn, "Overriding cache repo with local registry...")
-		}
-		localRegistry, closeLocalRegistry, err := serveLocalRegistry(ctx, opts.Logger, opts.LayerCacheDir)
-		if err != nil {
-			return err
-		}
-		defer closeLocalRegistry()
-		opts.CacheRepo = localRegistry
-	}
-
-	// IgnorePaths in the Kaniko opts doesn't properly ignore paths.
-	// So we add them to the default ignore list. See:
-	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
-	ignorePaths := append([]string{
-		magicDir.Path(),
-		opts.WorkspaceFolder,
-		// See: https://github.com/coder/envbuilder/issues/37
-		"/etc/resolv.conf",
-	}, opts.IgnorePaths...)
-
-	if opts.LayerCacheDir != "" {
-		ignorePaths = append(ignorePaths, opts.LayerCacheDir)
-	}
-
-	for _, ignorePath := range ignorePaths {
-		util.AddToDefaultIgnoreList(util.IgnoreListEntry{
-			Path:            ignorePath,
-			PrefixMatchOnly: false,
-			AllowedPaths:    nil,
+		log.HijackLogrus(lvl, func(entry *logrus.Entry) {
+			for _, line := range strings.Split(entry.Message, "\r") {
+				opts.Logger(log.FromLogrus(entry.Level), "#%d: %s", stageNumber, color.HiBlackString(line))
+			}
 		})
-	}
 
-	// In order to allow 'resuming' envbuilder, embed the binary into the image
-	// if it is being pushed.
-	// As these files will be owned by root, it is considerate to clean up
-	// after we're done!
-	cleanupBuildContext := func() {}
-	if opts.PushImage {
-		// Add exceptions in Kaniko's ignorelist for these magic files we add.
-		if err := util.AddAllowedPathToDefaultIgnoreList(opts.BinaryPath); err != nil {
-			return fmt.Errorf("add envbuilder binary to ignore list: %w", err)
+		if opts.LayerCacheDir != "" {
+			if opts.CacheRepo != "" {
+				opts.Logger(log.LevelWarn, "Overriding cache repo with local registry...")
+			}
+			localRegistry, closeLocalRegistry, err := serveLocalRegistry(ctx, opts.Logger, opts.LayerCacheDir)
+			if err != nil {
+				return err
+			}
+			defer closeLocalRegistry()
+			opts.CacheRepo = localRegistry
 		}
-		if err := util.AddAllowedPathToDefaultIgnoreList(magicDir.Image()); err != nil {
-			return fmt.Errorf("add magic image file to ignore list: %w", err)
+
+		// IgnorePaths in the Kaniko opts doesn't properly ignore paths.
+		// So we add them to the default ignore list. See:
+		// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
+		ignorePaths := append([]string{
+			magicDir.Path(),
+			opts.WorkspaceFolder,
+			// See: https://github.com/coder/envbuilder/issues/37
+			"/etc/resolv.conf",
+		}, opts.IgnorePaths...)
+
+		if opts.LayerCacheDir != "" {
+			ignorePaths = append(ignorePaths, opts.LayerCacheDir)
 		}
-		magicTempDir := magicdir.At(buildParams.BuildContext, magicdir.TempDir)
-		if err := opts.Filesystem.MkdirAll(magicTempDir.Path(), 0o755); err != nil {
-			return fmt.Errorf("create magic temp dir in build context: %w", err)
-		}
-		// Add the magic directives that embed the binary into the built image.
-		buildParams.DockerfileContent += magicdir.Directives
-		// Copy the envbuilder binary into the build context.
-		// External callers will need to specify the path to the desired envbuilder binary.
-		envbuilderBinDest := filepath.Join(magicTempDir.Path(), "envbuilder")
-		// Also touch the magic file that signifies the image has been built!
-		magicImageDest := magicTempDir.Image()
-		// Clean up after build!
-		var cleanupOnce sync.Once
-		cleanupBuildContext = func() {
-			cleanupOnce.Do(func() {
-				for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir.Path()} {
-					if err := opts.Filesystem.Remove(path); err != nil {
-						opts.Logger(log.LevelWarn, "failed to clean up magic temp dir from build context: %w", err)
-					}
-				}
+
+		for _, ignorePath := range ignorePaths {
+			util.AddToDefaultIgnoreList(util.IgnoreListEntry{
+				Path:            ignorePath,
+				PrefixMatchOnly: false,
+				AllowedPaths:    nil,
 			})
 		}
-		defer cleanupBuildContext()
 
-		opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
-		if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
-			return fmt.Errorf("copy envbuilder binary to build context: %w", err)
-		}
-
-		opts.Logger(log.LevelDebug, "touching magic image file at %q in build context %q", magicImageDest, magicTempDir)
-		if err := touchFile(opts.Filesystem, magicImageDest, 0o755); err != nil {
-			return fmt.Errorf("touch magic image file in build context: %w", err)
-		}
-	}
-
-	// temp move of all ro mounts
-	tempRemountDest := magicDir.Join("mnt")
-	// ignorePrefixes is a superset of ignorePaths that we pass to kaniko's
-	// IgnoreList.
-	ignorePrefixes := append([]string{"/dev", "/proc", "/sys"}, ignorePaths...)
-	restoreMounts, err := ebutil.TempRemount(opts.Logger, tempRemountDest, ignorePrefixes...)
-	defer func() { // restoreMounts should never be nil
-		if err := restoreMounts(); err != nil {
-			opts.Logger(log.LevelError, "restore mounts: %s", err.Error())
-		}
-	}()
-	if err != nil {
-		return fmt.Errorf("temp remount: %w", err)
-	}
-
-	skippedRebuild := false
-	stdoutWriter, closeStdout := log.Writer(opts.Logger)
-	defer closeStdout()
-	stderrWriter, closeStderr := log.Writer(opts.Logger)
-	defer closeStderr()
-	build := func() (v1.Image, error) {
-		defer cleanupBuildContext()
-		_, alreadyBuiltErr := opts.Filesystem.Stat(magicDir.Built())
-		_, isImageErr := opts.Filesystem.Stat(magicDir.Image())
-		if (alreadyBuiltErr == nil && opts.SkipRebuild) || isImageErr == nil {
-			endStage := startStage("🏗️ Skipping build because of cache...")
-			imageRef, err := devcontainer.ImageFromDockerfile(buildParams.DockerfileContent)
-			if err != nil {
-				return nil, fmt.Errorf("image from dockerfile: %w", err)
+		// In order to allow 'resuming' envbuilder, embed the binary into the image
+		// if it is being pushed.
+		// As these files will be owned by root, it is considerate to clean up
+		// after we're done!
+		cleanupBuildContext := func() {}
+		if opts.PushImage {
+			// Add exceptions in Kaniko's ignorelist for these magic files we add.
+			if err := util.AddAllowedPathToDefaultIgnoreList(opts.BinaryPath); err != nil {
+				return fmt.Errorf("add envbuilder binary to ignore list: %w", err)
 			}
-			image, err := remote.Image(imageRef, remote.WithAuthFromKeychain(creds.GetKeychain()))
-			if err != nil {
-				return nil, fmt.Errorf("image from remote: %w", err)
+			if err := util.AddAllowedPathToDefaultIgnoreList(magicDir.Image()); err != nil {
+				return fmt.Errorf("add magic image file to ignore list: %w", err)
 			}
-			endStage("🏗️ Found image from remote!")
-			skippedRebuild = true
-			return image, nil
+			if err := util.AddAllowedPathToDefaultIgnoreList(magicDir.Features()); err != nil {
+				return fmt.Errorf("add features to ignore list: %w", err)
+			}
+			magicTempDir := magicdir.At(buildParams.BuildContext, magicdir.TempDir)
+			if err := opts.Filesystem.MkdirAll(magicTempDir.Path(), 0o755); err != nil {
+				return fmt.Errorf("create magic temp dir in build context: %w", err)
+			}
+			// Add the magic directives that embed the binary into the built image.
+			buildParams.DockerfileContent += magicdir.Directives
+
+			envbuilderBinDest := filepath.Join(magicTempDir.Path(), "envbuilder")
+			magicImageDest := magicTempDir.Image()
+
+			// Clean up after build!
+			var cleanupOnce sync.Once
+			cleanupBuildContext = func() {
+				cleanupOnce.Do(func() {
+					for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir.Path()} {
+						if err := opts.Filesystem.Remove(path); err != nil {
+							opts.Logger(log.LevelWarn, "failed to clean up magic temp dir from build context: %w", err)
+						}
+					}
+				})
+			}
+			defer cleanupBuildContext()
+
+			// Copy the envbuilder binary into the build context. External callers
+			// will need to specify the path to the desired envbuilder binary.
+			opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
+			if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
+				return fmt.Errorf("copy envbuilder binary to build context: %w", err)
+			}
+
+			// Also write the magic file that signifies the image has been built.
+			// Since the user in the image is set to root, we also store the user
+			// in the magic file to be used by envbuilder when the image is run.
+			opts.Logger(log.LevelDebug, "writing magic image file at %q in build context %q", magicImageDest, magicTempDir)
+			if err := writeFile(opts.Filesystem, magicImageDest, 0o755, fmt.Sprintf("USER=%s\n", buildParams.User)); err != nil {
+				return fmt.Errorf("write magic image file in build context: %w", err)
+			}
 		}
 
-		// This is required for deleting the filesystem prior to build!
-		err = util.InitIgnoreList()
+		// temp move of all ro mounts
+		tempRemountDest := magicDir.Join("mnt")
+		// ignorePrefixes is a superset of ignorePaths that we pass to kaniko's
+		// IgnoreList.
+		ignorePrefixes := append([]string{"/dev", "/proc", "/sys"}, ignorePaths...)
+		restoreMounts, err := ebutil.TempRemount(opts.Logger, tempRemountDest, ignorePrefixes...)
+		defer func() { // restoreMounts should never be nil
+			if err := restoreMounts(); err != nil {
+				opts.Logger(log.LevelError, "restore mounts: %s", err.Error())
+			}
+		}()
 		if err != nil {
-			return nil, fmt.Errorf("init ignore list: %w", err)
+			return fmt.Errorf("temp remount: %w", err)
 		}
 
-		// It's possible that the container will already have files in it, and
-		// we don't want to merge a new container with the old one.
-		if err := maybeDeleteFilesystem(opts.Logger, opts.ForceSafe); err != nil {
-			return nil, fmt.Errorf("delete filesystem: %w", err)
-		}
+		stdoutWriter, closeStdout := log.Writer(opts.Logger)
+		defer closeStdout()
+		stderrWriter, closeStderr := log.Writer(opts.Logger)
+		defer closeStderr()
+		build := func() (v1.Image, error) {
+			defer cleanupBuildContext()
+			_, alreadyBuiltErr := opts.Filesystem.Stat(magicDir.Built())
+			_, isImageErr := opts.Filesystem.Stat(magicDir.Image())
+			if (alreadyBuiltErr == nil && opts.SkipRebuild) || isImageErr == nil {
+				endStage := startStage("🏗️ Skipping build because of cache...")
+				imageRef, err := devcontainer.ImageFromDockerfile(buildParams.DockerfileContent)
+				if err != nil {
+					return nil, fmt.Errorf("image from dockerfile: %w", err)
+				}
+				image, err := remote.Image(imageRef, remote.WithAuthFromKeychain(creds.GetKeychain()))
+				if err != nil {
+					return nil, fmt.Errorf("image from remote: %w", err)
+				}
+				endStage("🏗️ Found image from remote!")
+				skippedRebuild = true
+				return image, nil
+			}
 
-		cacheTTL := time.Hour * 24 * 7
-		if opts.CacheTTLDays != 0 {
-			cacheTTL = time.Hour * 24 * time.Duration(opts.CacheTTLDays)
+			// This is required for deleting the filesystem prior to build!
+			err = util.InitIgnoreList()
+			if err != nil {
+				return nil, fmt.Errorf("init ignore list: %w", err)
+			}
+
+			// It's possible that the container will already have files in it, and
+			// we don't want to merge a new container with the old one.
+			if err := maybeDeleteFilesystem(opts.Logger, opts.ForceSafe); err != nil {
+				return nil, fmt.Errorf("delete filesystem: %w", err)
+			}
+
+			cacheTTL := time.Hour * 24 * 7
+			if opts.CacheTTLDays != 0 {
+				cacheTTL = time.Hour * 24 * time.Duration(opts.CacheTTLDays)
+			}
+
+			// At this point we have all the context, we can now build!
+			registryMirror := []string{}
+			if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
+				registryMirror = strings.Split(val, ";")
+			}
+			var destinations []string
+			if opts.CacheRepo != "" {
+				destinations = append(destinations, opts.CacheRepo)
+			}
+			kOpts := &config.KanikoOptions{
+				// Boilerplate!
+				CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
+				SnapshotMode:      "redo",
+				RunV2:             true,
+				RunStdout:         stdoutWriter,
+				RunStderr:         stderrWriter,
+				Destinations:      destinations,
+				NoPush:            !opts.PushImage || len(destinations) == 0,
+				CacheRunLayers:    true,
+				CacheCopyLayers:   true,
+				CompressedCaching: true,
+				Compression:       config.ZStd,
+				// Maps to "default" level, ~100-300 MB/sec according to
+				// benchmarks in klauspost/compress README
+				// https://github.com/klauspost/compress/blob/67a538e2b4df11f8ec7139388838a13bce84b5d5/zstd/encoder_options.go#L188
+				CompressionLevel: 3,
+				CacheOptions: config.CacheOptions{
+					CacheTTL: cacheTTL,
+					CacheDir: opts.BaseImageCacheDir,
+				},
+				ForceUnpack:       true,
+				BuildArgs:         buildParams.BuildArgs,
+				CacheRepo:         opts.CacheRepo,
+				Cache:             opts.CacheRepo != "" || opts.BaseImageCacheDir != "",
+				DockerfilePath:    buildParams.DockerfilePath,
+				DockerfileContent: buildParams.DockerfileContent,
+				RegistryOptions: config.RegistryOptions{
+					Insecure:      opts.Insecure,
+					InsecurePull:  opts.Insecure,
+					SkipTLSVerify: opts.Insecure,
+					// Enables registry mirror features in Kaniko, see more in link below
+					// https://github.com/GoogleContainerTools/kaniko?tab=readme-ov-file#flag---registry-mirror
+					// Related to PR #114
+					// https://github.com/coder/envbuilder/pull/114
+					RegistryMirrors: registryMirror,
+				},
+				SrcContext: buildParams.BuildContext,
+
+				// For cached image utilization, produce reproducible builds.
+				Reproducible: opts.PushImage,
+			}
+
+			endStage := startStage("🏗️ Building image...")
+			image, err := executor.DoBuild(kOpts)
+			if err != nil {
+				return nil, xerrors.Errorf("do build: %w", err)
+			}
+			endStage("🏗️ Built image!")
+			if opts.PushImage {
+				endStage = startStage("🏗️ Pushing image...")
+				if err := executor.DoPush(image, kOpts); err != nil {
+					return nil, xerrors.Errorf("do push: %w", err)
+				}
+				endStage("🏗️ Pushed image!")
+			}
+
+			return image, err
 		}
 
 		// At this point we have all the context, we can now build!
-		registryMirror := []string{}
-		if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
-			registryMirror = strings.Split(val, ";")
-		}
-		var destinations []string
-		if opts.CacheRepo != "" {
-			destinations = append(destinations, opts.CacheRepo)
-		}
-		kOpts := &config.KanikoOptions{
-			// Boilerplate!
-			CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
-			SnapshotMode:      "redo",
-			RunV2:             true,
-			RunStdout:         stdoutWriter,
-			RunStderr:         stderrWriter,
-			Destinations:      destinations,
-			NoPush:            !opts.PushImage || len(destinations) == 0,
-			CacheRunLayers:    true,
-			CacheCopyLayers:   true,
-			CompressedCaching: true,
-			Compression:       config.ZStd,
-			// Maps to "default" level, ~100-300 MB/sec according to
-			// benchmarks in klauspost/compress README
-			// https://github.com/klauspost/compress/blob/67a538e2b4df11f8ec7139388838a13bce84b5d5/zstd/encoder_options.go#L188
-			CompressionLevel: 3,
-			CacheOptions: config.CacheOptions{
-				CacheTTL: cacheTTL,
-				CacheDir: opts.BaseImageCacheDir,
-			},
-			ForceUnpack:       true,
-			BuildArgs:         buildParams.BuildArgs,
-			CacheRepo:         opts.CacheRepo,
-			Cache:             opts.CacheRepo != "" || opts.BaseImageCacheDir != "",
-			DockerfilePath:    buildParams.DockerfilePath,
-			DockerfileContent: buildParams.DockerfileContent,
-			RegistryOptions: config.RegistryOptions{
-				Insecure:      opts.Insecure,
-				InsecurePull:  opts.Insecure,
-				SkipTLSVerify: opts.Insecure,
-				// Enables registry mirror features in Kaniko, see more in link below
-				// https://github.com/GoogleContainerTools/kaniko?tab=readme-ov-file#flag---registry-mirror
-				// Related to PR #114
-				// https://github.com/coder/envbuilder/pull/114
-				RegistryMirrors: registryMirror,
-			},
-			SrcContext: buildParams.BuildContext,
-
-			// For cached image utilization, produce reproducible builds.
-			Reproducible: opts.PushImage,
-		}
-
-		endStage := startStage("🏗️ Building image...")
-		image, err := executor.DoBuild(kOpts)
+		image, err := build()
 		if err != nil {
-			return nil, xerrors.Errorf("do build: %w", err)
-		}
-		endStage("🏗️ Built image!")
-		if opts.PushImage {
-			endStage = startStage("🏗️ Pushing image...")
-			if err := executor.DoPush(image, kOpts); err != nil {
-				return nil, xerrors.Errorf("do push: %w", err)
+			fallback := false
+			switch {
+			case strings.Contains(err.Error(), "parsing dockerfile"):
+				fallback = true
+				fallbackErr = err
+			case strings.Contains(err.Error(), "error building stage"):
+				fallback = true
+				fallbackErr = err
+			// This occurs when the image cannot be found!
+			case strings.Contains(err.Error(), "authentication required"):
+				fallback = true
+				fallbackErr = err
+			// This occurs from Docker Hub when the image cannot be found!
+			case strings.Contains(err.Error(), "manifest unknown"):
+				fallback = true
+				fallbackErr = err
+			case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
+				opts.Logger(log.LevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
 			}
-			endStage("🏗️ Pushed image!")
+			if !fallback || opts.ExitOnBuildFailure {
+				return err
+			}
+			opts.Logger(log.LevelError, "Failed to build: %s", err)
+			opts.Logger(log.LevelError, "Falling back to the default image...")
+			buildParams, err = defaultBuildParams()
+			if err != nil {
+				return err
+			}
+			image, err = build()
+		}
+		if err != nil {
+			return fmt.Errorf("build with kaniko: %w", err)
 		}
 
-		return image, err
-	}
-
-	// At this point we have all the context, we can now build!
-	image, err := build()
-	if err != nil {
-		fallback := false
-		switch {
-		case strings.Contains(err.Error(), "parsing dockerfile"):
-			fallback = true
-			fallbackErr = err
-		case strings.Contains(err.Error(), "error building stage"):
-			fallback = true
-			fallbackErr = err
-		// This occurs when the image cannot be found!
-		case strings.Contains(err.Error(), "authentication required"):
-			fallback = true
-			fallbackErr = err
-		// This occurs from Docker Hub when the image cannot be found!
-		case strings.Contains(err.Error(), "manifest unknown"):
-			fallback = true
-			fallbackErr = err
-		case strings.Contains(err.Error(), "unexpected status code 401 Unauthorized"):
-			opts.Logger(log.LevelError, "Unable to pull the provided image. Ensure your registry credentials are correct!")
+		if err := restoreMounts(); err != nil {
+			return fmt.Errorf("restore mounts: %w", err)
 		}
-		if !fallback || opts.ExitOnBuildFailure {
+
+		// Create the magic file to indicate that this build
+		// has already been ran before!
+		file, err := opts.Filesystem.Create(magicDir.Built())
+		if err != nil {
+			return fmt.Errorf("create magic file: %w", err)
+		}
+		_ = file.Close()
+
+		configFile, err := image.ConfigFile()
+		if err != nil {
+			return fmt.Errorf("get image config: %w", err)
+		}
+
+		containerEnv := make(map[string]string)
+		remoteEnv := make(map[string]string)
+
+		// devcontainer metadata can be persisted through a standard label
+		devContainerMetadata, exists := configFile.Config.Labels["devcontainer.metadata"]
+		if exists {
+			var devContainer []*devcontainer.Spec
+			devContainerMetadataBytes, err := hujson.Standardize([]byte(devContainerMetadata))
+			if err != nil {
+				return fmt.Errorf("humanize json for dev container metadata: %w", err)
+			}
+			err = json.Unmarshal(devContainerMetadataBytes, &devContainer)
+			if err != nil {
+				return fmt.Errorf("unmarshal metadata: %w", err)
+			}
+			opts.Logger(log.LevelInfo, "#%d: 👀 Found devcontainer.json label metadata in image...", stageNumber)
+			for _, container := range devContainer {
+				if container.RemoteUser != "" {
+					opts.Logger(log.LevelInfo, "#%d: 🧑 Updating the user to %q!", stageNumber, container.RemoteUser)
+
+					configFile.Config.User = container.RemoteUser
+				}
+				maps.Copy(containerEnv, container.ContainerEnv)
+				maps.Copy(remoteEnv, container.RemoteEnv)
+				if !container.OnCreateCommand.IsEmpty() {
+					scripts.OnCreateCommand = container.OnCreateCommand
+				}
+				if !container.UpdateContentCommand.IsEmpty() {
+					scripts.UpdateContentCommand = container.UpdateContentCommand
+				}
+				if !container.PostCreateCommand.IsEmpty() {
+					scripts.PostCreateCommand = container.PostCreateCommand
+				}
+				if !container.PostStartCommand.IsEmpty() {
+					scripts.PostStartCommand = container.PostStartCommand
+				}
+			}
+		}
+
+		// Sanitize the environment of any opts!
+		options.UnsetEnv()
+
+		// Remove the Docker config secret file!
+		if err := cleanupDockerConfigJSON(); err != nil {
 			return err
 		}
-		opts.Logger(log.LevelError, "Failed to build: %s", err)
-		opts.Logger(log.LevelError, "Falling back to the default image...")
-		buildParams, err = defaultBuildParams()
-		if err != nil {
-			return err
-		}
-		image, err = build()
-	}
-	if err != nil {
-		return fmt.Errorf("build with kaniko: %w", err)
-	}
 
-	if err := restoreMounts(); err != nil {
-		return fmt.Errorf("restore mounts: %w", err)
-	}
-
-	// Create the magic file to indicate that this build
-	// has already been ran before!
-	file, err := opts.Filesystem.Create(magicDir.Built())
-	if err != nil {
-		return fmt.Errorf("create magic file: %w", err)
-	}
-	_ = file.Close()
-
-	configFile, err := image.ConfigFile()
-	if err != nil {
-		return fmt.Errorf("get image config: %w", err)
-	}
-
-	containerEnv := make(map[string]string)
-	remoteEnv := make(map[string]string)
-
-	// devcontainer metadata can be persisted through a standard label
-	devContainerMetadata, exists := configFile.Config.Labels["devcontainer.metadata"]
-	if exists {
-		var devContainer []*devcontainer.Spec
-		devContainerMetadataBytes, err := hujson.Standardize([]byte(devContainerMetadata))
-		if err != nil {
-			return fmt.Errorf("humanize json for dev container metadata: %w", err)
-		}
-		err = json.Unmarshal(devContainerMetadataBytes, &devContainer)
-		if err != nil {
-			return fmt.Errorf("unmarshal metadata: %w", err)
-		}
-		opts.Logger(log.LevelInfo, "#%d: 👀 Found devcontainer.json label metadata in image...", stageNumber)
-		for _, container := range devContainer {
-			if container.RemoteUser != "" {
-				opts.Logger(log.LevelInfo, "#%d: 🧑 Updating the user to %q!", stageNumber, container.RemoteUser)
-
-				configFile.Config.User = container.RemoteUser
-			}
-			maps.Copy(containerEnv, container.ContainerEnv)
-			maps.Copy(remoteEnv, container.RemoteEnv)
-			if !container.OnCreateCommand.IsEmpty() {
-				scripts.OnCreateCommand = container.OnCreateCommand
-			}
-			if !container.UpdateContentCommand.IsEmpty() {
-				scripts.UpdateContentCommand = container.UpdateContentCommand
-			}
-			if !container.PostCreateCommand.IsEmpty() {
-				scripts.PostCreateCommand = container.PostCreateCommand
-			}
-			if !container.PostStartCommand.IsEmpty() {
-				scripts.PostStartCommand = container.PostStartCommand
+		environ, err := os.ReadFile("/etc/environment")
+		if err == nil {
+			for _, env := range strings.Split(string(environ), "\n") {
+				pair := strings.SplitN(env, "=", 2)
+				if len(pair) != 2 {
+					continue
+				}
+				os.Setenv(pair[0], pair[1])
 			}
 		}
-	}
 
-	// Sanitize the environment of any opts!
-	options.UnsetEnv()
+		allEnvKeys := make(map[string]struct{})
 
-	// Remove the Docker config secret file!
-	if err := cleanupDockerConfigJSON(); err != nil {
-		return err
-	}
-
-	environ, err := os.ReadFile("/etc/environment")
-	if err == nil {
-		for _, env := range strings.Split(string(environ), "\n") {
+		// It must be set in this parent process otherwise nothing will be found!
+		for _, env := range configFile.Config.Env {
 			pair := strings.SplitN(env, "=", 2)
-			if len(pair) != 2 {
-				continue
-			}
 			os.Setenv(pair[0], pair[1])
+			allEnvKeys[pair[0]] = struct{}{}
 		}
-	}
+		maps.Copy(containerEnv, buildParams.ContainerEnv)
+		maps.Copy(remoteEnv, buildParams.RemoteEnv)
 
-	allEnvKeys := make(map[string]struct{})
-
-	// It must be set in this parent process otherwise nothing will be found!
-	for _, env := range configFile.Config.Env {
-		pair := strings.SplitN(env, "=", 2)
-		os.Setenv(pair[0], pair[1])
-		allEnvKeys[pair[0]] = struct{}{}
-	}
-	maps.Copy(containerEnv, buildParams.ContainerEnv)
-	maps.Copy(remoteEnv, buildParams.RemoteEnv)
-
-	// Set Envbuilder runtime markers
-	containerEnv["ENVBUILDER"] = "true"
-	if devcontainerPath != "" {
-		containerEnv["DEVCONTAINER"] = "true"
-		containerEnv["DEVCONTAINER_CONFIG"] = devcontainerPath
-	}
-
-	for _, env := range []map[string]string{containerEnv, remoteEnv} {
-		envKeys := make([]string, 0, len(env))
-		for key := range env {
-			envKeys = append(envKeys, key)
-			allEnvKeys[key] = struct{}{}
+		// Set Envbuilder runtime markers
+		containerEnv["ENVBUILDER"] = "true"
+		if devcontainerPath != "" {
+			containerEnv["DEVCONTAINER"] = "true"
+			containerEnv["DEVCONTAINER_CONFIG"] = devcontainerPath
 		}
-		sort.Strings(envKeys)
-		for _, envVar := range envKeys {
-			value := devcontainer.SubstituteVars(env[envVar], opts.WorkspaceFolder, os.LookupEnv)
-			os.Setenv(envVar, value)
-		}
-	}
 
-	// Do not export env if we skipped a rebuild, because ENV directives
-	// from the Dockerfile would not have been processed and we'd miss these
-	// in the export. We should have generated a complete set of environment
-	// on the intial build, so exporting environment variables a second time
-	// isn't useful anyway.
-	if opts.ExportEnvFile != "" && !skippedRebuild {
-		exportEnvFile, err := os.Create(opts.ExportEnvFile)
+		for _, env := range []map[string]string{containerEnv, remoteEnv} {
+			envKeys := make([]string, 0, len(env))
+			for key := range env {
+				envKeys = append(envKeys, key)
+				allEnvKeys[key] = struct{}{}
+			}
+			sort.Strings(envKeys)
+			for _, envVar := range envKeys {
+				value := devcontainer.SubstituteVars(env[envVar], opts.WorkspaceFolder, os.LookupEnv)
+				os.Setenv(envVar, value)
+			}
+		}
+
+		// Do not export env if we skipped a rebuild, because ENV directives
+		// from the Dockerfile would not have been processed and we'd miss these
+		// in the export. We should have generated a complete set of environment
+		// on the intial build, so exporting environment variables a second time
+		// isn't useful anyway.
+		if opts.ExportEnvFile != "" && !skippedRebuild {
+			exportEnvFile, err := os.Create(opts.ExportEnvFile)
+			if err != nil {
+				return fmt.Errorf("failed to open EXPORT_ENV_FILE %q: %w", opts.ExportEnvFile, err)
+			}
+
+			envKeys := make([]string, 0, len(allEnvKeys))
+			for key := range allEnvKeys {
+				envKeys = append(envKeys, key)
+			}
+			sort.Strings(envKeys)
+			for _, key := range envKeys {
+				fmt.Fprintf(exportEnvFile, "%s=%s\n", key, os.Getenv(key))
+			}
+
+			exportEnvFile.Close()
+		}
+
+		username = configFile.Config.User
+		if buildParams.User != "" {
+			username = buildParams.User
+		}
+	} else {
+		skippedRebuild = true
+		magicEnv, err := parseMagicImageFile(opts.Filesystem, magicDir.Image())
 		if err != nil {
-			return fmt.Errorf("failed to open EXPORT_ENV_FILE %q: %w", opts.ExportEnvFile, err)
+			return fmt.Errorf("parse magic env: %w", err)
 		}
-
-		envKeys := make([]string, 0, len(allEnvKeys))
-		for key := range allEnvKeys {
-			envKeys = append(envKeys, key)
-		}
-		sort.Strings(envKeys)
-		for _, key := range envKeys {
-			fmt.Fprintf(exportEnvFile, "%s=%s\n", key, os.Getenv(key))
-		}
-
-		exportEnvFile.Close()
-	}
-
-	username := configFile.Config.User
-	if buildParams.User != "" {
-		username = buildParams.User
+		username = magicEnv["USER"]
 	}
 	if username == "" {
 		opts.Logger(log.LevelWarn, "#%d: no user specified, using root", stageNumber)
 	}
-
 	userInfo, err := getUser(username)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
@@ -957,7 +975,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	}
 
 	defaultBuildParams := func() (*devcontainer.Compiled, error) {
-		dockerfile := filepath.Join(buildTimeWorkspaceFolder, "Dockerfile")
+		dockerfile := magicDir.Join("Dockerfile")
 		file, err := opts.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, err
@@ -979,7 +997,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		return &devcontainer.Compiled{
 			DockerfilePath:    dockerfile,
 			DockerfileContent: content,
-			BuildContext:      buildTimeWorkspaceFolder,
+			BuildContext:      magicDir.Path(),
 		}, nil
 	}
 
@@ -1019,7 +1037,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 					opts.Logger(log.LevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
-				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, buildTimeWorkspaceFolder, fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
+				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, magicDir.Path(), fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
 				if err != nil {
 					return nil, fmt.Errorf("compile devcontainer.json: %w", err)
 				}
@@ -1110,32 +1128,37 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// add the magic directives to the Dockerfile content.
 	// MAGICDIR
 	buildParams.DockerfileContent += magicdir.Directives
+
 	magicTempDir := filepath.Join(buildParams.BuildContext, magicdir.TempDir)
 	if err := opts.Filesystem.MkdirAll(magicTempDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create magic temp dir in build context: %w", err)
 	}
 	envbuilderBinDest := filepath.Join(magicTempDir, "envbuilder")
-
-	// Copy the envbuilder binary into the build context.
-	opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
-	if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
-		return nil, xerrors.Errorf("copy envbuilder binary to build context: %w", err)
-	}
-
-	// Also touch the magic file that signifies the image has been built!A
 	magicImageDest := filepath.Join(magicTempDir, "image")
-	opts.Logger(log.LevelDebug, "touching magic image file at %q in build context %q", magicImageDest, magicTempDir)
-	if err := touchFile(opts.Filesystem, magicImageDest, 0o755); err != nil {
-		return nil, fmt.Errorf("touch magic image file at %q: %w", magicImageDest, err)
-	}
+
+	// Clean up after probe!
 	defer func() {
-		// Clean up after we're done!
 		for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir} {
 			if err := opts.Filesystem.Remove(path); err != nil {
 				opts.Logger(log.LevelWarn, "failed to clean up magic temp dir from build context: %w", err)
 			}
 		}
 	}()
+
+	// Copy the envbuilder binary into the build context. External callers
+	// will need to specify the path to the desired envbuilder binary.
+	opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
+	if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
+		return nil, xerrors.Errorf("copy envbuilder binary to build context: %w", err)
+	}
+
+	// Also write the magic file that signifies the image has been built.
+	// Since the user in the image is set to root, we also store the user
+	// in the magic file to be used by envbuilder when the image is run.
+	opts.Logger(log.LevelDebug, "writing magic image file at %q in build context %q", magicImageDest, magicTempDir)
+	if err := writeFile(opts.Filesystem, magicImageDest, 0o755, fmt.Sprintf("USER=%s\n", buildParams.User)); err != nil {
+		return nil, fmt.Errorf("write magic image file in build context: %w", err)
+	}
 
 	stdoutWriter, closeStdout := log.Writer(opts.Logger)
 	defer closeStdout()
@@ -1465,12 +1488,43 @@ func copyFile(fs billy.Filesystem, src, dst string, mode fs.FileMode) error {
 	return nil
 }
 
-func touchFile(fs billy.Filesystem, dst string, mode fs.FileMode) error {
-	f, err := fs.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, mode)
+func writeFile(fs billy.Filesystem, dst string, mode fs.FileMode, content string) error {
+	f, err := fs.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
 	if err != nil {
-		return xerrors.Errorf("failed to touch file: %w", err)
+		return fmt.Errorf("open file: %w", err)
 	}
-	return f.Close()
+	defer f.Close()
+	_, err = f.Write([]byte(content))
+	if err != nil {
+		return fmt.Errorf("write file: %w", err)
+	}
+	return nil
+}
+
+func parseMagicImageFile(fs billy.Filesystem, path string) (map[string]string, error) {
+	file, err := fs.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open magic image file: %w", err)
+	}
+	defer file.Close()
+
+	env := make(map[string]string)
+	s := bufio.NewScanner(file)
+	for s.Scan() {
+		line := strings.TrimSpace(s.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid magic image file format: %q", line)
+		}
+		env[parts[0]] = parts[1]
+	}
+	if err := s.Err(); err != nil {
+		return nil, fmt.Errorf("scan magic image file: %w", err)
+	}
+	return env, nil
 }
 
 func initDockerConfigJSON(logf log.Func, magicDir magicdir.MagicDir, dockerConfigBase64 string) (func() error, error) {
