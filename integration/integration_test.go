@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/uuid"
@@ -155,8 +157,17 @@ FROM a AS b`, testImageUbuntu),
 	}})
 	require.NoError(t, err)
 
-	output := execContainer(t, ctr, "ps aux | awk '/^pickme / {print $1}' | sort -u")
-	require.Equal(t, "pickme", strings.TrimSpace(output))
+	// Check that envbuilder started command as user.
+	// Since envbuilder starts as root, probe for up to 10 seconds.
+	for i := 0; i < 10; i++ {
+		out := execContainer(t, ctr, "ps aux | awk '/^pickme * 1 / {print $1}' | sort -u")
+		got := strings.TrimSpace(out)
+		if got == "pickme" {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	require.Fail(t, "expected pid 1 to be running as pickme")
 }
 
 func TestUidGid(t *testing.T) {
@@ -1160,7 +1171,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with PUSH_IMAGE set
+		// When: we run envbuilder with no PUSH_IMAGE set
 		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
@@ -1183,6 +1194,9 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 
 	t.Run("CacheAndPush", func(t *testing.T) {
 		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
 
 		srv := gittest.CreateGitServer(t, gittest.Options{
 			Files: map[string]string{
@@ -1210,90 +1224,33 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		opts := []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 			envbuilderEnv("VERBOSE", "1"),
-		}})
+		}
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+		)})
 		require.ErrorContains(t, err, "error probing build cache: uncached RUN command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("PUSH_IMAGE", "1"),
-			envbuilderEnv("VERBOSE", "1"),
-		}})
-		require.NoError(t, err)
+		_ = pushImage(t, ref, nil, opts...)
 
-		// Then: the image should be pushed
-		img, err := remote.Image(ref)
-		require.NoError(t, err, "expected image to be present after build + push")
-
-		// Then: the image should have its directives replaced with those required
-		// to run envbuilder automatically
-		configFile, err := img.ConfigFile()
-		require.NoError(t, err, "expected image to return a config file")
-
-		assert.Equal(t, "root", configFile.Config.User, "user must be root")
-		assert.Equal(t, "/", configFile.Config.WorkingDir, "workdir must be /")
-		if assert.Len(t, configFile.Config.Entrypoint, 1) {
-			assert.Equal(t, "/.envbuilder/bin/envbuilder", configFile.Config.Entrypoint[0], "incorrect entrypoint")
-		}
-
-		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		ctrID, err := runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-		}})
-		require.NoError(t, err)
-
-		// Then: the cached image ref should be emitted in the container logs
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
 		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 		require.NoError(t, err)
 		defer cli.Close()
-		logs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
-			ShowStdout: true,
-			ShowStderr: true,
-		})
-		require.NoError(t, err)
-		defer logs.Close()
-		logBytes, err := io.ReadAll(logs)
-		require.NoError(t, err)
-		require.Regexp(t, `ENVBUILDER_CACHED_IMAGE=(\S+)`, string(logBytes))
 
-		// When: we pull the image we just built
-		rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = rc.Close() })
-		_, err = io.ReadAll(rc)
-		require.NoError(t, err)
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
 
 		// When: we run the image we just built
-		ctr, err := cli.ContainerCreate(ctx, &container.Config{
-			Image:      ref.String(),
-			Entrypoint: []string{"sleep", "infinity"},
-			Labels: map[string]string{
-				testContainerLabel: "true",
-			},
-		}, nil, nil, nil, "")
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
-				RemoveVolumes: true,
-				Force:         true,
-			})
-		})
-		err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
-		require.NoError(t, err)
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
 
 		// Then: the envbuilder binary exists in the image!
 		out := execContainer(t, ctr.ID, "/.envbuilder/bin/envbuilder --help")
@@ -1304,6 +1261,9 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 
 	t.Run("CacheAndPushDevcontainerOnly", func(t *testing.T) {
 		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
 
 		srv := gittest.CreateGitServer(t, gittest.Options{
 			Files: map[string]string{
@@ -1319,88 +1279,32 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		opts := []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
+		}
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-		}})
+		)})
 		require.ErrorContains(t, err, "error probing build cache: uncached COPY command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("PUSH_IMAGE", "1"),
-		}})
-		require.NoError(t, err)
+		_ = pushImage(t, ref, nil, opts...)
 
-		// Then: the image should be pushed
-		img, err := remote.Image(ref)
-		require.NoError(t, err, "expected image to be present after build + push")
-
-		// Then: the image should have its directives replaced with those required
-		// to run envbuilder automatically
-		configFile, err := img.ConfigFile()
-		require.NoError(t, err, "expected image to return a config file")
-
-		assert.Equal(t, "root", configFile.Config.User, "user must be root")
-		assert.Equal(t, "/", configFile.Config.WorkingDir, "workdir must be /")
-		if assert.Len(t, configFile.Config.Entrypoint, 1) {
-			assert.Equal(t, "/.envbuilder/bin/envbuilder", configFile.Config.Entrypoint[0], "incorrect entrypoint")
-		}
-
-		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		ctrID, err := runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-		}})
-		require.NoError(t, err)
-
-		// Then: the cached image ref should be emitted in the container logs
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
 		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 		require.NoError(t, err)
 		defer cli.Close()
-		logs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
-			ShowStdout: true,
-			ShowStderr: true,
-		})
-		require.NoError(t, err)
-		defer logs.Close()
-		logBytes, err := io.ReadAll(logs)
-		require.NoError(t, err)
-		require.Regexp(t, `ENVBUILDER_CACHED_IMAGE=(\S+)`, string(logBytes))
 
-		// When: we pull the image we just built
-		rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = rc.Close() })
-		_, err = io.ReadAll(rc)
-		require.NoError(t, err)
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
 
 		// When: we run the image we just built
-		ctr, err := cli.ContainerCreate(ctx, &container.Config{
-			Image:      ref.String(),
-			Entrypoint: []string{"sleep", "infinity"},
-			Labels: map[string]string{
-				testContainerLabel: "true",
-			},
-		}, nil, nil, nil, "")
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
-				RemoveVolumes: true,
-				Force:         true,
-			})
-		})
-		err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
-		require.NoError(t, err)
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
 
 		// Then: the envbuilder binary exists in the image!
 		out := execContainer(t, ctr.ID, "/.envbuilder/bin/envbuilder --help")
@@ -1430,18 +1334,18 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		})
 
 		// Given: an empty registry
-		opts := setupInMemoryRegistryOpts{
+		authOpts := setupInMemoryRegistryOpts{
 			Username: "testing",
 			Password: "testing",
 		}
-		remoteAuthOpt := remote.WithAuth(&authn.Basic{Username: opts.Username, Password: opts.Password})
-		testReg := setupInMemoryRegistry(t, opts)
+		remoteAuthOpt := remote.WithAuth(&authn.Basic{Username: authOpts.Username, Password: authOpts.Password})
+		testReg := setupInMemoryRegistry(t, authOpts)
 		testRepo := testReg + "/test"
 		regAuthJSON, err := json.Marshal(envbuilder.DockerConfig{
 			AuthConfigs: map[string]clitypes.AuthConfig{
 				testRepo: {
-					Username: opts.Username,
-					Password: opts.Password,
+					Username: authOpts.Username,
+					Password: authOpts.Password,
 				},
 			},
 		})
@@ -1451,37 +1355,32 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = remote.Image(ref, remoteAuthOpt)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		opts := []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString(regAuthJSON)),
+		}
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-		}})
+		)})
 		require.ErrorContains(t, err, "error probing build cache: uncached RUN command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref, remoteAuthOpt)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("PUSH_IMAGE", "1"),
-			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString(regAuthJSON)),
-		}})
-		require.NoError(t, err)
+		_ = pushImage(t, ref, remoteAuthOpt, opts...)
 
 		// Then: the image should be pushed
 		_, err = remote.Image(ref, remoteAuthOpt)
 		require.NoError(t, err, "expected image to be present after build + push")
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		_, err = runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString(regAuthJSON)),
-		}})
+		)})
 		require.NoError(t, err)
 	})
 
@@ -1507,35 +1406,36 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		})
 
 		// Given: an empty registry
-		opts := setupInMemoryRegistryOpts{
+		authOpts := setupInMemoryRegistryOpts{
 			Username: "testing",
 			Password: "testing",
 		}
-		remoteAuthOpt := remote.WithAuth(&authn.Basic{Username: opts.Username, Password: opts.Password})
-		testReg := setupInMemoryRegistry(t, opts)
+		remoteAuthOpt := remote.WithAuth(&authn.Basic{Username: authOpts.Username, Password: authOpts.Password})
+		testReg := setupInMemoryRegistry(t, authOpts)
 		testRepo := testReg + "/test"
 		ref, err := name.ParseReference(testRepo + ":latest")
 		require.NoError(t, err)
 		_, err = remote.Image(ref, remoteAuthOpt)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		opts := []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
+		}
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-		}})
+		)})
 		require.ErrorContains(t, err, "error probing build cache: uncached RUN command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref, remoteAuthOpt)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("PUSH_IMAGE", "1"),
-		}})
+		)})
 		// Then: it should fail with an Unauthorized error
 		require.ErrorContains(t, err, "401 Unauthorized", "expected unauthorized error using no auth when cache repo requires it")
 
@@ -1546,6 +1446,9 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 
 	t.Run("CacheAndPushMultistage", func(t *testing.T) {
 		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
 
 		srv := gittest.CreateGitServer(t, gittest.Options{
 			Files: map[string]string{
@@ -1576,80 +1479,33 @@ COPY --from=prebuild /the-future/hello.txt /the-future/hello.txt
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		opts := []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		}})
+		}
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+		)})
 		require.ErrorContains(t, err, "error probing build cache: uncached RUN command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("PUSH_IMAGE", "1"),
-			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		}})
-		require.NoError(t, err)
+		_ = pushImage(t, ref, nil, opts...)
 
-		// Then: the image should be pushed
-		_, err = remote.Image(ref)
-		require.NoError(t, err, "expected image to be present after build + push")
-
-		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		ctrID, err := runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		}})
-		require.NoError(t, err)
-
-		// Then: the cached image ref should be emitted in the container logs
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
 		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 		require.NoError(t, err)
 		defer cli.Close()
-		logs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
-			ShowStdout: true,
-			ShowStderr: true,
-		})
-		require.NoError(t, err)
-		defer logs.Close()
-		logBytes, err := io.ReadAll(logs)
-		require.NoError(t, err)
-		require.Regexp(t, `ENVBUILDER_CACHED_IMAGE=(\S+)`, string(logBytes))
 
-		// When: we pull the image we just built
-		rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = rc.Close() })
-		_, err = io.ReadAll(rc)
-		require.NoError(t, err)
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
 
 		// When: we run the image we just built
-		ctr, err := cli.ContainerCreate(ctx, &container.Config{
-			Image:      ref.String(),
-			Entrypoint: []string{"sleep", "infinity"},
-			Labels: map[string]string{
-				testContainerLabel: "true",
-			},
-		}, nil, nil, nil, "")
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
-				RemoveVolumes: true,
-				Force:         true,
-			})
-		})
-		err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
-		require.NoError(t, err)
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
 
 		// Then: The files from the prebuild stage are present.
 		out := execContainer(t, ctr.ID, "/bin/sh -c 'cat /the-past/hello.txt /the-future/hello.txt; readlink -f /the-past/hello.link'")
@@ -1698,17 +1554,11 @@ RUN date --utc > /root/date.txt
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		_ = pushImage(t, ref, nil,
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("PUSH_IMAGE", "1"),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		}})
-		require.NoError(t, err)
-
-		// Then: the image should be pushed
-		_, err = remote.Image(ref)
-		require.NoError(t, err, "expected image to be present after build + push")
+		)
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
 		_, err = runEnvbuilder(t, runOpts{env: []string{
@@ -1725,13 +1575,11 @@ RUN date --utc > /root/date.txt
 		srv = newServer(dockerfilePrebuildContents)
 
 		// When: we rebuild the prebuild stage so that the cache is created
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		_ = pushImage(t, ref, nil,
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("PUSH_IMAGE", "1"),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		}})
-		require.NoError(t, err)
+		)
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should still fail
 		// on the second stage because the first stage file has changed.
@@ -1813,6 +1661,120 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 
 		// Then: envbuilder should fail with a descriptive error
 		require.ErrorContains(t, err, "failed to push to destination")
+	})
+
+	t.Run("CacheAndPushDevcontainerFeatures", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		srv := gittest.CreateGitServer(t, gittest.Options{
+			Files: map[string]string{
+				// NOTE(mafredri): We can't cache the feature in our local
+				// registry because the image media type is incompatible.
+				".devcontainer/devcontainer.json": fmt.Sprintf(`
+{
+	"image": %q,
+	"features": {
+		"ghcr.io/devcontainers/feature-starter/color:1": {
+				"favorite": "green"
+		}
+	}
+}
+`, testImageUbuntu),
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		opts := []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+		}
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_ = pushImage(t, ref, nil, opts...)
+
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer cli.Close()
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
+
+		// When: we run the image we just built
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
+
+		// Check that the feature is present in the image.
+		out := execContainer(t, ctr.ID, "/usr/local/bin/color")
+		require.Contains(t, strings.TrimSpace(out), "my favorite color is green")
+	})
+
+	t.Run("CacheAndPushUser", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		srv := gittest.CreateGitServer(t, gittest.Options{
+			Files: map[string]string{
+				".devcontainer/devcontainer.json": `{
+					"name": "Test",
+					"build": {
+						"dockerfile": "Dockerfile"
+					},
+				}`,
+				".devcontainer/Dockerfile": fmt.Sprintf(`FROM %s
+RUN useradd -m -s /bin/bash devalot
+USER devalot
+`, testImageUbuntu),
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		opts := []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+		}
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_ = pushImage(t, ref, nil, opts...)
+
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer cli.Close()
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
+
+		// When: we run the image we just built
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
+
+		// Check that envbuilder started command as user.
+		// Since envbuilder starts as root, probe for up to 10 seconds.
+		for i := 0; i < 10; i++ {
+			out := execContainer(t, ctr.ID, "ps aux | awk '/^devalot * 1 / {print $1}' | sort -u")
+			got := strings.TrimSpace(out)
+			if got == "devalot" {
+				return
+			}
+			time.Sleep(time.Second)
+		}
+		require.Fail(t, "expected pid 1 to be running as devalot")
 	})
 }
 
@@ -1933,6 +1895,91 @@ func cleanOldEnvbuilders() {
 			_, _ = fmt.Fprintf(os.Stderr, "failed to remove old test container: %s\n", err.Error())
 		}
 	}
+}
+
+func pushImage(t *testing.T, ref name.Reference, remoteOpt remote.Option, env ...string) v1.Image {
+	t.Helper()
+
+	var remoteOpts []remote.Option
+	if remoteOpt != nil {
+		remoteOpts = append(remoteOpts, remoteOpt)
+	}
+
+	_, err := runEnvbuilder(t, runOpts{env: append(env, envbuilderEnv("PUSH_IMAGE", "1"))})
+	require.NoError(t, err, "envbuilder push image failed")
+
+	img, err := remote.Image(ref, remoteOpts...)
+	require.NoError(t, err, "expected image to be present after build + push")
+
+	// The image should have its directives replaced with those required
+	// to run envbuilder automatically
+	configFile, err := img.ConfigFile()
+	require.NoError(t, err, "expected image to return a config file")
+
+	assert.Equal(t, "root", configFile.Config.User, "user must be root")
+	assert.Equal(t, "/", configFile.Config.WorkingDir, "workdir must be /")
+	if assert.Len(t, configFile.Config.Entrypoint, 1) {
+		assert.Equal(t, "/.envbuilder/bin/envbuilder", configFile.Config.Entrypoint[0], "incorrect entrypoint")
+	}
+
+	require.False(t, t.Failed(), "pushImage failed")
+
+	return img
+}
+
+func getCachedImage(ctx context.Context, t *testing.T, cli *client.Client, env ...string) name.Reference {
+	ctrID, err := runEnvbuilder(t, runOpts{env: append(env, envbuilderEnv("GET_CACHED_IMAGE", "1"))})
+	require.NoError(t, err)
+
+	logs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+	})
+	require.NoError(t, err)
+	defer logs.Close()
+	logBytes, err := io.ReadAll(logs)
+	require.NoError(t, err)
+
+	re := regexp.MustCompile(`ENVBUILDER_CACHED_IMAGE=(\S+)`)
+	matches := re.FindStringSubmatch(string(logBytes))
+	require.Len(t, matches, 2, "envbuilder cached image not found")
+	ref, err := name.ParseReference(matches[1])
+	require.NoError(t, err, "failed to parse cached image reference")
+	return ref
+}
+
+func startContainerFromRef(ctx context.Context, t *testing.T, cli *client.Client, ref name.Reference) container.CreateResponse {
+	// Ensure that we can pull the image.
+	rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = rc.Close() })
+	_, err = io.ReadAll(rc)
+	require.NoError(t, err)
+
+	// Start the container.
+	ctr, err := cli.ContainerCreate(ctx, &container.Config{
+		Image: ref.String(),
+		Labels: map[string]string{
+			testContainerLabel: "true",
+		},
+	}, nil, nil, nil, "")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		// Start a new context to ensure that the container is removed.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+			RemoveVolumes: true,
+			Force:         true,
+		})
+	})
+
+	err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
+	require.NoError(t, err)
+
+	return ctr
 }
 
 type runOpts struct {

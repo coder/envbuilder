@@ -76,3 +76,8 @@ func (m MagicDir) Built() string {
 func (m MagicDir) Image() string {
 	return m.Join("image")
 }
+
+// Features is a directory that contains feature files.
+func (m MagicDir) Features() string {
+	return m.Join("features")
+}
