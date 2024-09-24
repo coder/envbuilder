@@ -357,11 +357,10 @@ func Run(ctx context.Context, opts options.Options) error {
 			}
 			// Add the magic directives that embed the binary into the built image.
 			buildParams.DockerfileContent += magicdir.Directives
-			// Copy the envbuilder binary into the build context.
-			// External callers will need to specify the path to the desired envbuilder binary.
+
 			envbuilderBinDest := filepath.Join(magicTempDir.Path(), "envbuilder")
-			// Also touch the magic file that signifies the image has been built!
 			magicImageDest := magicTempDir.Image()
+
 			// Clean up after build!
 			var cleanupOnce sync.Once
 			cleanupBuildContext = func() {
@@ -375,11 +374,16 @@ func Run(ctx context.Context, opts options.Options) error {
 			}
 			defer cleanupBuildContext()
 
+			// Copy the envbuilder binary into the build context. External callers
+			// will need to specify the path to the desired envbuilder binary.
 			opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
 			if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
 				return fmt.Errorf("copy envbuilder binary to build context: %w", err)
 			}
 
+			// Also write the magic file that signifies the image has been built.
+			// Since the user in the image is set to root, we also store the user
+			// in the magic file to be used by envbuilder when the image is run.
 			opts.Logger(log.LevelDebug, "writing magic image file at %q in build context %q", magicImageDest, magicTempDir)
 			if err := writeFile(opts.Filesystem, magicImageDest, 0o755, fmt.Sprintf("USER=%s\n", buildParams.User)); err != nil {
 				return fmt.Errorf("write magic image file in build context: %w", err)
@@ -1124,32 +1128,37 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// add the magic directives to the Dockerfile content.
 	// MAGICDIR
 	buildParams.DockerfileContent += magicdir.Directives
+
 	magicTempDir := filepath.Join(buildParams.BuildContext, magicdir.TempDir)
 	if err := opts.Filesystem.MkdirAll(magicTempDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create magic temp dir in build context: %w", err)
 	}
 	envbuilderBinDest := filepath.Join(magicTempDir, "envbuilder")
-
-	// Copy the envbuilder binary into the build context.
-	opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
-	if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
-		return nil, xerrors.Errorf("copy envbuilder binary to build context: %w", err)
-	}
-
-	// Also write the magic file that signifies the image has been built!
 	magicImageDest := filepath.Join(magicTempDir, "image")
-	opts.Logger(log.LevelDebug, "writing magic image file at %q in build context %q", magicImageDest, magicTempDir)
-	if err := writeFile(opts.Filesystem, magicImageDest, 0o755, fmt.Sprintf("USER=%s\n", buildParams.User)); err != nil {
-		return nil, fmt.Errorf("write magic image file in build context: %w", err)
-	}
+
+	// Clean up after probe!
 	defer func() {
-		// Clean up after we're done!
 		for _, path := range []string{magicImageDest, envbuilderBinDest, magicTempDir} {
 			if err := opts.Filesystem.Remove(path); err != nil {
 				opts.Logger(log.LevelWarn, "failed to clean up magic temp dir from build context: %w", err)
 			}
 		}
 	}()
+
+	// Copy the envbuilder binary into the build context. External callers
+	// will need to specify the path to the desired envbuilder binary.
+	opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
+	if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
+		return nil, xerrors.Errorf("copy envbuilder binary to build context: %w", err)
+	}
+
+	// Also write the magic file that signifies the image has been built.
+	// Since the user in the image is set to root, we also store the user
+	// in the magic file to be used by envbuilder when the image is run.
+	opts.Logger(log.LevelDebug, "writing magic image file at %q in build context %q", magicImageDest, magicTempDir)
+	if err := writeFile(opts.Filesystem, magicImageDest, 0o755, fmt.Sprintf("USER=%s\n", buildParams.User)); err != nil {
+		return nil, fmt.Errorf("write magic image file in build context: %w", err)
+	}
 
 	stdoutWriter, closeStdout := log.Writer(opts.Logger)
 	defer closeStdout()
