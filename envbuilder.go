@@ -456,17 +456,18 @@ func Run(ctx context.Context, opts options.Options) error {
 			}
 			kOpts := &config.KanikoOptions{
 				// Boilerplate!
-				CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
-				SnapshotMode:      "redo",
-				RunV2:             true,
-				RunStdout:         stdoutWriter,
-				RunStderr:         stderrWriter,
-				Destinations:      destinations,
-				NoPush:            !opts.PushImage || len(destinations) == 0,
-				CacheRunLayers:    true,
-				CacheCopyLayers:   true,
-				CompressedCaching: true,
-				Compression:       config.ZStd,
+				CustomPlatform:     platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
+				SnapshotMode:       "redo",
+				RunV2:              true,
+				RunStdout:          stdoutWriter,
+				RunStderr:          stderrWriter,
+				Destinations:       destinations,
+				NoPush:             !opts.PushImage || len(destinations) == 0,
+				CacheRunLayers:     true,
+				CacheCopyLayers:    true,
+				ForceBuildMetadata: opts.PushImage, // Force layers with no changes to be cached, required for cache probing.
+				CompressedCaching:  true,
+				Compression:        config.ZStd,
 				// Maps to "default" level, ~100-300 MB/sec according to
 				// benchmarks in klauspost/compress README
 				// https://github.com/klauspost/compress/blob/67a538e2b4df11f8ec7139388838a13bce84b5d5/zstd/encoder_options.go#L188
@@ -1180,17 +1181,18 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	}
 	kOpts := &config.KanikoOptions{
 		// Boilerplate!
-		CustomPlatform:    platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
-		SnapshotMode:      "redo",
-		RunV2:             true,
-		RunStdout:         stdoutWriter,
-		RunStderr:         stderrWriter,
-		Destinations:      destinations,
-		NoPush:            !opts.PushImage || len(destinations) == 0,
-		CacheRunLayers:    true,
-		CacheCopyLayers:   true,
-		CompressedCaching: true,
-		Compression:       config.ZStd,
+		CustomPlatform:     platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
+		SnapshotMode:       "redo",
+		RunV2:              true,
+		RunStdout:          stdoutWriter,
+		RunStderr:          stderrWriter,
+		Destinations:       destinations,
+		NoPush:             true,
+		CacheRunLayers:     true,
+		CacheCopyLayers:    true,
+		ForceBuildMetadata: true, // Force layers with no changes to be cached, required for cache probing.
+		CompressedCaching:  true,
+		Compression:        config.ZStd,
 		// Maps to "default" level, ~100-300 MB/sec according to
 		// benchmarks in klauspost/compress README
 		// https://github.com/klauspost/compress/blob/67a538e2b4df11f8ec7139388838a13bce84b5d5/zstd/encoder_options.go#L188

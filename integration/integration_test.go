@@ -1312,6 +1312,56 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.NotEmpty(t, strings.TrimSpace(out))
 	})
 
+	t.Run("CacheAndPushWithNoChangeLayers", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		srv := gittest.CreateGitServer(t, gittest.Options{
+			Files: map[string]string{
+				"Dockerfile": fmt.Sprintf(`
+FROM %[1]s
+RUN touch /foo
+RUN echo "Hi, please don't put me in a layer (I guess you won't listen to me...)"
+RUN touch /bar
+`, testImageAlpine),
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		opts := []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_ = pushImage(t, ref, nil, opts...)
+
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer cli.Close()
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
+
+		// When: we run the image we just built
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
+
+		// Then: the envbuilder binary exists in the image!
+		out := execContainer(t, ctr.ID, "/.envbuilder/bin/envbuilder --help")
+		require.Regexp(t, `(?s)^USAGE:\s+envbuilder`, strings.TrimSpace(out))
+		require.NotEmpty(t, strings.TrimSpace(out))
+	})
+
 	t.Run("CacheAndPushAuth", func(t *testing.T) {
 		t.Parallel()
 
