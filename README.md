@@ -266,7 +266,7 @@ envbuilder will assume SSH authentication. You have the following options:
 Cache layers in a container registry to speed up builds. To enable caching, [authenticate with your registry](#container-registry-authentication) and set the `ENVBUILDER_CACHE_REPO` environment variable.
 
 ```bash
-CACHE_REPO=ghcr.io/coder/repo-cache
+ENVBUILDER_CACHE_REPO=ghcr.io/coder/repo-cache
 ```
 
 To experiment without setting up a registry, use `ENVBUILDER_LAYER_CACHE_DIR`:
