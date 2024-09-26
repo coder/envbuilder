@@ -19,7 +19,7 @@ Each layer is stored in the registry as a separate image. The image tag is the h
 
 The performance improvement of builds depends on the complexity of your
 Dockerfile. For
-[`coder/coder`](https://github.com/coder/coder/blob/main/.devcontainer/Dockerfile),
+[`coder/coder`](https://github.com/coder/coder/blob/main/dogfood/contents/Dockerfile),
 uncached builds take 36m while cached builds take 40s (~98% improvement).
 
 # Pushing the built image
