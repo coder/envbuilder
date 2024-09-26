@@ -128,3 +128,4 @@ On macOS or Windows systems, we recommend using a VM or the provided `.devcontai
 - `develop`: Runs `envbuilder:latest` against a sample Git repository.
 - `test`: Runs tests.
 - `test-registry`: Stands up a local registry for caching images used in tests.
+- `docs/env-variables.md`: Updated the [environment variables documentation](./docs/env-variables.md).
