@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://nextjs.org" aria-label="Envbuilder">
+  <a href="https://github.com/coder/envbuilder" aria-label="Envbuilder">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="./docs/images/dark-logo.svg">
       <img src="./docs/images/light-logo.svg" height="75">
