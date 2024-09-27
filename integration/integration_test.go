@@ -1320,7 +1320,8 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 
-		wantOverrides := []string{
+		wantOutput := []string{
+			"containeruser",
 			"FROM_CONTAINER_ENV=containerEnv",
 			"FROM_REMOTE_ENV=remoteEnv",
 			"CONTAINER_OVERRIDE_C=containerEnv",
@@ -1336,15 +1337,20 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 					ENV CONTAINER_OVERRIDE_C=container
 					ENV CONTAINER_OVERRIDE_CR=container
 					ENV CONTAINER_OVERRIDE_R=container
+					RUN adduser -D containeruser
+					RUN adduser -D remoteuser
+					USER root
 				`, testImageAlpine),
 				".devcontainer/devcontainer.json": `
 					{
 						"dockerFile": "Dockerfile",
+						"containerUser": "containeruser",
 						"containerEnv": {
 							"CONTAINER_OVERRIDE_C": "containerEnv",
 							"CONTAINER_OVERRIDE_CR": "containerEnv",
 							"FROM_CONTAINER_ENV": "containerEnv",
 						},
+						"remoteUser": "remoteuser",
 						"remoteEnv": {
 							"CONTAINER_OVERRIDE_CR": "remoteEnv",
 							"CONTAINER_OVERRIDE_R": "remoteEnv",
@@ -1429,7 +1435,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 			t.Fatalf("unexpected output (-want +got):\n%s", diff)
 		}
 
-		for _, want := range wantOverrides {
+		for _, want := range wantOutput {
 			assert.Contains(t, gotEnv, want, "expected env var %q to be present", want)
 		}
 	})
