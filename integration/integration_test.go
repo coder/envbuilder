@@ -1320,7 +1320,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 
-		wantOutput := []string{
+		wantSpecificOutput := []string{
 			"containeruser",
 			"FROM_CONTAINER_ENV=containerEnv",
 			"FROM_REMOTE_ENV=remoteEnv",
@@ -1387,7 +1387,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		defer cli.Close()
 
 		var started bool
-		var wantEnv, gotEnv []string
+		var wantOutput, gotOutput []string
 		logs, _ := streamContainerLogs(t, cli, ctrID)
 		for {
 			log := <-logs
@@ -1399,7 +1399,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 				break
 			}
 			if started {
-				wantEnv = append(wantEnv, log)
+				wantOutput = append(wantOutput, log)
 			}
 		}
 		started = false
@@ -1425,18 +1425,18 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 				break
 			}
 			if started {
-				gotEnv = append(gotEnv, log)
+				gotOutput = append(gotOutput, log)
 			}
 		}
 
-		slices.Sort(wantEnv)
-		slices.Sort(gotEnv)
-		if diff := cmp.Diff(wantEnv, gotEnv); diff != "" {
+		slices.Sort(wantOutput)
+		slices.Sort(gotOutput)
+		if diff := cmp.Diff(wantOutput, gotOutput); diff != "" {
 			t.Fatalf("unexpected output (-want +got):\n%s", diff)
 		}
 
-		for _, want := range wantOutput {
-			assert.Contains(t, gotEnv, want, "expected env var %q to be present", want)
+		for _, want := range wantSpecificOutput {
+			assert.Contains(t, gotOutput, want, "expected specific output %q to be present", want)
 		}
 	})
 
