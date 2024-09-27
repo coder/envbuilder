@@ -110,8 +110,9 @@ func TestLogs(t *testing.T) {
 			"Dockerfile": fmt.Sprintf(`FROM %s`, testImageUbuntu),
 		},
 	})
-	_, err := runEnvbuilder(t, runOpts{env: []string{
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("INIT_SCRIPT", "date > /.date.txt"),
 		"CODER_AGENT_URL=" + logSrv.URL,
 		"CODER_AGENT_TOKEN=" + token,
 	}})
@@ -123,6 +124,8 @@ func TestLogs(t *testing.T) {
 		t.Fatal("timed out waiting for logs")
 	case <-logsDone:
 	}
+	output := execContainer(t, ctr, "cat /date.txt")
+	require.NotEmpty(t, strings.TrimSpace(output))
 }
 
 func TestInitScriptInitCommand(t *testing.T) {

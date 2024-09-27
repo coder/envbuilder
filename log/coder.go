@@ -118,9 +118,11 @@ func sendLogsV1(ctx context.Context, client *agentsdk.Client, l slog.Logger) (Fu
 func sendLogsV2(ctx context.Context, dest agentsdk.LogDest, ls coderLogSender, l slog.Logger) (Func, func()) {
 	done := make(chan struct{})
 	uid := uuid.New()
+	sendLoopCtx, cancelSendLoop := context.WithCancel(ctx)
+	defer cancelSendLoop()
 	go func() {
 		defer close(done)
-		if err := ls.SendLoop(ctx, dest); err != nil {
+		if err := ls.SendLoop(sendLoopCtx, dest); err != nil {
 			if !errors.Is(err, context.Canceled) {
 				l.Warn(ctx, "failed to send logs to Coder", slog.Error(err))
 			}
@@ -152,6 +154,7 @@ func sendLogsV2(ctx context.Context, dest agentsdk.LogDest, ls coderLogSender, l
 	}
 
 	doneFunc := func() {
+		cancelSendLoop()
 		<-done
 	}
 
