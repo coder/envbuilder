@@ -678,9 +678,9 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			runtimeData.ContainerUser = configFile.Config.User
 		}
 	} else {
-		devcontainerPath, _, err := findDevcontainerJSON(opts.WorkspaceFolder, opts)
+		runtimeData.DevcontainerPath, _, err = findDevcontainerJSON(opts.WorkspaceFolder, opts)
 		if err == nil {
-			file, err := opts.Filesystem.Open(devcontainerPath)
+			file, err := opts.Filesystem.Open(runtimeData.DevcontainerPath)
 			if err != nil {
 				return fmt.Errorf("open devcontainer.json: %w", err)
 			}

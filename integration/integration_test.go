@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,7 @@ import (
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
@@ -1312,6 +1314,126 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.NotEmpty(t, strings.TrimSpace(out))
 	})
 
+	t.Run("CompareBuiltAndCachedImageEnvironment", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		wantOverrides := []string{
+			"FROM_CONTAINER_ENV=containerEnv",
+			"FROM_REMOTE_ENV=remoteEnv",
+			"CONTAINER_OVERRIDE_C=containerEnv",
+			"CONTAINER_OVERRIDE_CR=remoteEnv",
+			"CONTAINER_OVERRIDE_R=remoteEnv",
+		}
+
+		srv := gittest.CreateGitServer(t, gittest.Options{
+			Files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf(`
+					FROM %s
+					ENV FROM_CONTAINER=container
+					ENV CONTAINER_OVERRIDE_C=container
+					ENV CONTAINER_OVERRIDE_CR=container
+					ENV CONTAINER_OVERRIDE_R=container
+				`, testImageAlpine),
+				".devcontainer/devcontainer.json": `
+					{
+						"dockerFile": "Dockerfile",
+						"containerEnv": {
+							"CONTAINER_OVERRIDE_C": "containerEnv",
+							"CONTAINER_OVERRIDE_CR": "containerEnv",
+							"FROM_CONTAINER_ENV": "containerEnv",
+						},
+						"remoteEnv": {
+							"CONTAINER_OVERRIDE_CR": "remoteEnv",
+							"CONTAINER_OVERRIDE_R": "remoteEnv",
+							"FROM_REMOTE_ENV": "remoteEnv",
+						},
+						"onCreateCommand": "echo onCreateCommand",
+						"postCreateCommand": "echo postCreateCommand",
+					}
+				`,
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		opts := []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("INIT_SCRIPT", "echo '[start]' && whoami && env && echo '[end]'"),
+			envbuilderEnv("INIT_COMMAND", "/bin/ash"),
+		}
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		ctrID, err := runEnvbuilder(t, runOpts{env: append(opts, envbuilderEnv("PUSH_IMAGE", "1"))})
+		require.NoError(t, err, "envbuilder push image failed")
+
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer cli.Close()
+
+		var started bool
+		var wantEnv, gotEnv []string
+		logs, _ := streamContainerLogs(t, cli, ctrID)
+		for {
+			log := <-logs
+			if log == "[start]" {
+				started = true
+				continue
+			}
+			if log == "[end]" {
+				break
+			}
+			if started {
+				wantEnv = append(wantEnv, log)
+			}
+		}
+		started = false
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
+
+		// When: we run the image we just built
+		ctrID, err = runEnvbuilder(t, runOpts{
+			image: cachedRef.String(),
+			env:   opts,
+		})
+		require.NoError(t, err, "envbuilder run cached image failed")
+
+		logs, _ = streamContainerLogs(t, cli, ctrID)
+		for {
+			log := <-logs
+			if log == "[start]" {
+				started = true
+				continue
+			}
+			if log == "[end]" {
+				break
+			}
+			if started {
+				gotEnv = append(gotEnv, log)
+			}
+		}
+
+		slices.Sort(wantEnv)
+		slices.Sort(gotEnv)
+		if diff := cmp.Diff(wantEnv, gotEnv); diff != "" {
+			t.Fatalf("unexpected output (-want +got):\n%s", diff)
+		}
+
+		for _, want := range wantOverrides {
+			assert.Contains(t, gotEnv, want, "expected env var %q to be present", want)
+		}
+	})
+
 	t.Run("CacheAndPushWithNoChangeLayers", func(t *testing.T) {
 		t.Parallel()
 
@@ -2003,7 +2125,7 @@ func startContainerFromRef(ctx context.Context, t *testing.T, cli *client.Client
 	rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = rc.Close() })
-	_, err = io.ReadAll(rc)
+	_, err = io.Copy(io.Discard, rc)
 	require.NoError(t, err)
 
 	// Start the container.
@@ -2033,6 +2155,7 @@ func startContainerFromRef(ctx context.Context, t *testing.T, cli *client.Client
 }
 
 type runOpts struct {
+	image   string
 	binds   []string
 	env     []string
 	volumes map[string]string
@@ -2063,8 +2186,18 @@ func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 			_ = cli.VolumeRemove(ctx, volName, true)
 		})
 	}
+	img := "envbuilder:latest"
+	if opts.image != "" {
+		// Pull the image first so we can start it afterwards.
+		rc, err := cli.ImagePull(ctx, opts.image, image.PullOptions{})
+		require.NoError(t, err, "failed to pull image")
+		t.Cleanup(func() { _ = rc.Close() })
+		_, err = io.Copy(io.Discard, rc)
+		require.NoError(t, err, "failed to read image pull response")
+		img = opts.image
+	}
 	ctr, err := cli.ContainerCreate(ctx, &container.Config{
-		Image: "envbuilder:latest",
+		Image: img,
 		Env:   opts.env,
 		Labels: map[string]string{
 			testContainerLabel: "true",
