@@ -64,20 +64,7 @@ func TestLogs(t *testing.T) {
 	t.Parallel()
 
 	token := uuid.NewString()
-	logCh := make(chan string)
-	logs := make([]string, 0)
-	logCtx, logCancel := context.WithCancel(context.Background())
-	defer logCancel()
-	go func() {
-		for {
-			select {
-			case l := <-logCh:
-				logs = append(logs, l)
-			case <-logCtx.Done():
-				return
-			}
-		}
-	}()
+	logsDone := make(chan struct{})
 
 	logHandler := func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -96,7 +83,11 @@ func TestLogs(t *testing.T) {
 				return
 			}
 			for _, log := range req.Logs {
-				logCh <- log.Output
+				t.Logf("got log: %+v", log)
+				if strings.Contains(log.Output, "Closing logs") {
+					close(logsDone)
+					return
+				}
 			}
 			return
 		default:
@@ -125,9 +116,13 @@ func TestLogs(t *testing.T) {
 		"CODER_AGENT_TOKEN=" + token,
 	}})
 	require.NoError(t, err)
-	logCancel()
-	require.NotEmpty(t, logs)
-	require.Contains(t, logs, "Closing logs")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for logs")
+	case <-logsDone:
+	}
 }
 
 func TestInitScriptInitCommand(t *testing.T) {
