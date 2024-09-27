@@ -1591,7 +1591,7 @@ func copyFile(fs billy.Filesystem, src, dst string, mode fs.FileMode) error {
 }
 
 func writeMagicImageFile(fs billy.Filesystem, path string, v any) error {
-	file, err := fs.Create(path)
+	file, err := fs.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return fmt.Errorf("create magic image file: %w", err)
 	}
