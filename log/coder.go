@@ -116,7 +116,6 @@ func sendLogsV1(ctx context.Context, client *agentsdk.Client, l slog.Logger) (Fu
 			if err := flushLogs(sendCtx); err != nil {
 				l.Warn(ctx, "failed to flush logs", slog.Error(err))
 			}
-			return
 		}
 }
 
