@@ -84,9 +84,7 @@ type execArgsInfo struct {
 // Logger is the logf to use for all operations.
 // Filesystem is the filesystem to use for all operations.
 // Defaults to the host filesystem.
-// preExec are any functions that should be called before exec'ing the init
-// command. This is useful for ensuring that defers get run.
-func Run(ctx context.Context, opts options.Options, preExec ...func()) error {
+func Run(ctx context.Context, opts options.Options) error {
 	var args execArgsInfo
 	// Run in a separate function to ensure all defers run before we
 	// setuid or exec.
@@ -105,9 +103,6 @@ func Run(ctx context.Context, opts options.Options, preExec ...func()) error {
 	}
 
 	opts.Logger(log.LevelInfo, "=== Running the init command %s %+v as the %q user...", opts.InitCommand, args.InitArgs, args.UserInfo.user.Username)
-	for _, fn := range preExec {
-		fn()
-	}
 
 	err = syscall.Exec(args.InitCommand, append([]string{args.InitCommand}, args.InitArgs...), args.Environ)
 	if err != nil {
