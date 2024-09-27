@@ -105,12 +105,18 @@ func sendLogsV1(ctx context.Context, client *agentsdk.Client, l slog.Logger) (Fu
 				Level:     codersdk.LogLevel(lvl),
 			}
 			if err := sendLogs(ctx, log); err != nil {
-				l.Warn(ctx, "failed to send logs to Coder", slog.Error(err))
+				if !errors.Is(err, context.Canceled) {
+					l.Warn(ctx, "failed to send logs to Coder", slog.Error(err))
+				}
 			}
 		}, func() {
-			if err := flushLogs(ctx); err != nil {
+			// Wait for up to 10 seconds for logs to finish sending.
+			sendCtx, sendCancel := context.WithTimeout(context.Background(), logSendGracePeriod)
+			defer sendCancel()
+			if err := flushLogs(sendCtx); err != nil {
 				l.Warn(ctx, "failed to flush logs", slog.Error(err))
 			}
+			return
 		}
 }
 
@@ -146,11 +152,16 @@ func sendLogsV2(ctx context.Context, dest agentsdk.LogDest, ls coderLogSender, l
 	}()
 
 	logFunc := func(l Level, msg string, args ...any) {
-		ls.Enqueue(uid, agentsdk.Log{
-			CreatedAt: time.Now(),
-			Output:    fmt.Sprintf(msg, args...),
-			Level:     codersdk.LogLevel(l),
-		})
+		select {
+		case <-sendLoopCtx.Done():
+			return
+		default:
+			ls.Enqueue(uid, agentsdk.Log{
+				CreatedAt: time.Now(),
+				Output:    fmt.Sprintf(msg, args...),
+				Level:     codersdk.LogLevel(l),
+			})
+		}
 	}
 
 	doneFunc := func() {

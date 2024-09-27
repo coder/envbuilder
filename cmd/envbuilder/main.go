@@ -57,6 +57,7 @@ func envbuilderCmd() serpent.Command {
 					o.Logger = log.Wrap(o.Logger, coderLog)
 					defer closeLogs()
 					preExec = append(preExec, func() {
+						o.Logger(log.LevelInfo, "Closing logs")
 						closeLogs()
 						o.Logger(log.LevelInfo, "Closed logs")
 					})
