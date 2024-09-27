@@ -573,4 +573,8 @@ func UnsetEnv() {
 		_ = os.Unsetenv(opt.Env)
 		_ = os.Unsetenv(strings.TrimPrefix(opt.Env, envPrefix))
 	}
+
+	// Unset the Kaniko environment variable which we set it in the
+	// Dockerfile to ensure correct behavior during building.
+	_ = os.Unsetenv("KANIKO_DIR")
 }
