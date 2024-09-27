@@ -318,8 +318,6 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 						return fmt.Errorf("compile devcontainer.json: %w", err)
 					}
 					if buildParams.User != "" {
-						// BUG(mafredri): buildParams may set the user to remoteUser which
-						// is incorrect, we should only override if containerUser is set.
 						runtimeData.ContainerUser = buildParams.User
 					}
 					runtimeData.Scripts = devContainer.LifecycleScripts
@@ -710,7 +708,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 
 	// Set the environment from /etc/environment first, so it can be
 	// overridden by the image and devcontainer settings.
-	err = setEnvFromEtcEnvironment()
+	err = setEnvFromEtcEnvironment(opts.Logger)
 	if err != nil {
 		return fmt.Errorf("set env from /etc/environment: %w", err)
 	}
@@ -1319,9 +1317,10 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	return image, nil
 }
 
-func setEnvFromEtcEnvironment() error {
+func setEnvFromEtcEnvironment(logf log.Func) error {
 	environ, err := os.ReadFile("/etc/environment")
 	if errors.Is(err, os.ErrNotExist) {
+		logf(log.LevelDebug, "Not loading environment from /etc/environment, file does not exist")
 		return nil
 	}
 	if err != nil {
