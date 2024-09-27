@@ -37,7 +37,12 @@ func envbuilderCmd() serpent.Command {
 		Options: o.CLI(),
 		Handler: func(inv *serpent.Invocation) error {
 			o.SetDefaults()
-			preExec := make([]func(), 0)
+			var preExec []func()
+			defer func() { // Ensure cleanup in case of error.
+				for _, fn := range preExec {
+					fn()
+				}
+			}()
 			o.Logger = log.New(os.Stderr, o.Verbose)
 			if o.CoderAgentURL != "" {
 				if o.CoderAgentToken == "" {
