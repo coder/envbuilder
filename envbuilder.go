@@ -58,31 +58,64 @@ var ErrNoFallbackImage = errors.New("no fallback image has been specified")
 // DockerConfig represents the Docker configuration file.
 type DockerConfig configfile.ConfigFile
 
+type runtimeDataStore struct {
+	// Runtime data.
+	Image            bool                          `json:"-"`
+	Built            bool                          `json:"-"`
+	SkippedRebuild   bool                          `json:"-"`
+	Scripts          devcontainer.LifecycleScripts `json:"-"`
+	ImageEnv         []string                      `json:"-"`
+	ContainerEnv     map[string]string             `json:"-"`
+	RemoteEnv        map[string]string             `json:"-"`
+	DevcontainerPath string                        `json:"-"`
+
+	// Data stored in the magic image file.
+	ContainerUser string `json:"container_user"`
+}
+
+type execArgsInfo struct {
+	InitCommand string
+	InitArgs    []string
+	UserInfo    userInfo
+	Environ     []string
+}
+
 // Run runs the envbuilder.
 // Logger is the logf to use for all operations.
 // Filesystem is the filesystem to use for all operations.
 // Defaults to the host filesystem.
 func Run(ctx context.Context, opts options.Options) error {
-	defer options.UnsetEnv()
-	if opts.GetCachedImage {
-		return fmt.Errorf("developer error: use RunCacheProbe instead")
+	var args execArgsInfo
+	// Run in a separate function to ensure all defers run before we
+	// setuid or exec.
+	err := run(ctx, opts, &args)
+	if err != nil {
+		return err
 	}
 
-	if opts.CacheRepo == "" && opts.PushImage {
-		return fmt.Errorf("--cache-repo must be set when using --push-image")
+	err = syscall.Setgid(args.UserInfo.gid)
+	if err != nil {
+		return fmt.Errorf("set gid: %w", err)
 	}
+	err = syscall.Setuid(args.UserInfo.uid)
+	if err != nil {
+		return fmt.Errorf("set uid: %w", err)
+	}
+
+	opts.Logger(log.LevelInfo, "=== Running the init command %s %+v as the %q user...", opts.InitCommand, args.InitArgs, args.UserInfo.user.Username)
+
+	err = syscall.Exec(args.InitCommand, append([]string{args.InitCommand}, args.InitArgs...), args.Environ)
+	if err != nil {
+		return fmt.Errorf("exec init script: %w", err)
+	}
+
+	return errors.New("exec failed")
+}
+
+func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) error {
+	defer options.UnsetEnv()
 
 	magicDir := magicdir.At(opts.MagicDirBase)
-
-	// Default to the shell!
-	initArgs := []string{"-c", opts.InitScript}
-	if opts.InitArgs != "" {
-		var err error
-		initArgs, err = shellquote.Split(opts.InitArgs)
-		if err != nil {
-			return fmt.Errorf("parse init args: %w", err)
-		}
-	}
 
 	stageNumber := 0
 	startStage := func(format string, args ...any) func(format string, args ...any) {
@@ -93,6 +126,24 @@ func Run(ctx context.Context, opts options.Options) error {
 
 		return func(format string, args ...any) {
 			opts.Logger(log.LevelInfo, "#%d: %s [%s]", stageNum, fmt.Sprintf(format, args...), time.Since(now))
+		}
+	}
+
+	if opts.GetCachedImage {
+		return fmt.Errorf("developer error: use RunCacheProbe instead")
+	}
+	if opts.CacheRepo == "" && opts.PushImage {
+		return fmt.Errorf("--cache-repo must be set when using --push-image")
+	}
+
+	// Default to the shell.
+	execArgs.InitCommand = opts.InitCommand
+	execArgs.InitArgs = []string{"-c", opts.InitScript}
+	if opts.InitArgs != "" {
+		var err error
+		execArgs.InitArgs, err = shellquote.Split(opts.InitArgs)
+		if err != nil {
+			return fmt.Errorf("parse init args: %w", err)
 		}
 	}
 
@@ -107,6 +158,30 @@ func Run(ctx context.Context, opts options.Options) error {
 			opts.Logger(log.LevelError, "failed to cleanup docker config JSON: %w", err)
 		}
 	}() // best effort
+
+	runtimeData := runtimeDataStore{
+		ContainerEnv: make(map[string]string),
+		RemoteEnv:    make(map[string]string),
+	}
+	if fileExists(opts.Filesystem, magicDir.Image()) {
+		if err = parseMagicImageFile(opts.Filesystem, magicDir.Image(), &runtimeData); err != nil {
+			return fmt.Errorf("parse magic image file: %w", err)
+		}
+		runtimeData.Image = true
+
+		// Some options are only applicable for builds.
+		if opts.RemoteRepoBuildMode {
+			opts.Logger(log.LevelDebug, "Ignoring %s option, it is not supported when using a pre-built image.", options.WithEnvPrefix("REMOTE_REPO_BUILD_MODE"))
+			opts.RemoteRepoBuildMode = false
+		}
+		if opts.ExportEnvFile != "" {
+			// Currently we can't support this as we don't have access to the
+			// post-build computed env vars to know which ones to export.
+			opts.Logger(log.LevelWarn, "Ignoring %s option, it is not supported when using a pre-built image.", options.WithEnvPrefix("EXPORT_ENV_FILE"))
+			opts.ExportEnvFile = ""
+		}
+	}
+	runtimeData.Built = fileExists(opts.Filesystem, magicDir.Built())
 
 	buildTimeWorkspaceFolder := opts.WorkspaceFolder
 	var fallbackErr error
@@ -139,7 +214,9 @@ func Run(ctx context.Context, opts options.Options) error {
 			}
 		} else {
 			opts.Logger(log.LevelError, "Failed to clone repository: %s", fallbackErr.Error())
-			opts.Logger(log.LevelError, "Falling back to the default image...")
+			if !runtimeData.Image {
+				opts.Logger(log.LevelError, "Falling back to the default image...")
+			}
 		}
 
 		_ = w.Close()
@@ -175,112 +252,106 @@ func Run(ctx context.Context, opts options.Options) error {
 		}
 	}
 
-	defaultBuildParams := func() (*devcontainer.Compiled, error) {
-		dockerfile := magicDir.Join("Dockerfile")
-		file, err := opts.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0o644)
-		if err != nil {
-			return nil, err
-		}
-		defer file.Close()
-		if opts.FallbackImage == "" {
-			if fallbackErr != nil {
-				return nil, xerrors.Errorf("%s: %w", fallbackErr.Error(), ErrNoFallbackImage)
-			}
-			// We can't use errors.Join here because our tests
-			// don't support parsing a multiline error.
-			return nil, ErrNoFallbackImage
-		}
-		content := "FROM " + opts.FallbackImage
-		_, err = file.Write([]byte(content))
-		if err != nil {
-			return nil, err
-		}
-		return &devcontainer.Compiled{
-			DockerfilePath:    dockerfile,
-			DockerfileContent: content,
-			BuildContext:      magicDir.Path(),
-		}, nil
-	}
-
-	var (
-		buildParams *devcontainer.Compiled
-		scripts     devcontainer.LifecycleScripts
-
-		devcontainerPath string
-	)
-	if opts.DockerfilePath == "" {
-		// Only look for a devcontainer if a Dockerfile wasn't specified.
-		// devcontainer is a standard, so it's reasonable to be the default.
-		var devcontainerDir string
-		var err error
-		devcontainerPath, devcontainerDir, err = findDevcontainerJSON(buildTimeWorkspaceFolder, opts)
-		if err != nil {
-			opts.Logger(log.LevelError, "Failed to locate devcontainer.json: %s", err.Error())
-			opts.Logger(log.LevelError, "Falling back to the default image...")
-		} else {
-			// We know a devcontainer exists.
-			// Let's parse it and use it!
-			file, err := opts.Filesystem.Open(devcontainerPath)
+	if !runtimeData.Image {
+		defaultBuildParams := func() (*devcontainer.Compiled, error) {
+			dockerfile := magicDir.Join("Dockerfile")
+			file, err := opts.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0o644)
 			if err != nil {
-				return fmt.Errorf("open devcontainer.json: %w", err)
+				return nil, err
 			}
 			defer file.Close()
-			content, err := io.ReadAll(file)
-			if err != nil {
-				return fmt.Errorf("read devcontainer.json: %w", err)
+			if opts.FallbackImage == "" {
+				if fallbackErr != nil {
+					return nil, xerrors.Errorf("%s: %w", fallbackErr.Error(), ErrNoFallbackImage)
+				}
+				// We can't use errors.Join here because our tests
+				// don't support parsing a multiline error.
+				return nil, ErrNoFallbackImage
 			}
-			devContainer, err := devcontainer.Parse(content)
-			if err == nil {
-				var fallbackDockerfile string
-				if !devContainer.HasImage() && !devContainer.HasDockerfile() {
-					defaultParams, err := defaultBuildParams()
-					if err != nil {
-						return fmt.Errorf("no Dockerfile or image found: %w", err)
-					}
-					opts.Logger(log.LevelInfo, "No Dockerfile or image specified; falling back to the default image...")
-					fallbackDockerfile = defaultParams.DockerfilePath
-				}
-				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, magicDir.Path(), fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
-				if err != nil {
-					return fmt.Errorf("compile devcontainer.json: %w", err)
-				}
-				scripts = devContainer.LifecycleScripts
-			} else {
-				opts.Logger(log.LevelError, "Failed to parse devcontainer.json: %s", err.Error())
+			content := "FROM " + opts.FallbackImage
+			_, err = file.Write([]byte(content))
+			if err != nil {
+				return nil, err
+			}
+			return &devcontainer.Compiled{
+				DockerfilePath:    dockerfile,
+				DockerfileContent: content,
+				BuildContext:      magicDir.Path(),
+			}, nil
+		}
+
+		var buildParams *devcontainer.Compiled
+		if opts.DockerfilePath == "" {
+			// Only look for a devcontainer if a Dockerfile wasn't specified.
+			// devcontainer is a standard, so it's reasonable to be the default.
+			var devcontainerDir string
+			var err error
+			runtimeData.DevcontainerPath, devcontainerDir, err = findDevcontainerJSON(buildTimeWorkspaceFolder, opts)
+			if err != nil {
+				opts.Logger(log.LevelError, "Failed to locate devcontainer.json: %s", err.Error())
 				opts.Logger(log.LevelError, "Falling back to the default image...")
+			} else {
+				// We know a devcontainer exists.
+				// Let's parse it and use it!
+				file, err := opts.Filesystem.Open(runtimeData.DevcontainerPath)
+				if err != nil {
+					return fmt.Errorf("open devcontainer.json: %w", err)
+				}
+				defer file.Close()
+				content, err := io.ReadAll(file)
+				if err != nil {
+					return fmt.Errorf("read devcontainer.json: %w", err)
+				}
+				devContainer, err := devcontainer.Parse(content)
+				if err == nil {
+					var fallbackDockerfile string
+					if !devContainer.HasImage() && !devContainer.HasDockerfile() {
+						defaultParams, err := defaultBuildParams()
+						if err != nil {
+							return fmt.Errorf("no Dockerfile or image found: %w", err)
+						}
+						opts.Logger(log.LevelInfo, "No Dockerfile or image specified; falling back to the default image...")
+						fallbackDockerfile = defaultParams.DockerfilePath
+					}
+					buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, magicDir.Path(), fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
+					if err != nil {
+						return fmt.Errorf("compile devcontainer.json: %w", err)
+					}
+					if buildParams.User != "" {
+						runtimeData.ContainerUser = buildParams.User
+					}
+					runtimeData.Scripts = devContainer.LifecycleScripts
+				} else {
+					opts.Logger(log.LevelError, "Failed to parse devcontainer.json: %s", err.Error())
+					opts.Logger(log.LevelError, "Falling back to the default image...")
+				}
+			}
+		} else {
+			// If a Dockerfile was specified, we use that.
+			dockerfilePath := filepath.Join(buildTimeWorkspaceFolder, opts.DockerfilePath)
+
+			// If the dockerfilePath is specified and deeper than the base of WorkspaceFolder AND the BuildContextPath is
+			// not defined, show a warning
+			dockerfileDir := filepath.Dir(dockerfilePath)
+			if dockerfileDir != filepath.Clean(buildTimeWorkspaceFolder) && opts.BuildContextPath == "" {
+				opts.Logger(log.LevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, buildTimeWorkspaceFolder)
+				opts.Logger(log.LevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
+			}
+
+			dockerfile, err := opts.Filesystem.Open(dockerfilePath)
+			if err == nil {
+				content, err := io.ReadAll(dockerfile)
+				if err != nil {
+					return fmt.Errorf("read Dockerfile: %w", err)
+				}
+				buildParams = &devcontainer.Compiled{
+					DockerfilePath:    dockerfilePath,
+					DockerfileContent: string(content),
+					BuildContext:      filepath.Join(buildTimeWorkspaceFolder, opts.BuildContextPath),
+				}
 			}
 		}
-	} else {
-		// If a Dockerfile was specified, we use that.
-		dockerfilePath := filepath.Join(buildTimeWorkspaceFolder, opts.DockerfilePath)
 
-		// If the dockerfilePath is specified and deeper than the base of WorkspaceFolder AND the BuildContextPath is
-		// not defined, show a warning
-		dockerfileDir := filepath.Dir(dockerfilePath)
-		if dockerfileDir != filepath.Clean(buildTimeWorkspaceFolder) && opts.BuildContextPath == "" {
-			opts.Logger(log.LevelWarn, "given dockerfile %q is below %q and no custom build context has been defined", dockerfilePath, buildTimeWorkspaceFolder)
-			opts.Logger(log.LevelWarn, "\t-> set BUILD_CONTEXT_PATH to %q to fix", dockerfileDir)
-		}
-
-		dockerfile, err := opts.Filesystem.Open(dockerfilePath)
-		if err == nil {
-			content, err := io.ReadAll(dockerfile)
-			if err != nil {
-				return fmt.Errorf("read Dockerfile: %w", err)
-			}
-			buildParams = &devcontainer.Compiled{
-				DockerfilePath:    dockerfilePath,
-				DockerfileContent: string(content),
-				BuildContext:      filepath.Join(buildTimeWorkspaceFolder, opts.BuildContextPath),
-			}
-		}
-	}
-
-	var (
-		username       string
-		skippedRebuild bool
-	)
-	if _, err := os.Stat(magicDir.Image()); errors.Is(err, fs.ErrNotExist) {
 		if buildParams == nil {
 			// If there isn't a devcontainer.json file in the repository,
 			// we fallback to whatever the `DefaultImage` is.
@@ -385,7 +456,7 @@ func Run(ctx context.Context, opts options.Options) error {
 			// Since the user in the image is set to root, we also store the user
 			// in the magic file to be used by envbuilder when the image is run.
 			opts.Logger(log.LevelDebug, "writing magic image file at %q in build context %q", magicImageDest, magicTempDir)
-			if err := writeFile(opts.Filesystem, magicImageDest, 0o755, fmt.Sprintf("USER=%s\n", buildParams.User)); err != nil {
+			if err := writeMagicImageFile(opts.Filesystem, magicImageDest, runtimeData); err != nil {
 				return fmt.Errorf("write magic image file in build context: %w", err)
 			}
 		}
@@ -411,9 +482,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		defer closeStderr()
 		build := func() (v1.Image, error) {
 			defer cleanupBuildContext()
-			_, alreadyBuiltErr := opts.Filesystem.Stat(magicDir.Built())
-			_, isImageErr := opts.Filesystem.Stat(magicDir.Image())
-			if (alreadyBuiltErr == nil && opts.SkipRebuild) || isImageErr == nil {
+			if runtimeData.Built && opts.SkipRebuild {
 				endStage := startStage("🏗️ Skipping build because of cache...")
 				imageRef, err := devcontainer.ImageFromDockerfile(buildParams.DockerfileContent)
 				if err != nil {
@@ -424,7 +493,8 @@ func Run(ctx context.Context, opts options.Options) error {
 					return nil, fmt.Errorf("image from remote: %w", err)
 				}
 				endStage("🏗️ Found image from remote!")
-				skippedRebuild = true
+				runtimeData.Built = false
+				runtimeData.SkippedRebuild = true
 				return image, nil
 			}
 
@@ -556,23 +626,17 @@ func Run(ctx context.Context, opts options.Options) error {
 			return fmt.Errorf("restore mounts: %w", err)
 		}
 
-		// Create the magic file to indicate that this build
-		// has already been ran before!
-		file, err := opts.Filesystem.Create(magicDir.Built())
-		if err != nil {
-			return fmt.Errorf("create magic file: %w", err)
-		}
-		_ = file.Close()
-
 		configFile, err := image.ConfigFile()
 		if err != nil {
 			return fmt.Errorf("get image config: %w", err)
 		}
 
-		containerEnv := make(map[string]string)
-		remoteEnv := make(map[string]string)
+		runtimeData.ImageEnv = configFile.Config.Env
 
-		// devcontainer metadata can be persisted through a standard label
+		// Dev Container metadata can be persisted through a standard label.
+		// Note that this currently only works when we're building the image,
+		// not when we're using a pre-built image as we don't have access to
+		// labels.
 		devContainerMetadata, exists := configFile.Config.Labels["devcontainer.metadata"]
 		if exists {
 			var devContainer []*devcontainer.Spec
@@ -586,117 +650,130 @@ func Run(ctx context.Context, opts options.Options) error {
 			}
 			opts.Logger(log.LevelInfo, "#%d: 👀 Found devcontainer.json label metadata in image...", stageNumber)
 			for _, container := range devContainer {
-				if container.RemoteUser != "" {
-					opts.Logger(log.LevelInfo, "#%d: 🧑 Updating the user to %q!", stageNumber, container.RemoteUser)
+				if container.ContainerUser != "" {
+					opts.Logger(log.LevelInfo, "#%d: 🧑 Updating the user to %q!", stageNumber, container.ContainerUser)
 
-					configFile.Config.User = container.RemoteUser
+					configFile.Config.User = container.ContainerUser
 				}
-				maps.Copy(containerEnv, container.ContainerEnv)
-				maps.Copy(remoteEnv, container.RemoteEnv)
+				maps.Copy(runtimeData.ContainerEnv, container.ContainerEnv)
+				maps.Copy(runtimeData.RemoteEnv, container.RemoteEnv)
 				if !container.OnCreateCommand.IsEmpty() {
-					scripts.OnCreateCommand = container.OnCreateCommand
+					runtimeData.Scripts.OnCreateCommand = container.OnCreateCommand
 				}
 				if !container.UpdateContentCommand.IsEmpty() {
-					scripts.UpdateContentCommand = container.UpdateContentCommand
+					runtimeData.Scripts.UpdateContentCommand = container.UpdateContentCommand
 				}
 				if !container.PostCreateCommand.IsEmpty() {
-					scripts.PostCreateCommand = container.PostCreateCommand
+					runtimeData.Scripts.PostCreateCommand = container.PostCreateCommand
 				}
 				if !container.PostStartCommand.IsEmpty() {
-					scripts.PostStartCommand = container.PostStartCommand
+					runtimeData.Scripts.PostStartCommand = container.PostStartCommand
 				}
 			}
 		}
 
-		// Sanitize the environment of any opts!
-		options.UnsetEnv()
-
-		// Remove the Docker config secret file!
-		if err := cleanupDockerConfigJSON(); err != nil {
-			return err
-		}
-
-		environ, err := os.ReadFile("/etc/environment")
-		if err == nil {
-			for _, env := range strings.Split(string(environ), "\n") {
-				pair := strings.SplitN(env, "=", 2)
-				if len(pair) != 2 {
-					continue
-				}
-				os.Setenv(pair[0], pair[1])
-			}
-		}
-
-		allEnvKeys := make(map[string]struct{})
-
-		// It must be set in this parent process otherwise nothing will be found!
-		for _, env := range configFile.Config.Env {
-			pair := strings.SplitN(env, "=", 2)
-			os.Setenv(pair[0], pair[1])
-			allEnvKeys[pair[0]] = struct{}{}
-		}
-		maps.Copy(containerEnv, buildParams.ContainerEnv)
-		maps.Copy(remoteEnv, buildParams.RemoteEnv)
-
-		// Set Envbuilder runtime markers
-		containerEnv["ENVBUILDER"] = "true"
-		if devcontainerPath != "" {
-			containerEnv["DEVCONTAINER"] = "true"
-			containerEnv["DEVCONTAINER_CONFIG"] = devcontainerPath
-		}
-
-		for _, env := range []map[string]string{containerEnv, remoteEnv} {
-			envKeys := make([]string, 0, len(env))
-			for key := range env {
-				envKeys = append(envKeys, key)
-				allEnvKeys[key] = struct{}{}
-			}
-			sort.Strings(envKeys)
-			for _, envVar := range envKeys {
-				value := devcontainer.SubstituteVars(env[envVar], opts.WorkspaceFolder, os.LookupEnv)
-				os.Setenv(envVar, value)
-			}
-		}
-
-		// Do not export env if we skipped a rebuild, because ENV directives
-		// from the Dockerfile would not have been processed and we'd miss these
-		// in the export. We should have generated a complete set of environment
-		// on the intial build, so exporting environment variables a second time
-		// isn't useful anyway.
-		if opts.ExportEnvFile != "" && !skippedRebuild {
-			exportEnvFile, err := os.Create(opts.ExportEnvFile)
-			if err != nil {
-				return fmt.Errorf("failed to open EXPORT_ENV_FILE %q: %w", opts.ExportEnvFile, err)
-			}
-
-			envKeys := make([]string, 0, len(allEnvKeys))
-			for key := range allEnvKeys {
-				envKeys = append(envKeys, key)
-			}
-			sort.Strings(envKeys)
-			for _, key := range envKeys {
-				fmt.Fprintf(exportEnvFile, "%s=%s\n", key, os.Getenv(key))
-			}
-
-			exportEnvFile.Close()
-		}
-
-		username = configFile.Config.User
-		if buildParams.User != "" {
-			username = buildParams.User
+		maps.Copy(runtimeData.ContainerEnv, buildParams.ContainerEnv)
+		maps.Copy(runtimeData.RemoteEnv, buildParams.RemoteEnv)
+		if runtimeData.ContainerUser == "" && configFile.Config.User != "" {
+			runtimeData.ContainerUser = configFile.Config.User
 		}
 	} else {
-		skippedRebuild = true
-		magicEnv, err := parseMagicImageFile(opts.Filesystem, magicDir.Image())
-		if err != nil {
-			return fmt.Errorf("parse magic env: %w", err)
+		runtimeData.DevcontainerPath, _, err = findDevcontainerJSON(opts.WorkspaceFolder, opts)
+		if err == nil {
+			file, err := opts.Filesystem.Open(runtimeData.DevcontainerPath)
+			if err != nil {
+				return fmt.Errorf("open devcontainer.json: %w", err)
+			}
+			defer file.Close()
+			content, err := io.ReadAll(file)
+			if err != nil {
+				return fmt.Errorf("read devcontainer.json: %w", err)
+			}
+			devContainer, err := devcontainer.Parse(content)
+			if err == nil {
+				maps.Copy(runtimeData.ContainerEnv, devContainer.ContainerEnv)
+				maps.Copy(runtimeData.RemoteEnv, devContainer.RemoteEnv)
+				if devContainer.ContainerUser != "" {
+					runtimeData.ContainerUser = devContainer.ContainerUser
+				}
+				runtimeData.Scripts = devContainer.LifecycleScripts
+			} else {
+				opts.Logger(log.LevelError, "Failed to parse devcontainer.json: %s", err.Error())
+			}
 		}
-		username = magicEnv["USER"]
 	}
-	if username == "" {
+
+	// Sanitize the environment of any opts!
+	options.UnsetEnv()
+
+	// Set the environment from /etc/environment first, so it can be
+	// overridden by the image and devcontainer settings.
+	err = setEnvFromEtcEnvironment(opts.Logger)
+	if err != nil {
+		return fmt.Errorf("set env from /etc/environment: %w", err)
+	}
+
+	allEnvKeys := make(map[string]struct{})
+
+	// It must be set in this parent process otherwise nothing will be found!
+	for _, env := range runtimeData.ImageEnv {
+		pair := strings.SplitN(env, "=", 2)
+		os.Setenv(pair[0], pair[1])
+		allEnvKeys[pair[0]] = struct{}{}
+	}
+
+	// Set Envbuilder runtime markers
+	runtimeData.ContainerEnv["ENVBUILDER"] = "true"
+	if runtimeData.DevcontainerPath != "" {
+		runtimeData.ContainerEnv["DEVCONTAINER"] = "true"
+		runtimeData.ContainerEnv["DEVCONTAINER_CONFIG"] = runtimeData.DevcontainerPath
+	}
+
+	for _, env := range []map[string]string{runtimeData.ContainerEnv, runtimeData.RemoteEnv} {
+		envKeys := make([]string, 0, len(env))
+		for key := range env {
+			envKeys = append(envKeys, key)
+			allEnvKeys[key] = struct{}{}
+		}
+		sort.Strings(envKeys)
+		for _, envVar := range envKeys {
+			value := devcontainer.SubstituteVars(env[envVar], opts.WorkspaceFolder, os.LookupEnv)
+			os.Setenv(envVar, value)
+		}
+	}
+
+	// Do not export env if we skipped a rebuild, because ENV directives
+	// from the Dockerfile would not have been processed and we'd miss these
+	// in the export. We should have generated a complete set of environment
+	// on the intial build, so exporting environment variables a second time
+	// isn't useful anyway.
+	if opts.ExportEnvFile != "" && !runtimeData.SkippedRebuild {
+		exportEnvFile, err := opts.Filesystem.Create(opts.ExportEnvFile)
+		if err != nil {
+			return fmt.Errorf("failed to open %s %q: %w", options.WithEnvPrefix("EXPORT_ENV_FILE"), opts.ExportEnvFile, err)
+		}
+
+		envKeys := make([]string, 0, len(allEnvKeys))
+		for key := range allEnvKeys {
+			envKeys = append(envKeys, key)
+		}
+		sort.Strings(envKeys)
+		for _, key := range envKeys {
+			fmt.Fprintf(exportEnvFile, "%s=%s\n", key, os.Getenv(key))
+		}
+
+		exportEnvFile.Close()
+	}
+
+	// Remove the Docker config secret file!
+	if err := cleanupDockerConfigJSON(); err != nil {
+		return err
+	}
+
+	if runtimeData.ContainerUser == "" {
 		opts.Logger(log.LevelWarn, "#%d: no user specified, using root", stageNumber)
 	}
-	userInfo, err := getUser(username)
+	execArgs.UserInfo, err = getUser(runtimeData.ContainerUser)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}
@@ -714,9 +791,9 @@ func Run(ctx context.Context, opts options.Options) error {
 			if err != nil {
 				return err
 			}
-			return os.Chown(path, userInfo.uid, userInfo.gid)
+			return os.Chown(path, execArgs.UserInfo.uid, execArgs.UserInfo.gid)
 		}); chownErr != nil {
-			opts.Logger(log.LevelError, "chown %q: %s", userInfo.user.HomeDir, chownErr.Error())
+			opts.Logger(log.LevelError, "chown %q: %s", execArgs.UserInfo.user.HomeDir, chownErr.Error())
 			endStage("⚠️ Failed to the ownership of the workspace, you may need to fix this manually!")
 		} else {
 			endStage("👤 Updated the ownership of the workspace!")
@@ -725,22 +802,22 @@ func Run(ctx context.Context, opts options.Options) error {
 
 	// We may also need to update the ownership of the user homedir.
 	// Skip this step if the user is root.
-	if userInfo.uid != 0 {
-		endStage := startStage("🔄 Updating ownership of %s...", userInfo.user.HomeDir)
-		if chownErr := filepath.Walk(userInfo.user.HomeDir, func(path string, _ fs.FileInfo, err error) error {
+	if execArgs.UserInfo.uid != 0 {
+		endStage := startStage("🔄 Updating ownership of %s...", execArgs.UserInfo.user.HomeDir)
+		if chownErr := filepath.Walk(execArgs.UserInfo.user.HomeDir, func(path string, _ fs.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
-			return os.Chown(path, userInfo.uid, userInfo.gid)
+			return os.Chown(path, execArgs.UserInfo.uid, execArgs.UserInfo.gid)
 		}); chownErr != nil {
-			opts.Logger(log.LevelError, "chown %q: %s", userInfo.user.HomeDir, chownErr.Error())
-			endStage("⚠️ Failed to update ownership of %s, you may need to fix this manually!", userInfo.user.HomeDir)
+			opts.Logger(log.LevelError, "chown %q: %s", execArgs.UserInfo.user.HomeDir, chownErr.Error())
+			endStage("⚠️ Failed to update ownership of %s, you may need to fix this manually!", execArgs.UserInfo.user.HomeDir)
 		} else {
-			endStage("🏡 Updated ownership of %s!", userInfo.user.HomeDir)
+			endStage("🏡 Updated ownership of %s!", execArgs.UserInfo.user.HomeDir)
 		}
 	}
 
-	err = os.MkdirAll(opts.WorkspaceFolder, 0o755)
+	err = opts.Filesystem.MkdirAll(opts.WorkspaceFolder, 0o755)
 	if err != nil {
 		return fmt.Errorf("create workspace folder: %w", err)
 	}
@@ -755,9 +832,19 @@ func Run(ctx context.Context, opts options.Options) error {
 	// example, TARGET_USER may be set to root in the case where we will
 	// exec systemd as the init command, but that doesn't mean we should
 	// run the lifecycle scripts as root.
-	os.Setenv("HOME", userInfo.user.HomeDir)
-	if err := execLifecycleScripts(ctx, opts, scripts, skippedRebuild, userInfo); err != nil {
+	os.Setenv("HOME", execArgs.UserInfo.user.HomeDir)
+	if err := execLifecycleScripts(ctx, opts, runtimeData.Scripts, !runtimeData.Built, execArgs.UserInfo); err != nil {
 		return err
+	}
+
+	// Create the magic file to indicate that this build
+	// has already been ran before!
+	if !runtimeData.Built {
+		file, err := opts.Filesystem.Create(magicDir.Built())
+		if err != nil {
+			return fmt.Errorf("create magic file: %w", err)
+		}
+		_ = file.Close()
 	}
 
 	// The setup script can specify a custom initialization command
@@ -773,7 +860,7 @@ func Run(ctx context.Context, opts options.Options) error {
 
 		envKey := "ENVBUILDER_ENV"
 		envFile := magicDir.Join("environ")
-		file, err := os.Create(envFile)
+		file, err := opts.Filesystem.Create(envFile)
 		if err != nil {
 			return fmt.Errorf("create environ file: %w", err)
 		}
@@ -782,7 +869,7 @@ func Run(ctx context.Context, opts options.Options) error {
 		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", opts.SetupScript)
 		cmd.Env = append(os.Environ(),
 			fmt.Sprintf("%s=%s", envKey, envFile),
-			fmt.Sprintf("TARGET_USER=%s", userInfo.user.Username),
+			fmt.Sprintf("TARGET_USER=%s", execArgs.UserInfo.user.Username),
 		)
 		cmd.Dir = opts.WorkspaceFolder
 		// This allows for a really nice and clean experience to experiement with!
@@ -826,16 +913,16 @@ func Run(ctx context.Context, opts options.Options) error {
 			key := pair[0]
 			switch key {
 			case "INIT_COMMAND":
-				opts.InitCommand = pair[1]
+				execArgs.InitCommand = pair[1]
 				updatedCommand = true
 			case "INIT_ARGS":
-				initArgs, err = shellquote.Split(pair[1])
+				execArgs.InitArgs, err = shellquote.Split(pair[1])
 				if err != nil {
 					return fmt.Errorf("split init args: %w", err)
 				}
 				updatedArgs = true
 			case "TARGET_USER":
-				userInfo, err = getUser(pair[1])
+				execArgs.UserInfo, err = getUser(pair[1])
 				if err != nil {
 					return fmt.Errorf("update user: %w", err)
 				}
@@ -846,28 +933,16 @@ func Run(ctx context.Context, opts options.Options) error {
 		if updatedCommand && !updatedArgs {
 			// Because our default is a shell we need to empty the args
 			// if the command was updated. This a tragic hack, but it works.
-			initArgs = []string{}
+			execArgs.InitArgs = []string{}
 		}
 	}
 
 	// Hop into the user that should execute the initialize script!
-	os.Setenv("HOME", userInfo.user.HomeDir)
+	os.Setenv("HOME", execArgs.UserInfo.user.HomeDir)
 
-	err = syscall.Setgid(userInfo.gid)
-	if err != nil {
-		return fmt.Errorf("set gid: %w", err)
-	}
-	err = syscall.Setuid(userInfo.uid)
-	if err != nil {
-		return fmt.Errorf("set uid: %w", err)
-	}
+	// Set last to ensure all environment changes are complete.
+	execArgs.Environ = os.Environ()
 
-	opts.Logger(log.LevelInfo, "=== Running the init command %s %+v as the %q user...", opts.InitCommand, initArgs, userInfo.user.Username)
-
-	err = syscall.Exec(opts.InitCommand, append([]string{opts.InitCommand}, initArgs...), os.Environ())
-	if err != nil {
-		return fmt.Errorf("exec init script: %w", err)
-	}
 	return nil
 }
 
@@ -1157,7 +1232,8 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// Since the user in the image is set to root, we also store the user
 	// in the magic file to be used by envbuilder when the image is run.
 	opts.Logger(log.LevelDebug, "writing magic image file at %q in build context %q", magicImageDest, magicTempDir)
-	if err := writeFile(opts.Filesystem, magicImageDest, 0o755, fmt.Sprintf("USER=%s\n", buildParams.User)); err != nil {
+	runtimeData := runtimeDataStore{ContainerUser: buildParams.User}
+	if err := writeMagicImageFile(opts.Filesystem, magicImageDest, runtimeData); err != nil {
 		return nil, fmt.Errorf("write magic image file in build context: %w", err)
 	}
 
@@ -1241,6 +1317,25 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	return image, nil
 }
 
+func setEnvFromEtcEnvironment(logf log.Func) error {
+	environ, err := os.ReadFile("/etc/environment")
+	if errors.Is(err, os.ErrNotExist) {
+		logf(log.LevelDebug, "Not loading environment from /etc/environment, file does not exist")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, env := range strings.Split(string(environ), "\n") {
+		pair := strings.SplitN(env, "=", 2)
+		if len(pair) != 2 {
+			continue
+		}
+		os.Setenv(pair[0], pair[1])
+	}
+	return nil
+}
+
 type userInfo struct {
 	uid  int
 	gid  int
@@ -1311,14 +1406,14 @@ func execLifecycleScripts(
 	ctx context.Context,
 	options options.Options,
 	scripts devcontainer.LifecycleScripts,
-	skippedRebuild bool,
+	firstStart bool,
 	userInfo userInfo,
 ) error {
 	if options.PostStartScriptPath != "" {
 		_ = os.Remove(options.PostStartScriptPath)
 	}
 
-	if !skippedRebuild {
+	if firstStart {
 		if err := execOneLifecycleScript(ctx, options.Logger, scripts.OnCreateCommand, "onCreateCommand", userInfo); err != nil {
 			// skip remaining lifecycle commands
 			return nil
@@ -1466,6 +1561,11 @@ func maybeDeleteFilesystem(logger log.Func, force bool) error {
 	return util.DeleteFilesystem()
 }
 
+func fileExists(fs billy.Filesystem, path string) bool {
+	_, err := fs.Stat(path)
+	return err == nil
+}
+
 func copyFile(fs billy.Filesystem, src, dst string, mode fs.FileMode) error {
 	srcF, err := fs.Open(src)
 	if err != nil {
@@ -1490,43 +1590,36 @@ func copyFile(fs billy.Filesystem, src, dst string, mode fs.FileMode) error {
 	return nil
 }
 
-func writeFile(fs billy.Filesystem, dst string, mode fs.FileMode, content string) error {
-	f, err := fs.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+func writeMagicImageFile(fs billy.Filesystem, path string, v any) error {
+	file, err := fs.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
-		return fmt.Errorf("open file: %w", err)
-	}
-	defer f.Close()
-	_, err = f.Write([]byte(content))
-	if err != nil {
-		return fmt.Errorf("write file: %w", err)
-	}
-	return nil
-}
-
-func parseMagicImageFile(fs billy.Filesystem, path string) (map[string]string, error) {
-	file, err := fs.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open magic image file: %w", err)
+		return fmt.Errorf("create magic image file: %w", err)
 	}
 	defer file.Close()
 
-	env := make(map[string]string)
-	s := bufio.NewScanner(file)
-	for s.Scan() {
-		line := strings.TrimSpace(s.Text())
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid magic image file format: %q", line)
-		}
-		env[parts[0]] = parts[1]
+	enc := json.NewEncoder(file)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return fmt.Errorf("encode magic image file: %w", err)
 	}
-	if err := s.Err(); err != nil {
-		return nil, fmt.Errorf("scan magic image file: %w", err)
+
+	return nil
+}
+
+func parseMagicImageFile(fs billy.Filesystem, path string, v any) error {
+	file, err := fs.Open(path)
+	if err != nil {
+		return fmt.Errorf("open magic image file: %w", err)
 	}
-	return env, nil
+	defer file.Close()
+
+	dec := json.NewDecoder(file)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return fmt.Errorf("decode magic image file: %w", err)
+	}
+
+	return nil
 }
 
 func initDockerConfigJSON(logf log.Func, magicDir magicdir.MagicDir, dockerConfigBase64 string) (func() error, error) {
