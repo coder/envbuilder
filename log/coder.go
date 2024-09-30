@@ -59,7 +59,13 @@ func Coder(ctx context.Context, coderURL *url.URL, token string) (logger Func, c
 	ls := agentsdk.NewLogSender(metaLogger.Named("coder_log_sender"))
 	metaLogger.Warn(ctx, "Sending logs via AgentAPI v2", slog.F("coder_version", bi.Version))
 	logger, closer = sendLogsV2(ctx, dac, ls, metaLogger.Named("send_logs_v2"))
-	return logger, closer, nil
+	var closeOnce sync.Once
+	return logger, func() {
+		closer()
+		closeOnce.Do(func() {
+			_ = dac.DRPCConn().Close()
+		})
+	}, nil
 }
 
 type coderLogSender interface {
