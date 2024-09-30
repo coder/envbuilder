@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -38,10 +39,8 @@ func TestCoder(t *testing.T) {
 			defer closeOnce.Do(func() { close(gotLogs) })
 			tokHdr := r.Header.Get(codersdk.SessionTokenHeader)
 			assert.Equal(t, token, tokHdr)
-			var req agentsdk.PatchLogs
-			err := json.NewDecoder(r.Body).Decode(&req)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+			req, ok := decodeV1Logs(t, w, r)
+			if !ok {
 				return
 			}
 			if assert.Len(t, req.Logs, 1) {
@@ -54,13 +53,42 @@ func TestCoder(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		u, err := url.Parse(srv.URL)
-		require.NoError(t, err)
-		log, closeLog, err := Coder(ctx, u, token)
-		require.NoError(t, err)
-		defer closeLog()
-		log(LevelInfo, "hello %s", "world")
+
+		logger, _ := newCoderLogger(ctx, t, srv.URL, token)
+		logger(LevelInfo, "hello %s", "world")
 		<-gotLogs
+	})
+
+	t.Run("V1/Close", func(t *testing.T) {
+		t.Parallel()
+
+		var got []agentsdk.Log
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/v2/buildinfo" {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"version": "v2.8.9"}`))
+				return
+			}
+			req, ok := decodeV1Logs(t, w, r)
+			if !ok {
+				return
+			}
+			got = append(got, req.Logs...)
+		}
+		srv := httptest.NewServer(http.HandlerFunc(handler))
+		defer srv.Close()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		logger, closer := newCoderLogger(ctx, t, srv.URL, uuid.NewString())
+		logger(LevelInfo, "1")
+		logger(LevelInfo, "2")
+		closer()
+		logger(LevelInfo, "3")
+		require.Len(t, got, 2)
+		assert.Equal(t, "1", got[0].Output)
+		assert.Equal(t, "2", got[1].Output)
 	})
 
 	t.Run("V1/ErrUnauthorized", func(t *testing.T) {
@@ -140,42 +168,31 @@ func TestCoder(t *testing.T) {
 		require.Len(t, ld.logs, 10)
 	})
 
-	// In this test, we just stand up an endpoint that does not
-	// do dRPC. We'll try to connect, fail to websocket upgrade
-	// and eventually give up.
-	t.Run("V2/Err", func(t *testing.T) {
+	// In this test, we just fake out the DRPC server.
+	t.Run("V2/Close", func(t *testing.T) {
 		t.Parallel()
 
-		token := uuid.NewString()
-		handlerDone := make(chan struct{})
-		var closeOnce sync.Once
-		handler := func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v2/buildinfo" {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"version": "v2.9.0"}`))
-				return
-			}
-			defer closeOnce.Do(func() { close(handlerDone) })
-			w.WriteHeader(http.StatusOK)
-		}
-		srv := httptest.NewServer(http.HandlerFunc(handler))
-		defer srv.Close()
-
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		u, err := url.Parse(srv.URL)
-		require.NoError(t, err)
-		_, _, err = Coder(ctx, u, token)
-		require.ErrorContains(t, err, "failed to WebSocket dial")
-		require.ErrorIs(t, err, context.DeadlineExceeded)
-		<-handlerDone
+
+		ld := &fakeLogDest{t: t}
+		ls := agentsdk.NewLogSender(slogtest.Make(t, nil))
+		logger, closer := sendLogsV2(ctx, ld, ls, slogtest.Make(t, nil))
+		defer closer()
+
+		logger(LevelInfo, "1")
+		logger(LevelInfo, "2")
+		closer()
+		logger(LevelInfo, "3")
+
+		require.Len(t, ld.logs, 2)
 	})
 
 	// In this test, we validate that a 401 error on the initial connect
 	// results in a retry. When envbuilder initially attempts to connect
 	// using the Coder agent token, the workspace build may not yet have
 	// completed.
-	t.Run("V2Retry", func(t *testing.T) {
+	t.Run("V2/Retry", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -221,6 +238,95 @@ func TestCoder(t *testing.T) {
 	})
 }
 
+//nolint:paralleltest // We need to replace a global timeout.
+func TestCoderRPCTimeout500MS(t *testing.T) {
+	testReplaceTimeout(t, &rpcConnectTimeout, 500*time.Millisecond)
+
+	// In this test, we just stand up an endpoint that does not
+	// do dRPC. We'll try to connect, fail to websocket upgrade
+	// and eventually give up after rpcConnectTimeout.
+	t.Run("V2/Err", func(t *testing.T) {
+		t.Parallel()
+
+		token := uuid.NewString()
+		handlerDone := make(chan struct{})
+		handlerWait := make(chan struct{})
+		var closeOnce sync.Once
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/v2/buildinfo" {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"version": "v2.9.0"}`))
+				return
+			}
+			defer closeOnce.Do(func() { close(handlerDone) })
+			<-handlerWait
+			w.WriteHeader(http.StatusOK)
+		}
+		srv := httptest.NewServer(http.HandlerFunc(handler))
+		defer srv.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), rpcConnectTimeout/2)
+		defer cancel()
+		u, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+		_, _, err = Coder(ctx, u, token)
+		require.ErrorContains(t, err, "failed to WebSocket dial")
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		close(handlerWait)
+		<-handlerDone
+	})
+
+	t.Run("V2/Timeout", func(t *testing.T) {
+		t.Parallel()
+
+		token := uuid.NewString()
+		handlerDone := make(chan struct{})
+		handlerWait := make(chan struct{})
+		var closeOnce sync.Once
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/v2/buildinfo" {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"version": "v2.9.0"}`))
+				return
+			}
+			defer closeOnce.Do(func() { close(handlerDone) })
+			<-handlerWait
+			w.WriteHeader(http.StatusOK)
+		}
+		srv := httptest.NewServer(http.HandlerFunc(handler))
+		defer srv.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), rpcConnectTimeout*2)
+		defer cancel()
+		u, err := url.Parse(srv.URL)
+		require.NoError(t, err)
+		_, _, err = Coder(ctx, u, token)
+		require.ErrorContains(t, err, "failed to WebSocket dial")
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		close(handlerWait)
+		<-handlerDone
+	})
+}
+
+func decodeV1Logs(t *testing.T, w http.ResponseWriter, r *http.Request) (agentsdk.PatchLogs, bool) {
+	var req agentsdk.PatchLogs
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if !assert.NoError(t, err) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return req, false
+	}
+	return req, true
+}
+
+func newCoderLogger(ctx context.Context, t *testing.T, us string, token string) (Func, func()) {
+	u, err := url.Parse(us)
+	require.NoError(t, err)
+	logger, closer, err := Coder(ctx, u, token)
+	require.NoError(t, err)
+	t.Cleanup(closer)
+	return logger, closer
+}
+
 type fakeLogDest struct {
 	t    testing.TB
 	logs []*proto.Log
@@ -230,4 +336,26 @@ func (d *fakeLogDest) BatchCreateLogs(ctx context.Context, request *proto.BatchC
 	d.t.Logf("got %d logs, ", len(request.Logs))
 	d.logs = append(d.logs, request.Logs...)
 	return &proto.BatchCreateLogsResponse{}, nil
+}
+
+func testReplaceTimeout(t *testing.T, v *time.Duration, d time.Duration) {
+	if isParallel(t) {
+		t.Fatal("cannot replace timeout in parallel test")
+	}
+	old := *v
+	*v = d
+	t.Cleanup(func() { *v = old })
+}
+
+func isParallel(t *testing.T) (ret bool) {
+	// This is a hack to determine if the test is running in parallel
+	// via property of t.Setenv.
+	defer func() {
+		if r := recover(); r != nil {
+			ret = true
+		}
+	}()
+	// Random variable name to avoid collisions.
+	t.Setenv(fmt.Sprintf("__TEST_CHECK_IS_PARALLEL_%d", rand.Int()), "1")
+	return false
 }
