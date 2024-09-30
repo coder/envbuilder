@@ -59,7 +59,6 @@ func envbuilderCmd() serpent.Command {
 				if err == nil {
 					o.Logger = log.Wrap(o.Logger, coderLog)
 					preExecs = append(preExecs, func() {
-						o.Logger(log.LevelInfo, "Closing logs")
 						closeLogs()
 					})
 					// This adds the envbuilder subsystem.

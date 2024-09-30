@@ -49,6 +49,14 @@ func Coder(ctx context.Context, coderURL *url.URL, token string) (logger Func, c
 		logger, closer = sendLogsV1(ctx, client, metaLogger.Named("send_logs_v1"))
 		return logger, closer, nil
 	}
+
+	// Create a new context so we can ensure the connection is torn down.
+	ctx, cancel := context.WithCancel(ctx)
+	defer func() {
+		if err != nil {
+			cancel()
+		}
+	}()
 	// Note that ctx passed to initRPC will be inherited by the
 	// underlying connection, nothing we can do about that here.
 	dac, err := initRPC(ctx, client, metaLogger.Named("init_rpc"))
@@ -58,14 +66,19 @@ func Coder(ctx context.Context, coderURL *url.URL, token string) (logger Func, c
 	}
 	ls := agentsdk.NewLogSender(metaLogger.Named("coder_log_sender"))
 	metaLogger.Warn(ctx, "Sending logs via AgentAPI v2", slog.F("coder_version", bi.Version))
-	logger, closer = sendLogsV2(ctx, dac, ls, metaLogger.Named("send_logs_v2"))
+	logger, loggerCloser := sendLogsV2(ctx, dac, ls, metaLogger.Named("send_logs_v2"))
 	var closeOnce sync.Once
-	return logger, func() {
-		closer()
+	closer = func() {
+		loggerCloser()
+
 		closeOnce.Do(func() {
+			// Typically cancel would be after Close, but we want to be
+			// sure there's nothing that might block on Close.
+			cancel()
 			_ = dac.DRPCConn().Close()
 		})
-	}, nil
+	}
+	return logger, closer, nil
 }
 
 type coderLogSender interface {
