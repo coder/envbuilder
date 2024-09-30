@@ -1,13 +1,4 @@
 <p align="center">
-  <a href="https://github.com/coder/envbuilder" aria-label="Envbuilder">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="./docs/images/dark-logo.svg">
-      <img src="./docs/images/light-logo.svg" height="75">
-    </picture>
-  </a>
-</p>
-
-<p align="center">
   <a aria-label="Join the community on Discord" href="https://discord.gg/coder"><img src="https://img.shields.io/discord/747933592273027093?label=discord"></a>
   <a aria-label="Releases" href="https://github.com/coder/envbuilder/pkgs/container/envbuilder"><img alt="" src="https://img.shields.io/github/v/tag/coder/envbuilder"></a>
   <a aria-label="GoDoc" href="https://pkg.go.dev/github.com/coder/envbuilder"><img alt="" src="https://pkg.go.dev/badge/github.com/coder/envbuilder.svg"></a>
