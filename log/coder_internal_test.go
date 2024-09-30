@@ -309,6 +309,7 @@ func TestCoderRPCTimeout500MS(t *testing.T) {
 }
 
 func decodeV1Logs(t *testing.T, w http.ResponseWriter, r *http.Request) (agentsdk.PatchLogs, bool) {
+	t.Helper()
 	var req agentsdk.PatchLogs
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if !assert.NoError(t, err) {
@@ -319,6 +320,7 @@ func decodeV1Logs(t *testing.T, w http.ResponseWriter, r *http.Request) (agentsd
 }
 
 func newCoderLogger(ctx context.Context, t *testing.T, us string, token string) (Func, func()) {
+	t.Helper()
 	u, err := url.Parse(us)
 	require.NoError(t, err)
 	logger, closer, err := Coder(ctx, u, token)
@@ -339,6 +341,7 @@ func (d *fakeLogDest) BatchCreateLogs(ctx context.Context, request *proto.BatchC
 }
 
 func testReplaceTimeout(t *testing.T, v *time.Duration, d time.Duration) {
+	t.Helper()
 	if isParallel(t) {
 		t.Fatal("cannot replace timeout in parallel test")
 	}
@@ -348,6 +351,7 @@ func testReplaceTimeout(t *testing.T, v *time.Duration, d time.Duration) {
 }
 
 func isParallel(t *testing.T) (ret bool) {
+	t.Helper()
 	// This is a hack to determine if the test is running in parallel
 	// via property of t.Setenv.
 	defer func() {
