@@ -37,15 +37,6 @@ func envbuilderCmd() serpent.Command {
 		Options: o.CLI(),
 		Handler: func(inv *serpent.Invocation) error {
 			o.SetDefaults()
-			var preExecs []func()
-			preExec := func() {
-				for _, fn := range preExecs {
-					fn()
-				}
-				preExecs = nil
-			}
-			defer preExec() // Ensure cleanup in case of error.
-
 			o.Logger = log.New(os.Stderr, o.Verbose)
 			if o.CoderAgentURL != "" {
 				if o.CoderAgentToken == "" {
@@ -58,10 +49,7 @@ func envbuilderCmd() serpent.Command {
 				coderLog, closeLogs, err := log.Coder(inv.Context(), u, o.CoderAgentToken)
 				if err == nil {
 					o.Logger = log.Wrap(o.Logger, coderLog)
-					preExecs = append(preExecs, func() {
-						o.Logger(log.LevelInfo, "Closing logs")
-						closeLogs()
-					})
+					defer closeLogs()
 					// This adds the envbuilder subsystem.
 					// If telemetry is enabled in a Coder deployment,
 					// this will be reported and help us understand
@@ -90,7 +78,7 @@ func envbuilderCmd() serpent.Command {
 				return nil
 			}
 
-			err := envbuilder.Run(inv.Context(), o, preExec)
+			err := envbuilder.Run(inv.Context(), o)
 			if err != nil {
 				o.Logger(log.LevelError, "error: %s", err)
 			}
