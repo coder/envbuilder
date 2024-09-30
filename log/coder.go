@@ -85,7 +85,6 @@ func initRPC(ctx context.Context, client *agentsdk.Client, l slog.Logger) (proto
 		attempts++
 		// Maximize compatibility.
 		c, err = client.ConnectRPC20(ctx)
-		l.Info(ctx, "Connecting to Coder", slog.F("attempt", attempts), slog.F("error", err))
 		if err != nil {
 			l.Debug(ctx, "Failed to connect to Coder", slog.F("error", err), slog.F("attempt", attempts))
 			continue
