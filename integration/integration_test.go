@@ -84,7 +84,7 @@ func TestLogs(t *testing.T) {
 			}
 			for _, log := range req.Logs {
 				t.Logf("got log: %+v", log)
-				if strings.Contains(log.Output, "Closing logs") {
+				if strings.Contains(log.Output, "Running the init command") {
 					close(logsDone)
 					return
 				}
