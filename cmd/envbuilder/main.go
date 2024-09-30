@@ -37,12 +37,15 @@ func envbuilderCmd() serpent.Command {
 		Options: o.CLI(),
 		Handler: func(inv *serpent.Invocation) error {
 			o.SetDefaults()
-			var preExec []func()
-			defer func() { // Ensure cleanup in case of error.
-				for _, fn := range preExec {
+			var preExecs []func()
+			preExec := func() {
+				for _, fn := range preExecs {
 					fn()
 				}
-			}()
+				preExecs = nil
+			}
+			defer preExec() // Ensure cleanup in case of error.
+
 			o.Logger = log.New(os.Stderr, o.Verbose)
 			if o.CoderAgentURL != "" {
 				if o.CoderAgentToken == "" {
@@ -55,8 +58,7 @@ func envbuilderCmd() serpent.Command {
 				coderLog, closeLogs, err := log.Coder(inv.Context(), u, o.CoderAgentToken)
 				if err == nil {
 					o.Logger = log.Wrap(o.Logger, coderLog)
-					defer closeLogs()
-					preExec = append(preExec, func() {
+					preExecs = append(preExecs, func() {
 						o.Logger(log.LevelInfo, "Closing logs")
 						closeLogs()
 					})
@@ -88,7 +90,7 @@ func envbuilderCmd() serpent.Command {
 				return nil
 			}
 
-			err := envbuilder.Run(inv.Context(), o, preExec...)
+			err := envbuilder.Run(inv.Context(), o, preExec)
 			if err != nil {
 				o.Logger(log.LevelError, "error: %s", err)
 			}
