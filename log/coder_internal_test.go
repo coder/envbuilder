@@ -239,7 +239,9 @@ func TestCoder(t *testing.T) {
 }
 
 //nolint:paralleltest // We need to replace a global timeout.
-func TestCoderRPCTimeout500MS(t *testing.T) {
+func TestCoderRPCTimeout(t *testing.T) {
+	// This timeout is picked with the current subtests in mind, it
+	// should not be changed without good reason.
 	testReplaceTimeout(t, &rpcConnectTimeout, 500*time.Millisecond)
 
 	// In this test, we just stand up an endpoint that does not
