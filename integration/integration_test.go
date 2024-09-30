@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/coder/v2/codersdk"
+	"github.com/coder/coder/v2/codersdk/agentsdk"
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer/features"
 	"github.com/coder/envbuilder/internal/magicdir"
@@ -57,6 +59,71 @@ const (
 	testImageAlpine    = "localhost:5000/envbuilder-test-alpine:latest"
 	testImageUbuntu    = "localhost:5000/envbuilder-test-ubuntu:latest"
 )
+
+func TestLogs(t *testing.T) {
+	t.Parallel()
+
+	token := uuid.NewString()
+	logsDone := make(chan struct{})
+
+	logHandler := func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/buildinfo":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"version": "v2.8.9"}`))
+			return
+		case "/api/v2/workspaceagents/me/logs":
+			w.WriteHeader(http.StatusOK)
+			tokHdr := r.Header.Get(codersdk.SessionTokenHeader)
+			assert.Equal(t, token, tokHdr)
+			var req agentsdk.PatchLogs
+			err := json.NewDecoder(r.Body).Decode(&req)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			for _, log := range req.Logs {
+				t.Logf("got log: %+v", log)
+				if strings.Contains(log.Output, "Running the init command") {
+					close(logsDone)
+					return
+				}
+			}
+			return
+		default:
+			t.Errorf("unexpected request to %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}
+	logSrv := httptest.NewServer(http.HandlerFunc(logHandler))
+	defer logSrv.Close()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	srv := gittest.CreateGitServer(t, gittest.Options{
+		Files: map[string]string{
+			"devcontainer.json": `{
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			"Dockerfile": fmt.Sprintf(`FROM %s`, testImageUbuntu),
+		},
+	})
+	_, err := runEnvbuilder(t, runOpts{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		"CODER_AGENT_URL=" + logSrv.URL,
+		"CODER_AGENT_TOKEN=" + token,
+	}})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for logs")
+	case <-logsDone:
+	}
+}
 
 func TestInitScriptInitCommand(t *testing.T) {
 	t.Parallel()
