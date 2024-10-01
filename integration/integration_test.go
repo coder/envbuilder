@@ -84,7 +84,7 @@ func TestLogs(t *testing.T) {
 			}
 			for _, log := range req.Logs {
 				t.Logf("got log: %+v", log)
-				if strings.Contains(log.Output, "Running the init command") {
+				if strings.Contains(log.Output, "Running init command") {
 					close(logsDone)
 					return
 				}
@@ -2294,7 +2294,7 @@ func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 	logChan, errChan := streamContainerLogs(t, cli, ctr.ID)
 	go func() {
 		for log := range logChan {
-			if strings.HasPrefix(log, "=== Running the init command") {
+			if strings.HasPrefix(log, "=== Running init command") {
 				errChan <- nil
 				return
 			}

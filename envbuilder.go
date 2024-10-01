@@ -104,7 +104,7 @@ func Run(ctx context.Context, opts options.Options, preExec ...func()) error {
 		return fmt.Errorf("set uid: %w", err)
 	}
 
-	opts.Logger(log.LevelInfo, "=== Running the init command %s %+v as the %q user...", opts.InitCommand, args.InitArgs, args.UserInfo.user.Username)
+	opts.Logger(log.LevelInfo, "=== Running init command as user %q: %q", args.UserInfo.user.Username, append([]string{opts.InitCommand}, args.InitArgs...))
 	for _, fn := range preExec {
 		fn()
 	}
