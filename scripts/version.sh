@@ -36,11 +36,11 @@ if [[ -z ${tag_list} ]]; then
 else
 	current_commit=$(git rev-parse HEAD)
 	# Try to find the last tag that contains the current commit
-	last_tag=$(git tag --contains "$current_commit" --sort=version:refname | head -n 1)
+	last_tag=$(git tag --contains "$current_commit" --sort=-version:refname | head -n 1)
 	# If there is no tag that contains the current commit,
 	# get the latest tag sorted by semver.
 	if [[ -z "${last_tag}" ]]; then
-		last_tag=$(git tag --sort=version:refname | tail -n 1)
+		last_tag=$(git tag --sort=-version:refname | head -n 1)
 	fi
 fi
 
