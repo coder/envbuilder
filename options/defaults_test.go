@@ -115,6 +115,10 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 			invalidURL: "/",
 		},
 		{
+			name:       "Path consists entirely of slash",
+			invalidURL: "//",
+		},
+		{
 			name:       "Git URL with no path",
 			invalidURL: "http://127.0.0.1:41073",
 		},

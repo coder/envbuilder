@@ -30,7 +30,7 @@ func DefaultWorkspaceFolder(repoURL string) string {
 	// Giturls parsing never actually fails since ParseLocal never
 	// errors and places the entire URL in the Path field. This check
 	// ensures it's at least a Unix path containing forwardslash.
-	if repo == repoURL || repo == "." || repo == "" {
+	if repo == repoURL || repo == "/" || repo == "." || repo == "" {
 		return EmptyWorkspaceDir
 	}
 	repo = strings.TrimSuffix(repo, ".git")
