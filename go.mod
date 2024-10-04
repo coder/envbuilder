@@ -16,7 +16,7 @@ require (
 	github.com/chainguard-dev/git-urls v1.0.2
 	github.com/coder/coder/v2 v2.10.1-0.20240704130443-c2d44d16a352
 	github.com/coder/retry v1.5.1
-	github.com/coder/serpent v0.7.0
+	github.com/coder/serpent v0.8.0
 	github.com/containerd/platforms v0.2.1
 	github.com/distribution/distribution/v3 v3.0.0-alpha.1
 	github.com/docker/cli v27.2.0+incompatible
