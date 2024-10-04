@@ -36,11 +36,6 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 			expected: "/workspaces/envbuilder",
 		},
 		{
-			name:     "fragment",
-			gitURL:   "https://github.com/coder/envbuilder.git#feature-branch",
-			expected: "/workspaces/envbuilder",
-		},
-		{
 			name:     "trailing",
 			gitURL:   "https://github.com/coder/envbuilder.git/",
 			expected: "/workspaces/envbuilder",
@@ -51,19 +46,34 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 			expected: "/workspaces/envbuilder",
 		},
 		{
+			name:     "no .git",
+			gitURL:   "https://github.com/coder/envbuilder",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "trailing no .git",
+			gitURL:   "https://github.com/coder/envbuilder/",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "fragment",
+			gitURL:   "https://github.com/coder/envbuilder.git#feature-branch",
+			expected: "/workspaces/envbuilder",
+		},
+		{
 			name:     "fragment-trailing",
 			gitURL:   "https://github.com/coder/envbuilder.git/#refs/heads/feature-branch",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "fragment-trailing no .git",
+			gitURL:   "https://github.com/coder/envbuilder/#refs/heads/feature-branch",
 			expected: "/workspaces/envbuilder",
 		},
 		{
 			name:     "space",
 			gitURL:   "https://github.com/coder/env%20builder.git",
 			expected: "/workspaces/env builder",
-		},
-		{
-			name:     "no .git",
-			gitURL:   "https://github.com/coder/envbuilder",
-			expected: "/workspaces/envbuilder",
 		},
 		{
 			name:     "Unix path",
