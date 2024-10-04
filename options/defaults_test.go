@@ -41,6 +41,41 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 			expected: "/workspaces/envbuilder",
 		},
 		{
+			name:     "trailing",
+			gitURL:   "https://github.com/coder/envbuilder.git/",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "trailing-x2",
+			gitURL:   "https://github.com/coder/envbuilder.git//",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "fragment-trailing",
+			gitURL:   "https://github.com/coder/envbuilder.git/#refs/heads/feature-branch",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "space",
+			gitURL:   "https://github.com/coder/env%20builder.git",
+			expected: "/workspaces/env builder",
+		},
+		{
+			name:     "no .git",
+			gitURL:   "https://github.com/coder/envbuilder",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "Unix path",
+			gitURL:   "/repo",
+			expected: "/workspaces/repo",
+		},
+		{
+			name:     "Unix subpath",
+			gitURL:   "/path/to/repo",
+			expected: "/workspaces/repo",
+		},
+		{
 			name:     "empty",
 			gitURL:   "",
 			expected: options.EmptyWorkspaceDir,
@@ -64,6 +99,10 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 		{
 			name:       "website URL",
 			invalidURL: "www.google.com",
+		},
+		{
+			name:       "Unix root",
+			invalidURL: "/",
 		},
 	}
 	for _, tt := range invalidTests {
