@@ -114,6 +114,10 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 			name:       "Unix root",
 			invalidURL: "/",
 		},
+		{
+			name:       "Git URL with no path",
+			invalidURL: "http://127.0.0.1:41073",
+		},
 	}
 	for _, tt := range invalidTests {
 		t.Run(tt.name, func(t *testing.T) {
