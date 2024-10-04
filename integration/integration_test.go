@@ -844,15 +844,17 @@ func TestContainerEnv(t *testing.T) {
 	require.NoError(t, err)
 
 	output := execContainer(t, ctr, "cat /env")
-	require.Contains(t, strings.TrimSpace(output),
-		`DEVCONTAINER=true
+	want := `DEVCONTAINER=true
 DEVCONTAINER_CONFIG=/workspaces/empty/.devcontainer/devcontainer.json
 ENVBUILDER=true
 FROM_CONTAINER_ENV=bar
 FROM_DOCKERFILE=foo
 FROM_REMOTE_ENV=baz
 PATH=/usr/local/bin:/bin:/go/bin:/opt
-REMOTE_BAR=bar`)
+REMOTE_BAR=bar`
+	if diff := cmp.Diff(want, strings.TrimSpace(output)); diff != "" {
+		require.Failf(t, "env mismatch", "diff (-want +got):\n%s", diff)
+	}
 }
 
 func TestUnsetOptionsEnv(t *testing.T) {
