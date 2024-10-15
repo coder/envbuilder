@@ -1684,8 +1684,8 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("PUSH_IMAGE", "1"),
 		)})
-		// Then: it should fail with an Unauthorized error
-		require.ErrorContains(t, err, "401 Unauthorized", "expected unauthorized error using no auth when cache repo requires it")
+		// Then: it should succeed but not push the image
+		require.NoError(t, err)
 
 		// Then: the image should not be pushed
 		_, err = remote.Image(ref, remoteAuthOpt)
@@ -1901,14 +1901,22 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		notRegURL := strings.TrimPrefix(notRegSrv.URL, "http://") + "/test"
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err := runEnvbuilder(t, runOpts{env: []string{
+		ctrID, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", notRegURL),
 			envbuilderEnv("PUSH_IMAGE", "1"),
+			envbuilderEnv("INIT_SCRIPT", "exit \\${ENVBUILDER_EXIT_CODE:-254}"),
 		}})
+		require.NoError(t, err)
 
-		// Then: envbuilder should fail with a descriptive error
-		require.ErrorContains(t, err, "failed to push to destination")
+		// Then: envbuilder should fail with a descriptive status code.
+		client, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer client.Close()
+		// Get the container exit status.
+		status, err := client.ContainerInspect(context.Background(), ctrID)
+		require.NoError(t, err)
+		require.Equal(t, 254, status.State.ExitCode)
 	})
 
 	t.Run("CacheAndPushDevcontainerFeatures", func(t *testing.T) {
