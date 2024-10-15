@@ -35,7 +35,7 @@ import (
 	"github.com/GoogleContainerTools/kaniko/pkg/util"
 	"github.com/coder/envbuilder/devcontainer"
 	"github.com/coder/envbuilder/internal/ebutil"
-	"github.com/coder/envbuilder/internal/magicdir"
+	"github.com/coder/envbuilder/internal/workingdir"
 	"github.com/coder/envbuilder/log"
 	"github.com/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
@@ -120,7 +120,7 @@ func Run(ctx context.Context, opts options.Options, preExec ...func()) error {
 func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) error {
 	defer options.UnsetEnv()
 
-	magicDir := magicdir.At(opts.MagicDirBase)
+	workingDir := workingdir.At(opts.MagicDirBase)
 
 	stageNumber := 0
 	startStage := func(format string, args ...any) func(format string, args ...any) {
@@ -154,7 +154,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 
 	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"), buildinfo.Version())
 
-	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.Logger, magicDir, opts.DockerConfigBase64)
+	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.Logger, workingDir, opts.DockerConfigBase64)
 	if err != nil {
 		return err
 	}
@@ -168,8 +168,8 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 		ContainerEnv: make(map[string]string),
 		RemoteEnv:    make(map[string]string),
 	}
-	if fileExists(opts.Filesystem, magicDir.Image()) {
-		if err = parseMagicImageFile(opts.Filesystem, magicDir.Image(), &runtimeData); err != nil {
+	if fileExists(opts.Filesystem, workingDir.Image()) {
+		if err = parseMagicImageFile(opts.Filesystem, workingDir.Image(), &runtimeData); err != nil {
 			return fmt.Errorf("parse magic image file: %w", err)
 		}
 		runtimeData.Image = true
@@ -186,7 +186,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			opts.ExportEnvFile = ""
 		}
 	}
-	runtimeData.Built = fileExists(opts.Filesystem, magicDir.Built())
+	runtimeData.Built = fileExists(opts.Filesystem, workingDir.Built())
 
 	buildTimeWorkspaceFolder := opts.WorkspaceFolder
 	var fallbackErr error
@@ -233,7 +233,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			if err != nil {
 				return fmt.Errorf("git clone options: %w", err)
 			}
-			cloneOpts.Path = magicDir.Join("repo")
+			cloneOpts.Path = workingDir.Join("repo")
 
 			endStage := startStage("📦 Remote repo build mode enabled, cloning %s to %s for build context...",
 				newColor(color.FgCyan).Sprintf(opts.GitURL),
@@ -259,7 +259,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 
 	if !runtimeData.Image {
 		defaultBuildParams := func() (*devcontainer.Compiled, error) {
-			dockerfile := magicDir.Join("Dockerfile")
+			dockerfile := workingDir.Join("Dockerfile")
 			file, err := opts.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0o644)
 			if err != nil {
 				return nil, err
@@ -281,7 +281,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			return &devcontainer.Compiled{
 				DockerfilePath:    dockerfile,
 				DockerfileContent: content,
-				BuildContext:      magicDir.Path(),
+				BuildContext:      workingDir.Path(),
 			}, nil
 		}
 
@@ -318,7 +318,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 						opts.Logger(log.LevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 						fallbackDockerfile = defaultParams.DockerfilePath
 					}
-					buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, magicDir.Path(), fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
+					buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, workingDir.Path(), fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
 					if err != nil {
 						return fmt.Errorf("compile devcontainer.json: %w", err)
 					}
@@ -393,7 +393,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 		// So we add them to the default ignore list. See:
 		// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
 		ignorePaths := append([]string{
-			magicDir.Path(),
+			workingDir.Path(),
 			opts.WorkspaceFolder,
 			// See: https://github.com/coder/envbuilder/issues/37
 			"/etc/resolv.conf",
@@ -421,18 +421,18 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			if err := util.AddAllowedPathToDefaultIgnoreList(opts.BinaryPath); err != nil {
 				return fmt.Errorf("add envbuilder binary to ignore list: %w", err)
 			}
-			if err := util.AddAllowedPathToDefaultIgnoreList(magicDir.Image()); err != nil {
+			if err := util.AddAllowedPathToDefaultIgnoreList(workingDir.Image()); err != nil {
 				return fmt.Errorf("add magic image file to ignore list: %w", err)
 			}
-			if err := util.AddAllowedPathToDefaultIgnoreList(magicDir.Features()); err != nil {
+			if err := util.AddAllowedPathToDefaultIgnoreList(workingDir.Features()); err != nil {
 				return fmt.Errorf("add features to ignore list: %w", err)
 			}
-			magicTempDir := magicdir.At(buildParams.BuildContext, magicdir.TempDir)
+			magicTempDir := workingdir.At(buildParams.BuildContext, workingdir.TempDir)
 			if err := opts.Filesystem.MkdirAll(magicTempDir.Path(), 0o755); err != nil {
 				return fmt.Errorf("create magic temp dir in build context: %w", err)
 			}
 			// Add the magic directives that embed the binary into the built image.
-			buildParams.DockerfileContent += magicdir.Directives
+			buildParams.DockerfileContent += workingdir.Directives
 
 			envbuilderBinDest := filepath.Join(magicTempDir.Path(), "envbuilder")
 			magicImageDest := magicTempDir.Image()
@@ -467,7 +467,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 		}
 
 		// temp move of all ro mounts
-		tempRemountDest := magicDir.Join("mnt")
+		tempRemountDest := workingDir.Join("mnt")
 		// ignorePrefixes is a superset of ignorePaths that we pass to kaniko's
 		// IgnoreList.
 		ignorePrefixes := append([]string{"/dev", "/proc", "/sys"}, ignorePaths...)
@@ -845,7 +845,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 	// Create the magic file to indicate that this build
 	// has already been ran before!
 	if !runtimeData.Built {
-		file, err := opts.Filesystem.Create(magicDir.Built())
+		file, err := opts.Filesystem.Create(workingDir.Built())
 		if err != nil {
 			return fmt.Errorf("create magic file: %w", err)
 		}
@@ -864,7 +864,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 		opts.Logger(log.LevelInfo, "=== Running the setup command %q as the root user...", opts.SetupScript)
 
 		envKey := "ENVBUILDER_ENV"
-		envFile := magicDir.Join("environ")
+		envFile := workingDir.Join("environ")
 		file, err := opts.Filesystem.Create(envFile)
 		if err != nil {
 			return fmt.Errorf("create environ file: %w", err)
@@ -962,7 +962,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		return nil, fmt.Errorf("--cache-repo must be set when using --get-cached-image")
 	}
 
-	magicDir := magicdir.At(opts.MagicDirBase)
+	workingDir := workingdir.At(opts.MagicDirBase)
 
 	stageNumber := 0
 	startStage := func(format string, args ...any) func(format string, args ...any) {
@@ -978,7 +978,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 
 	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"), buildinfo.Version())
 
-	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.Logger, magicDir, opts.DockerConfigBase64)
+	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.Logger, workingDir, opts.DockerConfigBase64)
 	if err != nil {
 		return nil, err
 	}
@@ -1031,7 +1031,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 			if err != nil {
 				return nil, fmt.Errorf("git clone options: %w", err)
 			}
-			cloneOpts.Path = magicDir.Join("repo")
+			cloneOpts.Path = workingDir.Join("repo")
 
 			endStage := startStage("📦 Remote repo build mode enabled, cloning %s to %s for build context...",
 				newColor(color.FgCyan).Sprintf(opts.GitURL),
@@ -1056,7 +1056,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	}
 
 	defaultBuildParams := func() (*devcontainer.Compiled, error) {
-		dockerfile := magicDir.Join("Dockerfile")
+		dockerfile := workingDir.Join("Dockerfile")
 		file, err := opts.Filesystem.OpenFile(dockerfile, os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			return nil, err
@@ -1078,7 +1078,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		return &devcontainer.Compiled{
 			DockerfilePath:    dockerfile,
 			DockerfileContent: content,
-			BuildContext:      magicDir.Path(),
+			BuildContext:      workingDir.Path(),
 		}, nil
 	}
 
@@ -1118,7 +1118,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 					opts.Logger(log.LevelInfo, "No Dockerfile or image specified; falling back to the default image...")
 					fallbackDockerfile = defaultParams.DockerfilePath
 				}
-				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, magicDir.Path(), fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
+				buildParams, err = devContainer.Compile(opts.Filesystem, devcontainerDir, workingDir.Path(), fallbackDockerfile, opts.WorkspaceFolder, false, os.LookupEnv)
 				if err != nil {
 					return nil, fmt.Errorf("compile devcontainer.json: %w", err)
 				}
@@ -1184,7 +1184,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// So we add them to the default ignore list. See:
 	// https://github.com/GoogleContainerTools/kaniko/blob/63be4990ca5a60bdf06ddc4d10aa4eca0c0bc714/cmd/executor/cmd/root.go#L136
 	ignorePaths := append([]string{
-		magicDir.Path(),
+		workingDir.Path(),
 		opts.WorkspaceFolder,
 		// See: https://github.com/coder/envbuilder/issues/37
 		"/etc/resolv.conf",
@@ -1207,10 +1207,10 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// build via executor.RunCacheProbe we need to have the *exact* copy of the
 	// envbuilder binary available used to build the image and we also need to
 	// add the magic directives to the Dockerfile content.
-	// MAGICDIR
-	buildParams.DockerfileContent += magicdir.Directives
+	// WORKINGDIR
+	buildParams.DockerfileContent += workingdir.Directives
 
-	magicTempDir := filepath.Join(buildParams.BuildContext, magicdir.TempDir)
+	magicTempDir := filepath.Join(buildParams.BuildContext, workingdir.TempDir)
 	if err := opts.Filesystem.MkdirAll(magicTempDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create magic temp dir in build context: %w", err)
 	}
@@ -1546,11 +1546,11 @@ func maybeDeleteFilesystem(logger log.Func, force bool) error {
 	// We always expect the magic directory to be set to the default, signifying that
 	// the user is running envbuilder in a container.
 	// If this is set to anything else we should bail out to prevent accidental data loss.
-	// defaultMagicDir := magicdir.MagicDir("")
+	// defaultWorkingDir := workingdir.WorkingDir("")
 	kanikoDir, ok := os.LookupEnv("KANIKO_DIR")
-	if !ok || strings.TrimSpace(kanikoDir) != magicdir.Default.Path() {
+	if !ok || strings.TrimSpace(kanikoDir) != workingdir.Default.Path() {
 		if !force {
-			logger(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", magicdir.Default.Path())
+			logger(log.LevelError, "KANIKO_DIR is not set to %s. Bailing!\n", workingdir.Default.Path())
 			logger(log.LevelError, "To bypass this check, set FORCE_SAFE=true.")
 			return errors.New("safety check failed")
 		}
@@ -1627,13 +1627,13 @@ func parseMagicImageFile(fs billy.Filesystem, path string, v any) error {
 	return nil
 }
 
-func initDockerConfigJSON(logf log.Func, magicDir magicdir.MagicDir, dockerConfigBase64 string) (func() error, error) {
+func initDockerConfigJSON(logf log.Func, workingDir workingdir.WorkingDir, dockerConfigBase64 string) (func() error, error) {
 	var cleanupOnce sync.Once
 	noop := func() error { return nil }
 	if dockerConfigBase64 == "" {
 		return noop, nil
 	}
-	cfgPath := magicDir.Join("config.json")
+	cfgPath := workingDir.Join("config.json")
 	decoded, err := base64.StdEncoding.DecodeString(dockerConfigBase64)
 	if err != nil {
 		return noop, fmt.Errorf("decode docker config: %w", err)
@@ -1656,7 +1656,7 @@ func initDockerConfigJSON(logf log.Func, magicDir magicdir.MagicDir, dockerConfi
 	}
 	logf(log.LevelInfo, "Wrote Docker config JSON to %s", cfgPath)
 	oldDockerConfig := os.Getenv("DOCKER_CONFIG")
-	_ = os.Setenv("DOCKER_CONFIG", magicDir.Path())
+	_ = os.Setenv("DOCKER_CONFIG", workingDir.Path())
 	newDockerConfig := os.Getenv("DOCKER_CONFIG")
 	logf(log.LevelInfo, "Set DOCKER_CONFIG to %s", newDockerConfig)
 	cleanup := func() error {
