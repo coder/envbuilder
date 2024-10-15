@@ -120,7 +120,7 @@ func Run(ctx context.Context, opts options.Options, preExec ...func()) error {
 func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) error {
 	defer options.UnsetEnv()
 
-	workingDir := workingdir.At(opts.MagicDirBase)
+	workingDir := workingdir.At(opts.WorkingDirBase)
 
 	stageNumber := 0
 	startStage := func(format string, args ...any) func(format string, args ...any) {
@@ -962,7 +962,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		return nil, fmt.Errorf("--cache-repo must be set when using --get-cached-image")
 	}
 
-	workingDir := workingdir.At(opts.MagicDirBase)
+	workingDir := workingdir.At(opts.WorkingDirBase)
 
 	stageNumber := 0
 	startStage := func(format string, args ...any) func(format string, args ...any) {
