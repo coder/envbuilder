@@ -65,7 +65,7 @@ func (o *Options) SetDefaults() {
 	if o.BinaryPath == "" {
 		o.BinaryPath = "/.envbuilder/bin/envbuilder"
 	}
-	if o.MagicDirBase == "" {
-		o.MagicDirBase = workingdir.Default.Path()
+	if o.WorkingDirBase == "" {
+		o.WorkingDirBase = workingdir.Default.Path()
 	}
 }
