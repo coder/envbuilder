@@ -48,6 +48,7 @@ To explore more examples, tips, and advanced usage, check out the following guid
 - [Git Authentication](./docs/git-auth.md)
 - [Caching](./docs/caching.md)
 - [Custom Certificates](./docs/custom-certificates.md)
+- [Users](./docs/users.md)
 
 ## Setup Script
 
