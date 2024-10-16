@@ -37,6 +37,7 @@ import (
 	"github.com/coder/envbuilder/internal/ebutil"
 	"github.com/coder/envbuilder/internal/workingdir"
 	"github.com/coder/envbuilder/log"
+	"github.com/coder/serpent"
 	"github.com/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry/handlers"
@@ -411,6 +412,10 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			})
 		}
 
+		magicTempDir := workingdir.At(buildParams.BuildContext, workingdir.TempDir)
+		if err := opts.Filesystem.MkdirAll(magicTempDir.Path(), 0o755); err != nil {
+			return fmt.Errorf("create magic temp dir in build context: %w", err)
+		}
 		// In order to allow 'resuming' envbuilder, embed the binary into the image
 		// if it is being pushed.
 		// As these files will be owned by root, it is considerate to clean up
@@ -426,10 +431,6 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			}
 			if err := util.AddAllowedPathToDefaultIgnoreList(workingDir.Features()); err != nil {
 				return fmt.Errorf("add features to ignore list: %w", err)
-			}
-			magicTempDir := workingdir.At(buildParams.BuildContext, workingdir.TempDir)
-			if err := opts.Filesystem.MkdirAll(magicTempDir.Path(), 0o755); err != nil {
-				return fmt.Errorf("create magic temp dir in build context: %w", err)
 			}
 			// Add the magic directives that embed the binary into the built image.
 			buildParams.DockerfileContent += workingdir.Directives
@@ -525,10 +526,10 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
 				registryMirror = strings.Split(val, ";")
 			}
-			var destinations []string
-			if opts.CacheRepo != "" {
-				destinations = append(destinations, opts.CacheRepo)
-			}
+			var destinations = []string{"image"}
+			// if opts.CacheRepo != "" {
+			// 	destinations = append(destinations, opts.CacheRepo)
+			// }
 			kOpts := &config.KanikoOptions{
 				// Boilerplate!
 				CustomPlatform:     platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
@@ -538,6 +539,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				RunStderr:          stderrWriter,
 				Destinations:       destinations,
 				NoPush:             !opts.PushImage || len(destinations) == 0,
+				TarPath:            filepath.Join(magicTempDir.Path(), "image.tar"),
 				CacheRunLayers:     true,
 				CacheCopyLayers:    true,
 				ForceBuildMetadata: opts.PushImage, // Force layers with no changes to be cached, required for cache probing.
@@ -573,13 +575,31 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				Reproducible: opts.PushImage,
 			}
 
+			buildSecrets := serpent.ParseEnviron(os.Environ(), "ENVBUILDER_SECRET_")
+			if len(buildSecrets) > 0 {
+				secretsPath := filepath.Join(magicTempDir.Path(), "secrets")
+				opts.Logger(log.LevelDebug, "writing secrets to %q", secretsPath)
+				os.Mkdir(secretsPath, 0o755)
+				for _, secret := range buildSecrets {
+					secretPath := filepath.Join(magicTempDir.Path(), "secrets", secret.Name)
+					if err := os.WriteFile(secretPath, []byte(secret.Value), 0o644); err != nil {
+						return nil, fmt.Errorf("write secret %q: %w", secret.Name, err)
+					}
+				}
+			}
+			defer func() {
+				if err := os.RemoveAll(filepath.Join(magicTempDir.Path(), "secrets")); err != nil {
+					opts.Logger(log.LevelWarn, "failed to clean up secrets: %s", err)
+				}
+			}()
+
 			endStage := startStage("🏗️ Building image...")
 			image, err := executor.DoBuild(kOpts)
 			if err != nil {
 				return nil, xerrors.Errorf("do build: %w", err)
 			}
 			endStage("🏗️ Built image!")
-			if opts.PushImage {
+			if opts.PushImage || true {
 				endStage = startStage("🏗️ Pushing image...")
 				if err := executor.DoPush(image, kOpts); err != nil {
 					return nil, xerrors.Errorf("do push: %w", err)
