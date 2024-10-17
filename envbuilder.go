@@ -582,9 +582,11 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			if opts.PushImage {
 				endStage = startStage("🏗️ Pushing image...")
 				if err := executor.DoPush(image, kOpts); err != nil {
-					return nil, xerrors.Errorf("do push: %w", err)
+					opts.Logger(log.LevelError, "Failed to push image: %s", err)
+					endStage("⚠️ Failed to push image!")
+				} else {
+					endStage("🏗️ Pushed image!")
 				}
-				endStage("🏗️ Pushed image!")
 			}
 
 			return image, err
