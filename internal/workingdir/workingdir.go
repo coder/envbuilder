@@ -1,4 +1,4 @@
-package magicdir
+package workingdir
 
 import (
 	"fmt"
@@ -6,10 +6,10 @@ import (
 )
 
 const (
-	// defaultMagicDirBase is the default working location for envbuilder.
+	// defaultWorkingDirBase is the default working location for envbuilder.
 	// This is a special directory that must not be modified by the user
 	// or images. This is intentionally unexported.
-	defaultMagicDirBase = "/.envbuilder"
+	defaultWorkingDirBase = "/.envbuilder"
 
 	// TempDir is a directory inside the build context inside which
 	// we place files referenced by MagicDirectives.
@@ -20,7 +20,7 @@ var (
 	// Default is the default working directory for Envbuilder.
 	// This defaults to /.envbuilder. It should only be used when Envbuilder
 	// is known to be running as root inside a container.
-	Default MagicDir
+	Default WorkingDir
 	// Directives are directives automatically appended to Dockerfiles
 	// when pushing the image. These directives allow the built image to be
 	// 're-used'.
@@ -30,33 +30,33 @@ COPY --chmod=0644 %[1]s/image %[2]s/image
 USER root
 WORKDIR /
 ENTRYPOINT ["%[2]s/bin/envbuilder"]
-`, TempDir, defaultMagicDirBase)
+`, TempDir, defaultWorkingDirBase)
 )
 
-// MagicDir is a working directory for envbuilder. It
+// WorkingDir is a working directory for envbuilder. It
 // will also be present in images built by envbuilder.
-type MagicDir struct {
+type WorkingDir struct {
 	base string
 }
 
-// At returns a MagicDir rooted at filepath.Join(paths...)
-func At(paths ...string) MagicDir {
+// At returns a WorkingDir rooted at filepath.Join(paths...)
+func At(paths ...string) WorkingDir {
 	if len(paths) == 0 {
-		return MagicDir{}
+		return WorkingDir{}
 	}
-	return MagicDir{base: filepath.Join(paths...)}
+	return WorkingDir{base: filepath.Join(paths...)}
 }
 
 // Join returns the result of filepath.Join([m.Path, paths...]).
-func (m MagicDir) Join(paths ...string) string {
+func (m WorkingDir) Join(paths ...string) string {
 	return filepath.Join(append([]string{m.Path()}, paths...)...)
 }
 
-// String returns the string representation of the MagicDir.
-func (m MagicDir) Path() string {
-	// Instead of the zero value, use defaultMagicDir.
+// String returns the string representation of the WorkingDir.
+func (m WorkingDir) Path() string {
+	// Instead of the zero value, use defaultWorkingDir.
 	if m.base == "" {
-		return defaultMagicDirBase
+		return defaultWorkingDirBase
 	}
 	return m.base
 }
@@ -65,7 +65,7 @@ func (m MagicDir) Path() string {
 // when envbuilder has already been run. This is used
 // to skip building when a container is restarting.
 // e.g. docker stop -> docker start
-func (m MagicDir) Built() string {
+func (m WorkingDir) Built() string {
 	return m.Join("built")
 }
 
@@ -73,11 +73,11 @@ func (m MagicDir) Built() string {
 // envbuilder has already been run. This is used to skip
 // the destructive initial build step when 'resuming' envbuilder
 // from a previously built image.
-func (m MagicDir) Image() string {
+func (m WorkingDir) Image() string {
 	return m.Join("image")
 }
 
 // Features is a directory that contains feature files.
-func (m MagicDir) Features() string {
+func (m WorkingDir) Features() string {
 	return m.Join("features")
 }
