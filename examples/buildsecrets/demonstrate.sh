@@ -4,9 +4,9 @@
 docker run -it --rm \
     -e ENVBUILDER_INIT_SCRIPT='/bin/sh' \
     -e ENVBUILDER_WORKSPACE_FOLDER=/workspace \
-    -e ENVBUILDER_SECRET_FOO='this is a secret' \
+    -e KANIKO_SECRET_FOO='okay, new secret' \
     -v $PWD:/workspace \
-    build-secrets-envbuilder:latest
+    build-secrets-envbuilder:latest 
 
 # This script will drop you into a shell inside an envbuilder built alpine container.
 # Notice that the secret that was set above is nowhere to be found. Yet, it's sha256 is
