@@ -18,7 +18,7 @@ func TestGetBuildSecrets(t *testing.T) {
 		os.Clearenv()
 
 		// when
-		secrets := options.GetBuildSecrets()
+		secrets := options.GetBuildSecrets(os.Environ())
 
 		// then
 		assert.Empty(t, secrets)
@@ -32,7 +32,7 @@ func TestGetBuildSecrets(t *testing.T) {
 		os.Setenv("ENVBUILDER_BUILD_SECRET_FOO", "bar")
 
 		// when
-		secrets := options.GetBuildSecrets()
+		secrets := options.GetBuildSecrets(os.Environ())
 
 		// then
 		assert.Equal(t, []string{"FOO=bar"}, secrets)
@@ -47,7 +47,7 @@ func TestGetBuildSecrets(t *testing.T) {
 		os.Setenv("ENVBUILDER_BUILD_SECRET_BAZ", "qux")
 
 		// when
-		secrets := options.GetBuildSecrets()
+		secrets := options.GetBuildSecrets(os.Environ())
 
 		// then
 		assert.ElementsMatch(t, []string{"FOO=bar", "BAZ=qux"}, secrets)

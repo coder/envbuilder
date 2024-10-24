@@ -411,10 +411,6 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			})
 		}
 
-		magicTempDir := workingdir.At(buildParams.BuildContext, workingdir.TempDir)
-		if err := opts.Filesystem.MkdirAll(magicTempDir.Path(), 0o755); err != nil {
-			return fmt.Errorf("create magic temp dir in build context: %w", err)
-		}
 		// In order to allow 'resuming' envbuilder, embed the binary into the image
 		// if it is being pushed.
 		// As these files will be owned by root, it is considerate to clean up
@@ -430,6 +426,10 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			}
 			if err := util.AddAllowedPathToDefaultIgnoreList(workingDir.Features()); err != nil {
 				return fmt.Errorf("add features to ignore list: %w", err)
+			}
+			magicTempDir := workingdir.At(buildParams.BuildContext, workingdir.TempDir)
+			if err := opts.Filesystem.MkdirAll(magicTempDir.Path(), 0o755); err != nil {
+				return fmt.Errorf("create magic temp dir in build context: %w", err)
 			}
 			// Add the magic directives that embed the binary into the built image.
 			buildParams.DockerfileContent += workingdir.Directives
@@ -525,7 +525,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
 				registryMirror = strings.Split(val, ";")
 			}
-			var destinations = []string{"image"}
+			destinations := []string{}
 			if opts.CacheRepo != "" {
 				destinations = append(destinations, opts.CacheRepo)
 			}
@@ -543,7 +543,6 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				RunStderr:          stderrWriter,
 				Destinations:       destinations,
 				NoPush:             !opts.PushImage || len(destinations) == 0,
-				TarPath:            filepath.Join(magicTempDir.Path(), "image.tar"),
 				CacheRunLayers:     true,
 				CacheCopyLayers:    true,
 				ForceBuildMetadata: opts.PushImage, // Force layers with no changes to be cached, required for cache probing.
@@ -586,7 +585,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				return nil, xerrors.Errorf("do build: %w", err)
 			}
 			endStage("🏗️ Built image!")
-			if opts.PushImage || true {
+			if opts.PushImage {
 				endStage = startStage("🏗️ Pushing image...")
 				if err := executor.DoPush(image, kOpts); err != nil {
 					return nil, xerrors.Errorf("do push: %w", err)
