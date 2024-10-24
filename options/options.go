@@ -108,6 +108,9 @@ type Options struct {
 	// GitSSHPrivateKeyPath is the path to an SSH private key to be used for
 	// Git authentication.
 	GitSSHPrivateKeyPath string
+	// GitSSHPrivateKeyBase64 is the content of an SSH private key to be used
+	// for Git authentication.
+	GitSSHPrivateKeyBase64 string
 	// GitHTTPProxyURL is the URL for the HTTP proxy. This is optional.
 	GitHTTPProxyURL string
 	// WorkspaceFolder is the path to the workspace folder that will be built.
@@ -362,6 +365,12 @@ func (o *Options) CLI() serpent.OptionSet {
 			Env:         WithEnvPrefix("GIT_SSH_PRIVATE_KEY_PATH"),
 			Value:       serpent.StringOf(&o.GitSSHPrivateKeyPath),
 			Description: "Path to an SSH private key to be used for Git authentication.",
+		},
+		{
+			Flag:        "git-ssh-private-key-base64",
+			Env:         WithEnvPrefix("GIT_SSH_PRIVATE_KEY_BASE64"),
+			Value:       serpent.StringOf(&o.GitSSHPrivateKeyBase64),
+			Description: "SSH private key to be used for Git authentication.",
 		},
 		{
 			Flag:        "git-http-proxy-url",
