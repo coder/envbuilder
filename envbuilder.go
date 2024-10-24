@@ -37,7 +37,6 @@ import (
 	"github.com/coder/envbuilder/internal/ebutil"
 	"github.com/coder/envbuilder/internal/workingdir"
 	"github.com/coder/envbuilder/log"
-	"github.com/coder/serpent"
 	"github.com/containerd/platforms"
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry/handlers"
@@ -527,9 +526,14 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				registryMirror = strings.Split(val, ";")
 			}
 			var destinations = []string{"image"}
-			// if opts.CacheRepo != "" {
-			// 	destinations = append(destinations, opts.CacheRepo)
-			// }
+			if opts.CacheRepo != "" {
+				destinations = append(destinations, opts.CacheRepo)
+			}
+
+			buildSecrets := options.GetBuildSecrets(os.Environ())
+			// Ensure that build secrets do not make it into the runtime environment or the setup script:
+			options.ClearBuildSecrets()
+
 			kOpts := &config.KanikoOptions{
 				// Boilerplate!
 				CustomPlatform:     platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
@@ -555,6 +559,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				},
 				ForceUnpack:       true,
 				BuildArgs:         buildParams.BuildArgs,
+				BuildSecrets:      buildSecrets,
 				CacheRepo:         opts.CacheRepo,
 				Cache:             opts.CacheRepo != "" || opts.BaseImageCacheDir != "",
 				DockerfilePath:    buildParams.DockerfilePath,
@@ -574,24 +579,6 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				// For cached image utilization, produce reproducible builds.
 				Reproducible: opts.PushImage,
 			}
-
-			buildSecrets := serpent.ParseEnviron(os.Environ(), "ENVBUILDER_SECRET_")
-			if len(buildSecrets) > 0 {
-				secretsPath := filepath.Join(magicTempDir.Path(), "secrets")
-				opts.Logger(log.LevelDebug, "writing secrets to %q", secretsPath)
-				os.Mkdir(secretsPath, 0o755)
-				for _, secret := range buildSecrets {
-					secretPath := filepath.Join(magicTempDir.Path(), "secrets", secret.Name)
-					if err := os.WriteFile(secretPath, []byte(secret.Value), 0o644); err != nil {
-						return nil, fmt.Errorf("write secret %q: %w", secret.Name, err)
-					}
-				}
-			}
-			defer func() {
-				if err := os.RemoveAll(filepath.Join(magicTempDir.Path(), "secrets")); err != nil {
-					opts.Logger(log.LevelWarn, "failed to clean up secrets: %s", err)
-				}
-			}()
 
 			endStage := startStage("🏗️ Building image...")
 			image, err := executor.DoBuild(kOpts)

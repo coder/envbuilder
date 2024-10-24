@@ -4,7 +4,7 @@ go 1.22.4
 
 // There are a few options we need added to Kaniko!
 // See: https://github.com/GoogleContainerTools/kaniko/compare/main...coder:kaniko:main
-replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20241018143344-245c70c3786d
+replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20241024065816-8f144a699d23
 
 // Required to import codersdk due to gvisor dependency.
 replace tailscale.com => github.com/coder/tailscale v1.1.1-0.20240702054557-aa558fbe5374
@@ -20,7 +20,7 @@ require (
 	github.com/containerd/platforms v0.2.1
 	github.com/distribution/distribution/v3 v3.0.0-alpha.1
 	github.com/docker/cli v27.2.1+incompatible
-	github.com/docker/docker v27.2.1+incompatible
+	github.com/docker/docker v27.3.1+incompatible
 	github.com/fatih/color v1.17.0
 	github.com/gliderlabs/ssh v0.3.7
 	github.com/go-git/go-billy/v5 v5.5.0

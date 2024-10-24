@@ -171,8 +171,8 @@ github.com/cockroachdb/errors v1.2.4/go.mod h1:rQD95gz6FARkaKkQXUksEje/d9a6wBJoC
 github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f/go.mod h1:i/u985jwjWRlyHXQbwatDASoW0RMlZ/3i9yJHE2xLkI=
 github.com/coder/coder/v2 v2.10.1-0.20240704130443-c2d44d16a352 h1:L/EjCuZxs5tOcqqCaASj/nu65TRYEFcTt8qRQfHZXX0=
 github.com/coder/coder/v2 v2.10.1-0.20240704130443-c2d44d16a352/go.mod h1:P1KoQSgnKEAG6Mnd3YlGzAophty+yKA9VV48LpfNRvo=
-github.com/coder/kaniko v0.0.0-20241018143344-245c70c3786d h1:7H66IJmnOq6EZcT1WCRFi4gcntgGImL5xzzHJINk25E=
-github.com/coder/kaniko v0.0.0-20241018143344-245c70c3786d/go.mod h1:L4Z5mwSAQ0z7OMbuwdYVG8X80+EVvyf5INYgzN4OkpA=
+github.com/coder/kaniko v0.0.0-20241024065816-8f144a699d23 h1:cBCxME1UiClC5EFaniW2B4xX2gbTsTlOrH6X4SO9pWY=
+github.com/coder/kaniko v0.0.0-20241024065816-8f144a699d23/go.mod h1:3rM/KOQ4LgF8mE+O1P6pLDa/E57mzxIxNdUOMKi1qpg=
 github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0 h1:3A0ES21Ke+FxEM8CXx9n47SZOKOpgSE1bbJzlE4qPVs=
 github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0/go.mod h1:5UuS2Ts+nTToAMeOjNlnHFkPahrtDkmpydBen/3wgZc=
 github.com/coder/quartz v0.1.0 h1:cLL+0g5l7xTf6ordRnUMMiZtRE8Sq5LxpghS63vEXrQ=
@@ -236,8 +236,8 @@ github.com/docker/cli v27.2.1+incompatible h1:U5BPtiD0viUzjGAjV1p0MGB8eVA3L3cbIr
 github.com/docker/cli v27.2.1+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
 github.com/docker/distribution v2.8.2+incompatible h1:T3de5rq0dB1j30rp0sA2rER+m322EBzniBPB6ZIzuh8=
 github.com/docker/distribution v2.8.2+incompatible/go.mod h1:J2gT2udsDAN96Uj4KfcMRqY0/ypR+oyYUYmja8H+y+w=
-github.com/docker/docker v27.2.1+incompatible h1:fQdiLfW7VLscyoeYEBz7/J8soYFDZV1u6VW6gJEjNMI=
-github.com/docker/docker v27.2.1+incompatible/go.mod h1:eEKB0N0r5NX/I1kEveEz05bcu8tLC/8azJZsviup8Sk=
+github.com/docker/docker v27.3.1+incompatible h1:KttF0XoteNTicmUtBO0L2tP+J7FGRFTjaEF4k6WdhfI=
+github.com/docker/docker v27.3.1+incompatible/go.mod h1:eEKB0N0r5NX/I1kEveEz05bcu8tLC/8azJZsviup8Sk=
 github.com/docker/docker-credential-helpers v0.8.2 h1:bX3YxiGzFP5sOXWc3bTPEXdEaZSeVMrFgOr3T+zrFAo=
 github.com/docker/docker-credential-helpers v0.8.2/go.mod h1:P3ci7E3lwkZg6XiHdRKft1KckHiO9a2rNtyFbZ/ry9M=
 github.com/docker/go-connections v0.5.0 h1:USnMq7hx7gwdVZq1L49hLXaFtUdTADjXGp+uj1Br63c=
