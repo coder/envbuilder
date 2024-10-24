@@ -400,11 +400,11 @@ func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
 			arg = strings.TrimSpace(arg)
 			if strings.Contains(arg, "=") {
 				parts := strings.SplitN(arg, "=", 2)
-				key, err := lexer.ProcessWord(parts[0], args)
+				key, _, err := lexer.ProcessWord(parts[0], shell.EnvsFromSlice(args))
 				if err != nil {
 					return nil, fmt.Errorf("processing %q: %w", line, err)
 				}
-				val, err := lexer.ProcessWord(parts[1], args)
+				val, _, err := lexer.ProcessWord(parts[1], shell.EnvsFromSlice(args))
 				if err != nil {
 					return nil, fmt.Errorf("processing %q: %w", line, err)
 				}
@@ -421,7 +421,7 @@ func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
 	if imageRef == "" {
 		return nil, fmt.Errorf("no FROM directive found")
 	}
-	imageRef, err := lexer.ProcessWord(imageRef, args)
+	imageRef, _, err := lexer.ProcessWord(imageRef, shell.EnvsFromSlice(args))
 	if err != nil {
 		return nil, fmt.Errorf("processing %q: %w", imageRef, err)
 	}

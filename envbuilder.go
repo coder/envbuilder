@@ -525,10 +525,15 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
 				registryMirror = strings.Split(val, ";")
 			}
-			var destinations []string
+			destinations := []string{}
 			if opts.CacheRepo != "" {
 				destinations = append(destinations, opts.CacheRepo)
 			}
+
+			buildSecrets := options.GetBuildSecrets(os.Environ())
+			// Ensure that build secrets do not make it into the runtime environment or the setup script:
+			options.ClearBuildSecrets()
+
 			kOpts := &config.KanikoOptions{
 				// Boilerplate!
 				CustomPlatform:     platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
@@ -553,6 +558,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				},
 				ForceUnpack:       true,
 				BuildArgs:         buildParams.BuildArgs,
+				BuildSecrets:      buildSecrets,
 				CacheRepo:         opts.CacheRepo,
 				Cache:             opts.CacheRepo != "" || opts.BaseImageCacheDir != "",
 				DockerfilePath:    buildParams.DockerfilePath,
