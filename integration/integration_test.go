@@ -34,7 +34,6 @@ import (
 	"github.com/coder/envbuilder/testutil/registrytest"
 
 	clitypes "github.com/docker/cli/cli/config/types"
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
@@ -2376,14 +2375,14 @@ func execContainer(t *testing.T, containerID, command string) string {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	require.NoError(t, err)
 	defer cli.Close()
-	execConfig := types.ExecConfig{
+	execConfig := container.ExecOptions{
 		AttachStdout: true,
 		AttachStderr: true,
 		Cmd:          []string{"/bin/sh", "-c", command},
 	}
 	execID, err := cli.ContainerExecCreate(ctx, containerID, execConfig)
 	require.NoError(t, err)
-	resp, err := cli.ContainerExecAttach(ctx, execID.ID, types.ExecStartCheck{})
+	resp, err := cli.ContainerExecAttach(ctx, execID.ID, container.ExecAttachOptions{})
 	require.NoError(t, err)
 	defer resp.Close()
 	var buf bytes.Buffer
