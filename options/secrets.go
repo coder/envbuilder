@@ -13,7 +13,7 @@ func EnvWithBuildSecretPrefix(secretName, secretValue string) string {
 	return fmt.Sprintf("%s%s=%s", buildSecretPrefix, secretName, secretValue)
 }
 
-// GetBuildSecrets sources build secrets from the OS environment.
+// GetBuildSecrets sources build secrets from the given environment.
 //
 // In a normal docker build, build secrets would be passed in via the
 // `docker build --secret` flag. envbuilder is more analogous to a
@@ -25,7 +25,7 @@ func GetBuildSecrets(environ []string) []string {
 	return buildSecrets
 }
 
-// ClearBuildSecrets unsets all build secrets from the process environment.
+// ClearBuildSecretsFromProcessEnvironment unsets all build secrets from the process environment.
 // NOTE: This does not remove them from /proc/self/environ. They are still visible
 // there unless execve(2) is called.
 //
@@ -37,7 +37,7 @@ func GetBuildSecrets(environ []string) []string {
 // These build secrets should not make it into the runtime environment of the runtime
 // container init process. It is therefore useful to unset build secret environment
 // variables to ensure they aren't accidentally passed into the exec call.
-func ClearBuildSecrets() {
+func ClearBuildSecretsFromProcessEnvironment() {
 	buildSecrets := serpent.ParseEnviron(os.Environ(), buildSecretPrefix)
 	for _, secret := range buildSecrets {
 		os.Unsetenv(buildSecretPrefix + secret.Name)

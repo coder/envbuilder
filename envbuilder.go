@@ -532,7 +532,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 
 			buildSecrets := options.GetBuildSecrets(os.Environ())
 			// Ensure that build secrets do not make it into the runtime environment or the setup script:
-			options.ClearBuildSecrets()
+			options.ClearBuildSecretsFromProcessEnvironment()
 
 			kOpts := &config.KanikoOptions{
 				// Boilerplate!
