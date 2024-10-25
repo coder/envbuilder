@@ -361,16 +361,18 @@ func (o *Options) CLI() serpent.OptionSet {
 			Description: "The password to use for Git authentication. This is optional.",
 		},
 		{
-			Flag:        "git-ssh-private-key-path",
-			Env:         WithEnvPrefix("GIT_SSH_PRIVATE_KEY_PATH"),
-			Value:       serpent.StringOf(&o.GitSSHPrivateKeyPath),
-			Description: "Path to an SSH private key to be used for Git authentication.",
+			Flag:  "git-ssh-private-key-path",
+			Env:   WithEnvPrefix("GIT_SSH_PRIVATE_KEY_PATH"),
+			Value: serpent.StringOf(&o.GitSSHPrivateKeyPath),
+			Description: "Path to an SSH private key to be used for Git authentication." +
+				" If this is set, then GIT_SSH_PRIVATE_KEY_BASE64 cannot be set.",
 		},
 		{
-			Flag:        "git-ssh-private-key-base64",
-			Env:         WithEnvPrefix("GIT_SSH_PRIVATE_KEY_BASE64"),
-			Value:       serpent.StringOf(&o.GitSSHPrivateKeyBase64),
-			Description: "SSH private key to be used for Git authentication.",
+			Flag:  "git-ssh-private-key-base64",
+			Env:   WithEnvPrefix("GIT_SSH_PRIVATE_KEY_BASE64"),
+			Value: serpent.StringOf(&o.GitSSHPrivateKeyBase64),
+			Description: "Base64 encoded SSH private key to be used for Git authentication." +
+				" If this is set, then GIT_SSH_PRIVATE_KEY_PATH cannot be set.",
 		},
 		{
 			Flag:        "git-http-proxy-url",
