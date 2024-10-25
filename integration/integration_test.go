@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -32,6 +33,8 @@ import (
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/coder/envbuilder/testutil/mwtest"
 	"github.com/coder/envbuilder/testutil/registrytest"
+	"github.com/go-git/go-billy/v5/osfs"
+	gossh "golang.org/x/crypto/ssh"
 
 	clitypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types"
@@ -58,6 +61,16 @@ const (
 	testContainerLabel = "envbox-integration-test"
 	testImageAlpine    = "localhost:5000/envbuilder-test-alpine:latest"
 	testImageUbuntu    = "localhost:5000/envbuilder-test-ubuntu:latest"
+
+	// nolint:gosec // Throw-away key for testing. DO NOT REUSE.
+	testSSHKey = `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACBXOGgAge/EbcejqASqZa6s8PFXZle56DiGEt0VYnljuwAAAKgM05mUDNOZ
+lAAAAAtzc2gtZWQyNTUxOQAAACBXOGgAge/EbcejqASqZa6s8PFXZle56DiGEt0VYnljuw
+AAAEDCawwtjrM4AGYXD1G6uallnbsgMed4cfkFsQ+mLZtOkFc4aACB78Rtx6OoBKplrqzw
+8VdmV7noOIYS3RVieWO7AAAAHmNpYW5AY2RyLW1icC1mdmZmdzBuOHEwNXAuaG9tZQECAw
+QFBgc=
+-----END OPENSSH PRIVATE KEY-----`
 )
 
 func TestLogs(t *testing.T) {
@@ -376,6 +389,54 @@ func TestSucceedsGitAuth(t *testing.T) {
 	require.NoError(t, err)
 	gitConfig := execContainer(t, ctr, "cat /workspaces/empty/.git/config")
 	require.Contains(t, gitConfig, srv.URL)
+}
+
+func TestGitSSHAuth(t *testing.T) {
+	t.Parallel()
+
+	base64Key := base64.StdEncoding.EncodeToString([]byte(testSSHKey))
+
+	t.Run("Base64/Success", func(t *testing.T) {
+		signer, err := gossh.ParsePrivateKey([]byte(testSSHKey))
+		require.NoError(t, err)
+		require.NotNil(t, signer)
+
+		tmpDir := t.TempDir()
+		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
+
+		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "Initial commit"))
+		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
+
+		_, err = runEnvbuilder(t, runOpts{env: []string{
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			envbuilderEnv("GIT_URL", tr.String()+"."),
+			envbuilderEnv("GIT_SSH_PRIVATE_KEY_BASE64", base64Key),
+		}})
+		// TODO: Ensure it actually clones but this does mean we have
+		// successfully authenticated.
+		require.ErrorContains(t, err, "repository not found")
+	})
+
+	t.Run("Base64/Failure", func(t *testing.T) {
+		_, randomKey, err := ed25519.GenerateKey(nil)
+		require.NoError(t, err)
+		signer, err := gossh.NewSignerFromKey(randomKey)
+		require.NoError(t, err)
+		require.NotNil(t, signer)
+
+		tmpDir := t.TempDir()
+		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
+
+		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "Initial commit"))
+		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
+
+		_, err = runEnvbuilder(t, runOpts{env: []string{
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			envbuilderEnv("GIT_URL", tr.String()+"."),
+			envbuilderEnv("GIT_SSH_PRIVATE_KEY_BASE64", base64Key),
+		}})
+		require.ErrorContains(t, err, "handshake failed")
+	})
 }
 
 func TestSucceedsGitAuthInURL(t *testing.T) {

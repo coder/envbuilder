@@ -27,7 +27,8 @@
 | `--git-clone-single-branch` | `ENVBUILDER_GIT_CLONE_SINGLE_BRANCH` |  | Clone only a single branch of the Git repository. |
 | `--git-username` | `ENVBUILDER_GIT_USERNAME` |  | The username to use for Git authentication. This is optional. |
 | `--git-password` | `ENVBUILDER_GIT_PASSWORD` |  | The password to use for Git authentication. This is optional. |
-| `--git-ssh-private-key-path` | `ENVBUILDER_GIT_SSH_PRIVATE_KEY_PATH` |  | Path to an SSH private key to be used for Git authentication. |
+| `--git-ssh-private-key-path` | `ENVBUILDER_GIT_SSH_PRIVATE_KEY_PATH` |  | Path to an SSH private key to be used for Git authentication. If this is set, then GIT_SSH_PRIVATE_KEY_BASE64 cannot be set. |
+| `--git-ssh-private-key-base64` | `ENVBUILDER_GIT_SSH_PRIVATE_KEY_BASE64` |  | Base64 encoded SSH private key to be used for Git authentication. If this is set, then GIT_SSH_PRIVATE_KEY_PATH cannot be set. |
 | `--git-http-proxy-url` | `ENVBUILDER_GIT_HTTP_PROXY_URL` |  | The URL for the HTTP proxy. This is optional. |
 | `--workspace-folder` | `ENVBUILDER_WORKSPACE_FOLDER` |  | The path to the workspace folder that will be built. This is optional. |
 | `--ssl-cert-base64` | `ENVBUILDER_SSL_CERT_BASE64` |  | The content of an SSL cert file. This is useful for self-signed certificates. |

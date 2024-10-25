@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -181,6 +182,22 @@ func ReadPrivateKey(path string) (gossh.Signer, error) {
 	return k, nil
 }
 
+// DecodeBase64PrivateKey attempts to decode a base64 encoded private
+// key and returns an ssh.Signer
+func DecodeBase64PrivateKey(key string) (gossh.Signer, error) {
+	bs, err := base64.StdEncoding.DecodeString(key)
+	if err != nil {
+		return nil, fmt.Errorf("decode base64: %w", err)
+	}
+
+	k, err := gossh.ParsePrivateKey(bs)
+	if err != nil {
+		return nil, fmt.Errorf("parse private key: %w", err)
+	}
+
+	return k, nil
+}
+
 // LogHostKeyCallback is a HostKeyCallback that just logs host keys
 // and does nothing else.
 func LogHostKeyCallback(logger func(string, ...any)) gossh.HostKeyCallback {
@@ -267,6 +284,17 @@ func SetupRepoAuth(logf func(string, ...any), options *options.Options) transpor
 		s, err := ReadPrivateKey(options.GitSSHPrivateKeyPath)
 		if err != nil {
 			logf("❌ Failed to read private key from %s: %s", options.GitSSHPrivateKeyPath, err.Error())
+		} else {
+			logf("🔑 Using %s key!", s.PublicKey().Type())
+			signer = s
+		}
+	}
+
+	// If no path was provided, fall back to the environment variable
+	if options.GitSSHPrivateKeyBase64 != "" {
+		s, err := DecodeBase64PrivateKey(options.GitSSHPrivateKeyBase64)
+		if err != nil {
+			logf("❌ Failed to decode base 64 private key: %s", err.Error())
 		} else {
 			logf("🔑 Using %s key!", s.PublicKey().Type())
 			signer = s
