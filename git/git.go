@@ -187,7 +187,7 @@ func ReadPrivateKey(path string) (gossh.Signer, error) {
 func DecodeBase64PrivateKey(key string) (gossh.Signer, error) {
 	bs, err := base64.StdEncoding.DecodeString(key)
 	if err != nil {
-		return nil, fmt.Errorf("decode private key: %w", err)
+		return nil, fmt.Errorf("decode base64: %w", err)
 	}
 
 	k, err := gossh.ParsePrivateKey(bs)
@@ -294,7 +294,7 @@ func SetupRepoAuth(logf func(string, ...any), options *options.Options) transpor
 	if options.GitSSHPrivateKeyBase64 != "" {
 		s, err := DecodeBase64PrivateKey(options.GitSSHPrivateKeyBase64)
 		if err != nil {
-			logf("❌ Failed to decode base 64 private key : %s", err.Error())
+			logf("❌ Failed to decode base 64 private key: %s", err.Error())
 		} else {
 			logf("🔑 Using %s key!", s.PublicKey().Type())
 			signer = s
