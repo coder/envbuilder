@@ -75,6 +75,10 @@ func envbuilderCmd() serpent.Command {
 				}
 			}
 
+			if o.GitSSHPrivateKeyPath != "" && o.GitSSHPrivateKeyBase64 != "" {
+				return errors.New("cannot have both GIT_SSH_PRIVATE_KEY_PATH and GIT_SSH_PRIVATE_KEY_BASE64 set")
+			}
+
 			if o.GetCachedImage {
 				img, err := envbuilder.RunCacheProbe(inv.Context(), o)
 				if err != nil {
