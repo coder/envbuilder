@@ -940,8 +940,15 @@ func TestBuildSecrets(t *testing.T) {
 				},
 			}`,
 			".devcontainer/Dockerfile": "FROM " + testImageAlpine +
+				// Test whether build secrets are written to the default location
 				"\nRUN --mount=type=secret,id=FOO cat /run/secrets/FOO > /foo_from_file" +
-				"\nRUN --mount=type=secret,id=FOO,env=FOO echo $FOO > /foo_from_env",
+				// Test whether:
+				// * build secrets are written to env
+				// * build secrets are written to a custom target
+				// * build secrets are both written to env and target if both are specified
+				"\nRUN --mount=type=secret,id=FOO,env=FOO,target=/etc/foo echo $FOO > /foo_from_env && cat /etc/foo > /foo_from_custom_target" +
+				// Test what happens when you specify the same secret twice
+				"\nRUN --mount=type=secret,id=FOO,env=FOO --mount=type=secret,id=FOO,target=/etc/foo echo $FOO > /duplicate_foo_from_env && cat /etc/foo > /duplicate_foo_from_custom_target",
 		},
 	})
 
@@ -956,6 +963,15 @@ func TestBuildSecrets(t *testing.T) {
 	require.Equal(t, buildSecretVal, strings.TrimSpace(output))
 
 	output = execContainer(t, ctr, "cat /foo_from_env")
+	require.Equal(t, buildSecretVal, strings.TrimSpace(output))
+
+	output = execContainer(t, ctr, "cat /foo_from_custom_target")
+	require.Equal(t, buildSecretVal, strings.TrimSpace(output))
+
+	output = execContainer(t, ctr, "cat /duplicate_foo_from_env")
+	require.Equal(t, buildSecretVal, strings.TrimSpace(output))
+
+	output = execContainer(t, ctr, "cat /duplicate_foo_from_custom_target")
 	require.Equal(t, buildSecretVal, strings.TrimSpace(output))
 }
 
