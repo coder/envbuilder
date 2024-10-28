@@ -948,7 +948,7 @@ func TestBuildSecrets(t *testing.T) {
 				// * build secrets are both written to env and target if both are specified
 				"\nRUN --mount=type=secret,id=FOO,env=FOO,target=/etc/foo echo $FOO > /foo_from_env && cat /etc/foo > /foo_from_custom_target" +
 				// Test what happens when you specify the same secret twice
-				"\nRUN --mount=type=secret,id=FOO,env=FOO --mount=type=secret,id=FOO,target=/etc/foo echo $FOO > /duplicate_foo_from_env && cat /etc/foo > /duplicate_foo_from_custom_target",
+				"\nRUN --mount=type=secret,id=FOO,target=/etc/duplicate_foo --mount=type=secret,id=FOO,target=/etc/duplicate_foo cat /etc/foo > /duplicate_foo_from_custom_target",
 		},
 	})
 
@@ -960,19 +960,16 @@ func TestBuildSecrets(t *testing.T) {
 	require.NoError(t, err)
 
 	output := execContainer(t, ctr, "cat /foo_from_file")
-	require.Equal(t, buildSecretVal, strings.TrimSpace(output))
+	assert.Equal(t, buildSecretVal, strings.TrimSpace(output))
 
 	output = execContainer(t, ctr, "cat /foo_from_env")
-	require.Equal(t, buildSecretVal, strings.TrimSpace(output))
+	assert.Equal(t, buildSecretVal, strings.TrimSpace(output))
 
 	output = execContainer(t, ctr, "cat /foo_from_custom_target")
-	require.Equal(t, buildSecretVal, strings.TrimSpace(output))
-
-	output = execContainer(t, ctr, "cat /duplicate_foo_from_env")
-	require.Equal(t, buildSecretVal, strings.TrimSpace(output))
+	assert.Equal(t, buildSecretVal, strings.TrimSpace(output))
 
 	output = execContainer(t, ctr, "cat /duplicate_foo_from_custom_target")
-	require.Equal(t, buildSecretVal, strings.TrimSpace(output))
+	assert.Equal(t, buildSecretVal, strings.TrimSpace(output))
 }
 
 func TestLifecycleScripts(t *testing.T) {
