@@ -565,6 +565,7 @@ func TestBuildFromDockerfile(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Contains(t, logbuf.String(), "Set DOCKER_CONFIG to /.envbuilder")
+	require.NotContains(t, logbuf.String(), "Using DOCKER_CONFIG at ")
 
 	output := execContainer(t, ctr, "echo hello")
 	require.Equal(t, "hello", strings.TrimSpace(output))
@@ -582,8 +583,17 @@ func TestBuildDockerConfigPathFromEnv(t *testing.T) {
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	})
+	config, err := json.Marshal(envbuilder.DockerConfig{
+		AuthConfigs: map[string]clitypes.AuthConfig{
+			"mytestimage": {
+				Username: "user",
+				Password: "test",
+			},
+		},
+	})
+	require.NoError(t, err)
 	dir := t.TempDir()
-	err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"experimental": "enabled"}`), 0o644)
+	err = os.WriteFile(filepath.Join(dir, "config.json"), config, 0o644)
 	require.NoError(t, err)
 
 	logbuf := new(bytes.Buffer)
@@ -593,12 +603,16 @@ func TestBuildDockerConfigPathFromEnv(t *testing.T) {
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
 			"DOCKER_CONFIG=/config",
 		},
-		binds:  []string{fmt.Sprintf("%s:/config:ro", dir)},
-		logbuf: logbuf,
+		privileged: true,
+		binds:      []string{fmt.Sprintf("%s:/config:ro", dir)},
+		logbuf:     logbuf,
 	})
 	require.NoError(t, err)
 
-	require.Contains(t, logbuf.String(), "Using existing DOCKER_CONFIG set to /config")
+	// Logs that the DOCKER_CONFIG is used.
+	require.Contains(t, logbuf.String(), "Using DOCKER_CONFIG at /config")
+	// Logs registry auth info from existing file.
+	require.Contains(t, logbuf.String(), "mytestimage")
 }
 
 func TestBuildDockerConfigDefaultPath(t *testing.T) {
@@ -619,6 +633,7 @@ func TestBuildDockerConfigDefaultPath(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Contains(t, logbuf.String(), "Set DOCKER_CONFIG to /.envbuilder")
+	require.NotContains(t, logbuf.String(), "Using DOCKER_CONFIG at ")
 }
 
 func TestBuildPrintBuildOutput(t *testing.T) {
@@ -2345,11 +2360,12 @@ func startContainerFromRef(ctx context.Context, t *testing.T, cli *client.Client
 }
 
 type runOpts struct {
-	image   string
-	binds   []string
-	env     []string
-	volumes map[string]string
-	logbuf  *bytes.Buffer
+	image      string
+	privileged bool // Required for remounting.
+	binds      []string
+	env        []string
+	volumes    map[string]string
+	logbuf     *bytes.Buffer
 }
 
 // runEnvbuilder starts the envbuilder container with the given environment
@@ -2387,18 +2403,22 @@ func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 		require.NoError(t, err, "failed to read image pull response")
 		img = opts.image
 	}
+	hostConfig := &container.HostConfig{
+		NetworkMode: container.NetworkMode("host"),
+		Binds:       opts.binds,
+		Mounts:      mounts,
+	}
+	if opts.privileged {
+		hostConfig.CapAdd = append(hostConfig.CapAdd, "SYS_ADMIN")
+		hostConfig.Privileged = true
+	}
 	ctr, err := cli.ContainerCreate(ctx, &container.Config{
 		Image: img,
 		Env:   opts.env,
 		Labels: map[string]string{
 			testContainerLabel: "true",
 		},
-	}, &container.HostConfig{
-		CapAdd:      []string{"SYS_ADMIN"}, // For remounting.
-		NetworkMode: container.NetworkMode("host"),
-		Binds:       opts.binds,
-		Mounts:      mounts,
-	}, nil, nil, "")
+	}, hostConfig, nil, nil, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
@@ -2413,7 +2433,7 @@ func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 	go func() {
 		for log := range logChan {
 			if opts.logbuf != nil {
-				opts.logbuf.WriteString(log)
+				opts.logbuf.WriteString(log + "\n")
 			}
 			if strings.HasPrefix(log, "=== Running init command") {
 				errChan <- nil
