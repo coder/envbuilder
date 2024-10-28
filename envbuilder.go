@@ -1647,9 +1647,9 @@ func initDockerConfigOverride(logf log.Func, workingDir workingdir.WorkingDir, d
 			if oldDockerConfig == "" {
 				err := os.Unsetenv("DOCKER_CONFIG")
 				if err != nil {
-					err = fmt.Errorf("unset DOCKER_CONFIG: %w", err)
+					return fmt.Errorf("unset DOCKER_CONFIG: %w", err)
 				}
-				return err
+				return nil
 			}
 			err := os.Setenv("DOCKER_CONFIG", oldDockerConfig)
 			if err != nil {
