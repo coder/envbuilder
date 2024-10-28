@@ -1634,7 +1634,7 @@ func initDockerConfigOverride(logf log.Func, workingDir workingdir.WorkingDir, d
 		cfgPath         = workingDir.Join("config.json")
 		restoreEnv      = func() error { return nil } // noop.
 	)
-	if dockerConfigBase64 != "" || (dockerConfigBase64 == "" && oldDockerConfig == "") {
+	if dockerConfigBase64 != "" || oldDockerConfig == "" {
 		err := os.Setenv("DOCKER_CONFIG", newDockerConfig)
 		if err != nil {
 			logf(log.LevelError, "Failed to set DOCKER_CONFIG: %s", err)
