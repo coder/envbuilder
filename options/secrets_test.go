@@ -41,8 +41,8 @@ func TestGetBuildSecrets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			envSnapshot := snapshotEnv()
-			t.Cleanup(func() { assertEnvUnchanged(t, envSnapshot) })
+			preserveEnv(t)
+			os.Clearenv()
 
 			options.ClearBuildSecretsFromProcessEnvironment()
 			require.Empty(t, options.GetBuildSecrets(os.Environ()))
@@ -66,7 +66,6 @@ func TestClearBuildSecrets(t *testing.T) {
 		name                       string
 		initialEnvVars             map[string]string
 		expectedSecretsBeforeClear []string
-		expectedSecretsAfterClear  []string
 		expectedEnvironAfterClear  []string
 	}{
 		{
@@ -75,7 +74,6 @@ func TestClearBuildSecrets(t *testing.T) {
 				"ENVBUILDER_BUILD_SECRET_FOO": "bar",
 			},
 			expectedSecretsBeforeClear: []string{"FOO=bar"},
-			expectedSecretsAfterClear:  []string{},
 		},
 		{
 			name: "multiple secrets",
@@ -84,7 +82,6 @@ func TestClearBuildSecrets(t *testing.T) {
 				"ENVBUILDER_BUILD_SECRET_BAZ": "qux",
 			},
 			expectedSecretsBeforeClear: []string{"FOO=bar", "BAZ=qux"},
-			expectedSecretsAfterClear:  []string{},
 		},
 		{
 			name: "only build secrets are cleared",
@@ -93,15 +90,14 @@ func TestClearBuildSecrets(t *testing.T) {
 				"BAR":                         "bar",
 			},
 			expectedSecretsBeforeClear: []string{"FOO=foo"},
-			expectedSecretsAfterClear:  []string{},
 			expectedEnvironAfterClear:  []string{"BAR=bar"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			envSnapshot := snapshotEnv()
-			t.Cleanup(func() { assertEnvUnchanged(t, envSnapshot) })
+			preserveEnv(t)
+			os.Clearenv()
 
 			// Set environment variables for the test case
 			for key, value := range tt.initialEnvVars {
@@ -118,33 +114,23 @@ func TestClearBuildSecrets(t *testing.T) {
 			// Verify secrets after clearing
 			environ := os.Environ()
 			secrets = options.GetBuildSecrets(environ)
-			assert.ElementsMatch(t, tt.expectedSecretsAfterClear, secrets)
-			for _, env := range tt.expectedSecretsAfterClear {
-				assert.Contains(t, environ, env)
-			}
+			assert.Empty(t, secrets)
 		})
 	}
 }
 
-func snapshotEnv() map[string]string {
+// preserveEnv takes a snapshot of the current process environment and restores it after the current
+// test to ensure that we don't cause flakes by modifying the environment for other tests.
+func preserveEnv(t *testing.T) {
 	envSnapshot := make(map[string]string)
 	for _, envVar := range os.Environ() {
 		parts := strings.SplitN(envVar, "=", 2)
 		envSnapshot[parts[0]] = parts[1]
 	}
-	return envSnapshot
-}
-
-func assertEnvUnchanged(t *testing.T, snapshot map[string]string) {
-	for key, expectedValue := range snapshot {
-		currentValue, exists := os.LookupEnv(key)
-		assert.True(t, exists, "expected environment variable %s to be set", key)
-		assert.Equal(t, expectedValue, currentValue, "expected environment variable %s to be unchanged", key)
-	}
-	for _, envVar := range os.Environ() {
-		key := strings.SplitN(envVar, "=", 2)[0]
-		if _, exists := snapshot[key]; !exists {
-			assert.Fail(t, "unexpected environment variable set", "variable %s was set during the test", key)
+	t.Cleanup(func() {
+		os.Clearenv()
+		for key, value := range envSnapshot {
+			os.Setenv(key, value)
 		}
-	}
+	})
 }
