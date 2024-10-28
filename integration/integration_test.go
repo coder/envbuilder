@@ -123,10 +123,11 @@ func TestLogs(t *testing.T) {
 			"Dockerfile": fmt.Sprintf(`FROM %s`, testImageUbuntu),
 		},
 	})
-	_, err := runEnvbuilder(t, runOpts{env: []string{
+	ctrID, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		"CODER_AGENT_URL=" + logSrv.URL,
 		"CODER_AGENT_TOKEN=" + token,
+		"ENVBUILDER_INIT_SCRIPT=env",
 	}})
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -136,6 +137,28 @@ func TestLogs(t *testing.T) {
 		t.Fatal("timed out waiting for logs")
 	case <-logsDone:
 	}
+
+	// Wait for the container to exit
+	client, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		status, err := client.ContainerInspect(ctx, ctrID)
+		if !assert.NoError(t, err) {
+			return false
+		}
+		return !status.State.Running
+	}, 10*time.Second, time.Second, "container never exited")
+
+	// Check the expected log output
+	logReader, err := client.ContainerLogs(ctx, ctrID, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+	})
+	require.NoError(t, err)
+	logBytes, err := io.ReadAll(logReader)
+	require.NoError(t, err)
+	logs := string(logBytes)
+	require.Contains(t, logs, "CODER_AGENT_SUBSYSTEM=envbuilder")
 }
 
 func TestInitScriptInitCommand(t *testing.T) {
