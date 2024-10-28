@@ -552,12 +552,19 @@ func TestBuildFromDockerfile(t *testing.T) {
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
 	})
-	ctr, err := runEnvbuilder(t, runOpts{env: []string{
-		envbuilderEnv("GIT_URL", srv.URL),
-		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString([]byte(`{"experimental": "enabled"}`))),
-	}})
+	logbuf := new(bytes.Buffer)
+	ctr, err := runEnvbuilder(t, runOpts{
+		env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString([]byte(`{"experimental": "enabled"}`))),
+			"DOCKER_CONFIG=/config", // Ignored, because we're setting DOCKER_CONFIG_BASE64.
+		},
+		logbuf: logbuf,
+	})
 	require.NoError(t, err)
+
+	require.Contains(t, logbuf.String(), "Set DOCKER_CONFIG to /.envbuilder")
 
 	output := execContainer(t, ctr, "echo hello")
 	require.Equal(t, "hello", strings.TrimSpace(output))
@@ -566,6 +573,52 @@ func TestBuildFromDockerfile(t *testing.T) {
 	configJSONContainerPath := workingdir.Default.Join("config.json")
 	output = execContainer(t, ctr, "stat "+configJSONContainerPath)
 	require.Contains(t, output, "No such file or directory")
+}
+
+func TestBuildDockerConfigPathFromEnv(t *testing.T) {
+	// Ensures that a Git repository with a Dockerfile is cloned and built.
+	srv := gittest.CreateGitServer(t, gittest.Options{
+		Files: map[string]string{
+			"Dockerfile": "FROM " + testImageAlpine,
+		},
+	})
+	dir := t.TempDir()
+	err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"experimental": "enabled"}`), 0o644)
+	require.NoError(t, err)
+
+	logbuf := new(bytes.Buffer)
+	_, err = runEnvbuilder(t, runOpts{
+		env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			"DOCKER_CONFIG=/config",
+		},
+		binds:  []string{fmt.Sprintf("%s:/config:ro", dir)},
+		logbuf: logbuf,
+	})
+	require.NoError(t, err)
+
+	require.Contains(t, logbuf.String(), "Using existing DOCKER_CONFIG set to /config")
+}
+
+func TestBuildDockerConfigDefaultPath(t *testing.T) {
+	// Ensures that a Git repository with a Dockerfile is cloned and built.
+	srv := gittest.CreateGitServer(t, gittest.Options{
+		Files: map[string]string{
+			"Dockerfile": "FROM " + testImageAlpine,
+		},
+	})
+	logbuf := new(bytes.Buffer)
+	_, err := runEnvbuilder(t, runOpts{
+		env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		},
+		logbuf: logbuf,
+	})
+	require.NoError(t, err)
+
+	require.Contains(t, logbuf.String(), "Set DOCKER_CONFIG to /.envbuilder")
 }
 
 func TestBuildPrintBuildOutput(t *testing.T) {
@@ -2296,6 +2349,7 @@ type runOpts struct {
 	binds   []string
 	env     []string
 	volumes map[string]string
+	logbuf  *bytes.Buffer
 }
 
 // runEnvbuilder starts the envbuilder container with the given environment
@@ -2340,6 +2394,7 @@ func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 			testContainerLabel: "true",
 		},
 	}, &container.HostConfig{
+		CapAdd:      []string{"SYS_ADMIN"}, // For remounting.
 		NetworkMode: container.NetworkMode("host"),
 		Binds:       opts.binds,
 		Mounts:      mounts,
@@ -2357,6 +2412,9 @@ func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 	logChan, errChan := streamContainerLogs(t, cli, ctr.ID)
 	go func() {
 		for log := range logChan {
+			if opts.logbuf != nil {
+				opts.logbuf.WriteString(log)
+			}
 			if strings.HasPrefix(log, "=== Running init command") {
 				errChan <- nil
 				return

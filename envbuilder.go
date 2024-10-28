@@ -154,13 +154,13 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 
 	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"), buildinfo.Version())
 
-	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.Logger, workingDir, opts.DockerConfigBase64)
+	cleanupDockerConfigOverride, err := initDockerConfigOverride(opts.Logger, workingDir, opts.DockerConfigBase64)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if err := cleanupDockerConfigJSON(); err != nil {
-			opts.Logger(log.LevelError, "failed to cleanup docker config JSON: %w", err)
+		if err := cleanupDockerConfigOverride(); err != nil {
+			opts.Logger(log.LevelError, "failed to cleanup docker config override: %w", err)
 		}
 	}() // best effort
 
@@ -771,7 +771,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 	}
 
 	// Remove the Docker config secret file!
-	if err := cleanupDockerConfigJSON(); err != nil {
+	if err := cleanupDockerConfigOverride(); err != nil {
 		return err
 	}
 
@@ -978,13 +978,13 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 
 	opts.Logger(log.LevelInfo, "%s %s - Build development environments from repositories in a container", newColor(color.Bold).Sprintf("envbuilder"), buildinfo.Version())
 
-	cleanupDockerConfigJSON, err := initDockerConfigJSON(opts.Logger, workingDir, opts.DockerConfigBase64)
+	cleanupDockerConfigOverride, err := initDockerConfigOverride(opts.Logger, workingDir, opts.DockerConfigBase64)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		if err := cleanupDockerConfigJSON(); err != nil {
-			opts.Logger(log.LevelError, "failed to cleanup docker config JSON: %w", err)
+		if err := cleanupDockerConfigOverride(); err != nil {
+			opts.Logger(log.LevelError, "failed to cleanup docker config override: %w", err)
 		}
 	}() // best effort
 
@@ -1315,7 +1315,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	options.UnsetEnv()
 
 	// Remove the Docker config secret file!
-	if err := cleanupDockerConfigJSON(); err != nil {
+	if err := cleanupDockerConfigOverride(); err != nil {
 		return nil, err
 	}
 
@@ -1627,55 +1627,83 @@ func parseMagicImageFile(fs billy.Filesystem, path string, v any) error {
 	return nil
 }
 
-func initDockerConfigJSON(logf log.Func, workingDir workingdir.WorkingDir, dockerConfigBase64 string) (func() error, error) {
-	var cleanupOnce sync.Once
-	noop := func() error { return nil }
-	if dockerConfigBase64 == "" {
-		return noop, nil
+func initDockerConfigOverride(logf log.Func, workingDir workingdir.WorkingDir, dockerConfigBase64 string) (func() error, error) {
+	var (
+		oldDockerConfig = os.Getenv("DOCKER_CONFIG")
+		newDockerConfig = workingDir.Path()
+		cfgPath         = workingDir.Join("config.json")
+		restoreEnv      = func() error { return nil } // noop.
+	)
+	if dockerConfigBase64 != "" || (dockerConfigBase64 == "" && oldDockerConfig == "") {
+		err := os.Setenv("DOCKER_CONFIG", newDockerConfig)
+		if err != nil {
+			logf(log.LevelError, "Failed to set DOCKER_CONFIG: %s", err)
+			return nil, fmt.Errorf("set DOCKER_CONFIG: %w", err)
+		}
+		logf(log.LevelInfo, "Set DOCKER_CONFIG to %s", newDockerConfig)
+
+		restoreEnv = func() error {
+			// Restore the old DOCKER_CONFIG value.
+			if oldDockerConfig == "" {
+				err := os.Unsetenv("DOCKER_CONFIG")
+				if err != nil {
+					err = fmt.Errorf("unset DOCKER_CONFIG: %w", err)
+				}
+				return err
+			}
+			err := os.Setenv("DOCKER_CONFIG", oldDockerConfig)
+			if err != nil {
+				return fmt.Errorf("restore DOCKER_CONFIG: %w", err)
+			}
+			logf(log.LevelInfo, "Restored DOCKER_CONFIG to %s", oldDockerConfig)
+			return nil
+		}
+	} else {
+		logf(log.LevelInfo, "Using existing DOCKER_CONFIG set to %s", oldDockerConfig)
 	}
-	cfgPath := workingDir.Join("config.json")
+
+	if dockerConfigBase64 == "" {
+		return restoreEnv, nil
+	}
+
 	decoded, err := base64.StdEncoding.DecodeString(dockerConfigBase64)
 	if err != nil {
-		return noop, fmt.Errorf("decode docker config: %w", err)
+		return restoreEnv, fmt.Errorf("decode docker config: %w", err)
 	}
 	var configFile DockerConfig
 	decoded, err = hujson.Standardize(decoded)
 	if err != nil {
-		return noop, fmt.Errorf("humanize json for docker config: %w", err)
+		return restoreEnv, fmt.Errorf("humanize json for docker config: %w", err)
 	}
 	err = json.Unmarshal(decoded, &configFile)
 	if err != nil {
-		return noop, fmt.Errorf("parse docker config: %w", err)
+		return restoreEnv, fmt.Errorf("parse docker config: %w", err)
 	}
 	for k := range configFile.AuthConfigs {
 		logf(log.LevelInfo, "Docker config contains auth for registry %q", k)
 	}
 	err = os.WriteFile(cfgPath, decoded, 0o644)
 	if err != nil {
-		return noop, fmt.Errorf("write docker config: %w", err)
+		return restoreEnv, fmt.Errorf("write docker config: %w", err)
 	}
 	logf(log.LevelInfo, "Wrote Docker config JSON to %s", cfgPath)
-	oldDockerConfig := os.Getenv("DOCKER_CONFIG")
-	_ = os.Setenv("DOCKER_CONFIG", workingDir.Path())
-	newDockerConfig := os.Getenv("DOCKER_CONFIG")
-	logf(log.LevelInfo, "Set DOCKER_CONFIG to %s", newDockerConfig)
-	cleanup := func() error {
+
+	var cleanupOnce sync.Once
+	return func() error {
 		var cleanupErr error
 		cleanupOnce.Do(func() {
-			// Restore the old DOCKER_CONFIG value.
-			os.Setenv("DOCKER_CONFIG", oldDockerConfig)
-			logf(log.LevelInfo, "Restored DOCKER_CONFIG to %s", oldDockerConfig)
+			cleanupErr = restoreEnv()
 			// Remove the Docker config secret file!
-			if cleanupErr = os.Remove(cfgPath); err != nil {
+			if err := os.Remove(cfgPath); err != nil {
 				if !errors.Is(err, fs.ErrNotExist) {
-					cleanupErr = fmt.Errorf("remove docker config: %w", cleanupErr)
+					err = errors.Join(err, fmt.Errorf("remove docker config: %w", err))
 				}
 				logf(log.LevelError, "Failed to remove the Docker config secret file: %s", cleanupErr)
+				cleanupErr = errors.Join(cleanupErr, err)
 			}
 		})
 		return cleanupErr
-	}
-	return cleanup, err
+	}, nil
 }
 
 // Allows quick testing of layer caching using a local directory!
