@@ -11,6 +11,7 @@ import (
 )
 
 func TestGetBuildSecrets(t *testing.T) {
+	// This test cannot be run in parallel, because it needs to modify the OS environment
 	tests := []struct {
 		name            string
 		envVars         map[string]string
@@ -62,6 +63,7 @@ func TestGetBuildSecrets(t *testing.T) {
 }
 
 func TestClearBuildSecrets(t *testing.T) {
+	// This test cannot be run in parallel, because it needs to modify the OS environment
 	tests := []struct {
 		name                       string
 		initialEnvVars             map[string]string
