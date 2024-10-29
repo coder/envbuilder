@@ -562,6 +562,9 @@ func TestBuildFromDockerfileAndConfig(t *testing.T) {
 
 	validateDockerConfig := func(t *testing.T, tc testCase, ctrID, logs string) {
 		t.Helper()
+
+		// Ensure that the config matches the expected value, base64 is
+		// always prioritized over a file.
 		got := execContainer(t, ctrID, "cat /docker_config_json")
 		got = strings.TrimSpace(got)
 		want := tc.configBase64
@@ -571,6 +574,15 @@ func TestBuildFromDockerfileAndConfig(t *testing.T) {
 		if want != "" {
 			require.Contains(t, logs, "Set DOCKER_CONFIG to /.envbuilder/.docker")
 			require.Equal(t, want, got)
+		}
+
+		// Ensure that a warning message is printed if config secrets
+		// will remain in the container after build.
+		warningMessage := "this file will remain after the build"
+		if tc.configFile.name != "" {
+			require.Contains(t, logs, warningMessage)
+		} else {
+			require.NotContains(t, logs, warningMessage)
 		}
 	}
 
