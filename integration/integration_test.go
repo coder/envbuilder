@@ -666,7 +666,6 @@ func TestBuildFromDockerfileAndConfig(t *testing.T) {
 			tt.validate(t, tt, ctrID, logbuf.String())
 
 			// Always verify that the Docker configuration secret file is removed.
-			configJSONContainerPath := workingdir.Default.Join(".docker", "config.json")
 			output := execContainer(t, ctrID, "stat "+configJSONContainerPath)
 			require.Contains(t, output, "No such file or directory")
 		})
