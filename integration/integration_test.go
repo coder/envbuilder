@@ -37,7 +37,6 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	clitypes "github.com/docker/cli/cli/config/types"
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
@@ -979,6 +978,82 @@ func TestUnsetOptionsEnv(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestUnsetSecretEnvs(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	srv := gittest.CreateGitServer(t, gittest.Options{
+		Files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\nENV FROM_DOCKERFILE=foo",
+		},
+	})
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("GIT_PASSWORD", "supersecret"),
+		options.EnvWithBuildSecretPrefix("FOO", "foo"),
+		envbuilderEnv("INIT_SCRIPT", "env > /root/env.txt && sleep infinity"),
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /root/env.txt")
+	envsAvailableToInitScript := strings.Split(strings.TrimSpace(output), "\n")
+
+	leftoverBuildSecrets := options.GetBuildSecrets(envsAvailableToInitScript)
+	require.Empty(t, leftoverBuildSecrets, "build secrets should not be available to init script")
+}
+
+func TestBuildSecrets(t *testing.T) {
+	t.Parallel()
+
+	buildSecretVal := "foo"
+
+	srv := gittest.CreateGitServer(t, gittest.Options{
+		Files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			".devcontainer/Dockerfile": "FROM " + testImageAlpine +
+				// Test whether build secrets are written to the default location
+				"\nRUN --mount=type=secret,id=FOO cat /run/secrets/FOO > /foo_from_file" +
+				// Test whether:
+				// * build secrets are written to env
+				// * build secrets are written to a custom target
+				// * build secrets are both written to env and target if both are specified
+				"\nRUN --mount=type=secret,id=FOO,env=FOO,target=/etc/foo echo $FOO > /foo_from_env && cat /etc/foo > /foo_from_custom_target" +
+				// Test what happens when you specify the same secret twice
+				"\nRUN --mount=type=secret,id=FOO,target=/etc/duplicate_foo --mount=type=secret,id=FOO,target=/etc/duplicate_foo cat /etc/duplicate_foo > /duplicate_foo_from_custom_target",
+		},
+	})
+
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("GIT_PASSWORD", "supersecret"),
+		options.EnvWithBuildSecretPrefix("FOO", buildSecretVal),
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /foo_from_file")
+	assert.Equal(t, buildSecretVal, strings.TrimSpace(output))
+
+	output = execContainer(t, ctr, "cat /foo_from_env")
+	assert.Equal(t, buildSecretVal, strings.TrimSpace(output))
+
+	output = execContainer(t, ctr, "cat /foo_from_custom_target")
+	assert.Equal(t, buildSecretVal, strings.TrimSpace(output))
+
+	output = execContainer(t, ctr, "cat /duplicate_foo_from_custom_target")
+	assert.Equal(t, buildSecretVal, strings.TrimSpace(output))
 }
 
 func TestLifecycleScripts(t *testing.T) {
@@ -2397,14 +2472,14 @@ func execContainer(t *testing.T, containerID, command string) string {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	require.NoError(t, err)
 	defer cli.Close()
-	execConfig := types.ExecConfig{
+	execConfig := container.ExecOptions{
 		AttachStdout: true,
 		AttachStderr: true,
 		Cmd:          []string{"/bin/sh", "-c", command},
 	}
 	execID, err := cli.ContainerExecCreate(ctx, containerID, execConfig)
 	require.NoError(t, err)
-	resp, err := cli.ContainerExecAttach(ctx, execID.ID, types.ExecStartCheck{})
+	resp, err := cli.ContainerExecAttach(ctx, execID.ID, container.ExecAttachOptions{})
 	require.NoError(t, err)
 	defer resp.Close()
 	var buf bytes.Buffer
