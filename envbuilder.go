@@ -525,7 +525,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
 				registryMirror = strings.Split(val, ";")
 			}
-			destinations := []string{}
+			var destinations []string
 			if opts.CacheRepo != "" {
 				destinations = append(destinations, opts.CacheRepo)
 			}
