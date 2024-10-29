@@ -419,6 +419,8 @@ func TestGitSSHAuth(t *testing.T) {
 	base64Key := base64.StdEncoding.EncodeToString([]byte(testSSHKey))
 
 	t.Run("Base64/Success", func(t *testing.T) {
+		t.Parallel()
+
 		signer, err := gossh.ParsePrivateKey([]byte(testSSHKey))
 		require.NoError(t, err)
 		require.NotNil(t, signer)
@@ -440,6 +442,8 @@ func TestGitSSHAuth(t *testing.T) {
 	})
 
 	t.Run("Base64/Failure", func(t *testing.T) {
+		t.Parallel()
+
 		_, randomKey, err := ed25519.GenerateKey(nil)
 		require.NoError(t, err)
 		signer, err := gossh.NewSignerFromKey(randomKey)
@@ -591,6 +595,8 @@ func TestBuildFromDockerfile(t *testing.T) {
 }
 
 func TestBuildPrintBuildOutput(t *testing.T) {
+	t.Parallel()
+
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	srv := gittest.CreateGitServer(t, gittest.Options{
 		Files: map[string]string{
@@ -619,6 +625,8 @@ func TestBuildPrintBuildOutput(t *testing.T) {
 }
 
 func TestBuildIgnoreVarRunSecrets(t *testing.T) {
+	t.Parallel()
+
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	srv := gittest.CreateGitServer(t, gittest.Options{
 		Files: map[string]string{
@@ -631,6 +639,8 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("ReadWrite", func(t *testing.T) {
+		t.Parallel()
+
 		ctr, err := runEnvbuilder(t, runOpts{
 			env: []string{
 				envbuilderEnv("GIT_URL", srv.URL),
@@ -645,6 +655,8 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 	})
 
 	t.Run("ReadOnly", func(t *testing.T) {
+		t.Parallel()
+
 		ctr, err := runEnvbuilder(t, runOpts{
 			env: []string{
 				envbuilderEnv("GIT_URL", srv.URL),
@@ -660,6 +672,8 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 }
 
 func TestBuildWithSetupScript(t *testing.T) {
+	t.Parallel()
+
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	srv := gittest.CreateGitServer(t, gittest.Options{
 		Files: map[string]string{
@@ -751,6 +765,8 @@ func TestBuildFromDevcontainerInRoot(t *testing.T) {
 }
 
 func TestBuildCustomCertificates(t *testing.T) {
+	t.Parallel()
+
 	srv := gittest.CreateGitServer(t, gittest.Options{
 		Files: map[string]string{
 			"Dockerfile": "FROM " + testImageAlpine,
@@ -772,6 +788,8 @@ func TestBuildCustomCertificates(t *testing.T) {
 }
 
 func TestBuildStopStartCached(t *testing.T) {
+	t.Parallel()
+
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	srv := gittest.CreateGitServer(t, gittest.Options{
 		Files: map[string]string{
@@ -1269,6 +1287,8 @@ func setupPassthroughRegistry(t *testing.T, image string, opts *setupPassthrough
 }
 
 func TestNoMethodFails(t *testing.T) {
+	t.Parallel()
+
 	_, err := runEnvbuilder(t, runOpts{env: []string{}})
 	require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 }
@@ -1340,6 +1360,8 @@ COPY %s .`, testImageAlpine, inclFile)
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			srv := gittest.CreateGitServer(t, gittest.Options{
 				Files: tc.files,
 			})
