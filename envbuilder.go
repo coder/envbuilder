@@ -41,6 +41,7 @@ import (
 	"github.com/distribution/distribution/v3/configuration"
 	"github.com/distribution/distribution/v3/registry/handlers"
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/filesystem"
+	dockerconfig "github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/fatih/color"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -56,7 +57,7 @@ import (
 var ErrNoFallbackImage = errors.New("no fallback image has been specified")
 
 // DockerConfig represents the Docker configuration file.
-type DockerConfig configfile.ConfigFile
+type DockerConfig = configfile.ConfigFile
 
 type runtimeDataStore struct {
 	// Runtime data.
@@ -1567,8 +1568,8 @@ func maybeDeleteFilesystem(logger log.Func, force bool) error {
 }
 
 func fileExists(fs billy.Filesystem, path string) bool {
-	_, err := fs.Stat(path)
-	return err == nil
+	fi, err := fs.Stat(path)
+	return err == nil && !fi.IsDir()
 }
 
 func readFile(fs billy.Filesystem, name string) ([]byte, error) {
@@ -1656,88 +1657,150 @@ func parseMagicImageFile(fs billy.Filesystem, path string, v any) error {
 	return nil
 }
 
+const (
+	dockerConfigFile   = dockerconfig.ConfigFileName
+	dockerConfigEnvKey = dockerconfig.EnvOverrideConfigDir
+)
+
+// initDockerConfigOverride sets the DOCKER_CONFIG environment variable
+// to a path within the working directory. If a base64 encoded Docker
+// config is provided, it is written to the path/config.json and the
+// DOCKER_CONFIG environment variable is set to the path. If no base64
+// encoded Docker config is provided, the following paths are checked in
+// order:
+//
+// 1. $DOCKER_CONFIG/config.json
+// 2. $DOCKER_CONFIG
+// 3. /.envbuilder/config.json
+//
+// If a Docker config file is found, its path is set as DOCKER_CONFIG.
 func initDockerConfigOverride(bfs billy.Filesystem, logf log.Func, workingDir workingdir.WorkingDir, dockerConfigBase64 string) (func() error, error) {
-	configFile := "config.json"
-	oldDockerConfig := os.Getenv("DOCKER_CONFIG")
-	newDockerConfig := workingDir.Path()
+	// If dockerConfigBase64 is set, it will have priority over file
+	// detection.
+	var dockerConfigJSON []byte
+	var err error
+	if dockerConfigBase64 != "" {
+		logf(log.LevelInfo, "Using base64 encoded Docker config")
 
-	err := os.Setenv("DOCKER_CONFIG", newDockerConfig)
-	if err != nil {
-		logf(log.LevelError, "Failed to set DOCKER_CONFIG: %s", err)
-		return nil, fmt.Errorf("set DOCKER_CONFIG: %w", err)
-	}
-	logf(log.LevelInfo, "Set DOCKER_CONFIG to %s", newDockerConfig)
-	restoreEnv := onceErrFunc(func() error {
-		// Restore the old DOCKER_CONFIG value.
-		if err := func() error {
-			if oldDockerConfig == "" {
-				return os.Unsetenv("DOCKER_CONFIG")
-			}
-			return os.Setenv("DOCKER_CONFIG", oldDockerConfig)
-		}(); err != nil {
-			return fmt.Errorf("restore DOCKER_CONFIG: %w", err)
-		}
-		logf(log.LevelInfo, "Restored DOCKER_CONFIG to %s", oldDockerConfig)
-		return nil
-	})
-
-	// If the user hasn't set the BASE64 encoded Docker config, we
-	// should respect the DOCKER_CONFIG environment variable.
-	oldDockerConfigFile := filepath.Join(oldDockerConfig, configFile)
-	if dockerConfigBase64 == "" && fileExists(bfs, oldDockerConfigFile) {
-		// It's possible that the target file is mounted and needs to
-		// be remounted later, so we should copy the file instead of
-		// hoping that the file is still there when we build.
-		logf(log.LevelInfo, "Using DOCKER_CONFIG at %s", oldDockerConfig)
-		b, err := readFile(bfs, oldDockerConfigFile)
+		dockerConfigJSON, err = base64.StdEncoding.DecodeString(dockerConfigBase64)
 		if err != nil {
-			return nil, fmt.Errorf("read existing DOCKER_CONFIG: %w", err)
+			return nil, fmt.Errorf("decode docker config: %w", err)
 		}
-		// Read into dockerConfigBase64 so we can keep the same logic.
-		dockerConfigBase64 = base64.StdEncoding.EncodeToString(b)
 	}
 
-	if dockerConfigBase64 == "" {
-		return restoreEnv, nil
+	oldDockerConfig := os.Getenv(dockerConfigEnvKey)
+	var oldDockerConfigFile string
+	if oldDockerConfig != "" {
+		oldDockerConfigFile = filepath.Join(oldDockerConfig, dockerConfigFile)
+	}
+	for _, path := range []string{
+		oldDockerConfigFile,               // $DOCKER_CONFIG/config.json
+		oldDockerConfig,                   // $DOCKER_CONFIG
+		workingDir.Join(dockerConfigFile), // /.envbuilder/config.json
+	} {
+		if path == "" || !fileExists(bfs, path) {
+			continue
+		}
+
+		logf(log.LevelWarn, "Found Docker config at %s, this file will remain after the build", path)
+
+		if dockerConfigJSON == nil {
+			logf(log.LevelInfo, "Using Docker config at %s", path)
+
+			dockerConfigJSON, err = readFile(bfs, path)
+			if err != nil {
+				return nil, fmt.Errorf("read docker config: %w", err)
+			}
+		} else {
+			logf(log.LevelWarn, "Ignoring Docker config at %s, using base64 encoded Docker config instead", path)
+		}
+		break
 	}
 
-	decoded, err := base64.StdEncoding.DecodeString(dockerConfigBase64)
-	if err != nil {
-		return restoreEnv, fmt.Errorf("decode docker config: %w", err)
-	}
-	decoded, err = hujson.Standardize(decoded)
-	if err != nil {
-		return restoreEnv, fmt.Errorf("humanize json for docker config: %w", err)
-	}
-	var dockerConfig DockerConfig
-	err = json.Unmarshal(decoded, &dockerConfig)
-	if err != nil {
-		return restoreEnv, fmt.Errorf("parse docker config: %w", err)
-	}
-	for k := range dockerConfig.AuthConfigs {
-		logf(log.LevelInfo, "Docker config contains auth for registry %q", k)
+	if dockerConfigJSON == nil {
+		// No user-provided config available.
+		return func() error { return nil }, nil
 	}
 
-	newDockerConfigFile := filepath.Join(newDockerConfig, configFile)
-	err = writeFile(bfs, newDockerConfigFile, decoded, 0o644)
+	dockerConfigJSON, err = hujson.Standardize(dockerConfigJSON)
 	if err != nil {
-		return restoreEnv, fmt.Errorf("write docker config: %w", err)
+		return nil, fmt.Errorf("humanize json for docker config: %w", err)
+	}
+
+	if err = logDockerAuthConfigs(logf, dockerConfigJSON); err != nil {
+		return nil, fmt.Errorf("log docker auth configs: %w", err)
+	}
+
+	// We're going to set the DOCKER_CONFIG environment variable to a
+	// path within the working directory so that Kaniko can pick it up.
+	// A user should not mount a file directly to this path as we will
+	// write to the file.
+	newDockerConfig := workingDir.Join(".docker")
+	newDockerConfigFile := filepath.Join(newDockerConfig, dockerConfigFile)
+	err = bfs.MkdirAll(newDockerConfig, 0o700)
+	if err != nil {
+		return nil, fmt.Errorf("create docker config dir: %w", err)
+	}
+
+	if fileExists(bfs, newDockerConfigFile) {
+		return nil, fmt.Errorf("unable to write Docker config file, file already exists: %s", newDockerConfigFile)
+	}
+
+	restoreEnv, err := setAndRestoreEnv(logf, dockerConfigEnvKey, newDockerConfig)
+	if err != nil {
+		return nil, fmt.Errorf("set docker config override: %w", err)
+	}
+
+	err = writeFile(bfs, newDockerConfigFile, dockerConfigJSON, 0o600)
+	if err != nil {
+		_ = restoreEnv() // Best effort.
+		return nil, fmt.Errorf("write docker config: %w", err)
 	}
 	logf(log.LevelInfo, "Wrote Docker config JSON to %s", newDockerConfigFile)
 
-	cleanup := onceErrFunc(func() error {
-		err := restoreEnv()
+	cleanupFile := onceErrFunc(func() error {
 		// Remove the Docker config secret file!
-		if err2 := os.Remove(newDockerConfigFile); err2 != nil {
-			if !errors.Is(err2, fs.ErrNotExist) {
-				err2 = fmt.Errorf("remove docker config: %w", err2)
-			}
-			logf(log.LevelError, "Failed to remove the Docker config secret file: %s", err2)
-			err = errors.Join(err, err2)
+		if err := bfs.Remove(newDockerConfigFile); err != nil {
+			logf(log.LevelError, "Failed to remove the Docker config secret file: %s", err)
+			return fmt.Errorf("remove docker config: %w", err)
 		}
-		return err
+		return nil
 	})
-	return cleanup, nil
+	return func() error { return errors.Join(cleanupFile(), restoreEnv()) }, nil
+}
+
+func logDockerAuthConfigs(logf log.Func, dockerConfigJSON []byte) error {
+	dc := new(DockerConfig)
+	err := dc.LoadFromReader(bytes.NewReader(dockerConfigJSON))
+	if err != nil {
+		return fmt.Errorf("load docker config: %w", err)
+	}
+	for k := range dc.AuthConfigs {
+		logf(log.LevelInfo, "Docker config contains auth for registry %q", k)
+	}
+	return nil
+}
+
+func setAndRestoreEnv(logf log.Func, key, value string) (restore func() error, err error) {
+	old := os.Getenv(key)
+	err = os.Setenv(key, value)
+	if err != nil {
+		logf(log.LevelError, "Failed to set %s: %s", key, err)
+		return nil, fmt.Errorf("set %s: %w", key, err)
+	}
+	logf(log.LevelInfo, "Set %s to %s", key, value)
+	return onceErrFunc(func() error {
+		if err := func() error {
+			if old == "" {
+				return os.Unsetenv(key)
+			}
+			return os.Setenv(key, old)
+		}(); err != nil {
+			return fmt.Errorf("restore %s: %w", key, err)
+		}
+		logf(log.LevelInfo, "Restored %s to %s", key, old)
+		return nil
+	}), nil
 }
 
 func onceErrFunc(f func() error) func() error {
