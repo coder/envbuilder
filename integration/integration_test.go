@@ -664,7 +664,6 @@ func TestBuildFromDockerfileAndConfig(t *testing.T) {
 				opts.privileged = true
 				opts.binds = []string{fmt.Sprintf("%s:%s:rw", configFile, tt.configFile.name)}
 			}
-			t.Log(opts.binds)
 			if tt.configBase64 != "" {
 				enc := base64.StdEncoding.EncodeToString([]byte(tt.configBase64))
 				tt.env = append(tt.env, envbuilderEnv("DOCKER_CONFIG_BASE64", enc))
