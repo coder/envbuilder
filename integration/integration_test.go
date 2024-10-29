@@ -545,95 +545,132 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 	require.Equal(t, "hello from test 3!", strings.TrimSpace(test3Output))
 }
 
-func TestBuildFromDockerfile(t *testing.T) {
-	// Ensures that a Git repository with a Dockerfile is cloned and built.
-	srv := gittest.CreateGitServer(t, gittest.Options{
-		Files: map[string]string{
-			"Dockerfile": "FROM " + testImageAlpine,
-		},
-	})
-	logbuf := new(bytes.Buffer)
-	ctr, err := runEnvbuilder(t, runOpts{
-		env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString([]byte(`{"experimental": "enabled"}`))),
-			"DOCKER_CONFIG=/config", // Ignored, because we're setting DOCKER_CONFIG_BASE64.
-		},
-		logbuf: logbuf,
-	})
-	require.NoError(t, err)
+func TestBuildFromDockerfileAndConfig(t *testing.T) {
+	t.Parallel()
 
-	require.Contains(t, logbuf.String(), "Set DOCKER_CONFIG to /.envbuilder")
-	require.NotContains(t, logbuf.String(), "Using DOCKER_CONFIG at ")
+	type configFile struct {
+		name string
+		data string
+	}
+	type testCase struct {
+		name         string
+		env          []string
+		configFile   configFile
+		configBase64 string
+		validate     func(t *testing.T, tc testCase, ctrID, logs string)
+	}
 
-	output := execContainer(t, ctr, "echo hello")
-	require.Equal(t, "hello", strings.TrimSpace(output))
+	validateDockerConfig := func(t *testing.T, tc testCase, ctrID, logs string) {
+		t.Helper()
+		got := execContainer(t, ctrID, "cat /docker_config_json")
+		got = strings.TrimSpace(got)
+		want := tc.configBase64
+		if want == "" {
+			want = tc.configFile.data
+		}
+		if want != "" {
+			require.Contains(t, logs, "Set DOCKER_CONFIG to /.envbuilder/.docker")
+			require.Equal(t, want, got)
+		}
+	}
 
-	// Verify that the Docker configuration secret file is removed
-	configJSONContainerPath := workingdir.Default.Join("config.json")
-	output = execContainer(t, ctr, "stat "+configJSONContainerPath)
-	require.Contains(t, output, "No such file or directory")
-}
+	configJSONContainerPath := workingdir.Default.Join(".docker", "config.json")
+	defaultConfigJSON := `{"experimental": "enabled"}`
 
-func TestBuildDockerConfigPathFromEnv(t *testing.T) {
-	// Ensures that a Git repository with a Dockerfile is cloned and built.
-	srv := gittest.CreateGitServer(t, gittest.Options{
-		Files: map[string]string{
-			"Dockerfile": "FROM " + testImageAlpine,
-		},
-	})
-	config, err := json.Marshal(envbuilder.DockerConfig{
-		AuthConfigs: map[string]clitypes.AuthConfig{
-			"mytestimage": {
-				Username: "user",
-				Password: "test",
+	tests := []testCase{
+		{
+			name: "Plain",
+			validate: func(t *testing.T, tc testCase, ctrID, logs string) {
+				output := execContainer(t, ctrID, "echo hello")
+				require.Equal(t, "hello", strings.TrimSpace(output))
 			},
 		},
-	})
-	require.NoError(t, err)
-	dir := t.TempDir()
-	err = os.WriteFile(filepath.Join(dir, "config.json"), config, 0o644)
-	require.NoError(t, err)
-
-	logbuf := new(bytes.Buffer)
-	_, err = runEnvbuilder(t, runOpts{
-		env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-			"DOCKER_CONFIG=/config",
+		{
+			name:         "ConfigBase64",
+			configBase64: defaultConfigJSON,
+			validate:     validateDockerConfig,
 		},
-		privileged: true,
-		binds:      []string{fmt.Sprintf("%s:/config:ro", dir)},
-		logbuf:     logbuf,
-	})
-	require.NoError(t, err)
-
-	// Logs that the DOCKER_CONFIG is used.
-	require.Contains(t, logbuf.String(), "Using DOCKER_CONFIG at /config")
-	// Logs registry auth info from existing file.
-	require.Contains(t, logbuf.String(), "mytestimage")
-}
-
-func TestBuildDockerConfigDefaultPath(t *testing.T) {
-	// Ensures that a Git repository with a Dockerfile is cloned and built.
-	srv := gittest.CreateGitServer(t, gittest.Options{
-		Files: map[string]string{
-			"Dockerfile": "FROM " + testImageAlpine,
+		{
+			name:       "BindConfigToKnownLocation",
+			configFile: configFile{"/.envbuilder/config.json", defaultConfigJSON},
+			validate:   validateDockerConfig,
 		},
-	})
-	logbuf := new(bytes.Buffer)
-	_, err := runEnvbuilder(t, runOpts{
-		env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		{
+			name:       "BindConfigToPath",
+			env:        []string{"DOCKER_CONFIG=/secret"},
+			configFile: configFile{"/secret/config.json", defaultConfigJSON},
+			validate:   validateDockerConfig,
 		},
-		logbuf: logbuf,
-	})
-	require.NoError(t, err)
+		{
+			name:       "BindConfigToCustomFile",
+			env:        []string{"DOCKER_CONFIG=/secret/my.json"},
+			configFile: configFile{"/secret/my.json", defaultConfigJSON},
+			validate:   validateDockerConfig,
+		},
+		{
+			name:         "ConfigBase64AndBindUsesBase64",
+			configFile:   configFile{"/.envbuilder/config.json", `{"experimental": "disabled"}`},
+			configBase64: defaultConfigJSON,
+			validate:     validateDockerConfig,
+		},
+		{
+			name:         "ConfigBase64AndCustomConfigPath",
+			env:          []string{"DOCKER_CONFIG=/secret"},
+			configBase64: defaultConfigJSON,
+			validate:     validateDockerConfig,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	require.Contains(t, logbuf.String(), "Set DOCKER_CONFIG to /.envbuilder")
-	require.NotContains(t, logbuf.String(), "Using DOCKER_CONFIG at ")
+			// Ensures that a Git repository with a Dockerfile is cloned and built.
+			srv := gittest.CreateGitServer(t, gittest.Options{
+				Files: map[string]string{
+					"Dockerfile": fmt.Sprintf(`
+						FROM %[1]s
+						RUN if [ -f %[2]q ]; then cat %[2]q > /docker_config_json; fi
+					`, testImageAlpine, configJSONContainerPath),
+				},
+			})
+
+			logbuf := new(bytes.Buffer)
+			opts := runOpts{
+				env: []string{
+					envbuilderEnv("GIT_URL", srv.URL),
+					envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+				},
+				logbuf: logbuf,
+			}
+
+			if tt.configFile.name != "" {
+				dir := t.TempDir()
+				configFile := filepath.Join(dir, filepath.Base(tt.configFile.name))
+				err := os.WriteFile(configFile, []byte(tt.configFile.data), 0o600)
+				require.NoError(t, err, "failed to write config")
+
+				opts.privileged = true
+				opts.binds = []string{fmt.Sprintf("%s:%s:rw", configFile, tt.configFile.name)}
+			}
+			t.Log(opts.binds)
+			if tt.configBase64 != "" {
+				enc := base64.StdEncoding.EncodeToString([]byte(tt.configBase64))
+				tt.env = append(tt.env, envbuilderEnv("DOCKER_CONFIG_BASE64", enc))
+			}
+
+			opts.env = append(opts.env, tt.env...)
+
+			ctrID, err := runEnvbuilder(t, opts)
+			require.NoError(t, err)
+
+			tt.validate(t, tt, ctrID, logbuf.String())
+
+			// Always verify that the Docker configuration secret file is removed.
+			configJSONContainerPath := workingdir.Default.Join(".docker", "config.json")
+			output := execContainer(t, ctrID, "stat "+configJSONContainerPath)
+			require.Contains(t, output, "No such file or directory")
+		})
+	}
 }
 
 func TestBuildPrintBuildOutput(t *testing.T) {
