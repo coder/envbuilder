@@ -9,6 +9,7 @@ import (
 
 var buildSecretPrefix = fmt.Sprintf("%sBUILD_SECRET_", envPrefix)
 
+// EnvWithBuildSecretPrefix returns a string in the format of a build secret environment variable.
 func EnvWithBuildSecretPrefix(secretName, secretValue string) string {
 	return fmt.Sprintf("%s%s=%s", buildSecretPrefix, secretName, secretValue)
 }
