@@ -16,5 +16,5 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("%s updated successfully with the latest flags!", path)
+	fmt.Printf("%s updated successfully with the latest flags!\n", path)
 }

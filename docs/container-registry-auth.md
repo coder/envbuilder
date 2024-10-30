@@ -14,9 +14,19 @@ After you have a configuration that resembles the following:
 }
 ```
 
-`base64` encode the JSON and provide it to envbuilder as the `ENVBUILDER_DOCKER_CONFIG_BASE64` environment variable.
+`base64` encode the JSON and provide it to envbuilder as the
+`ENVBUILDER_DOCKER_CONFIG_BASE64` environment variable.
 
-Alternatively, if running `envbuilder` in Kubernetes, you can create an `ImagePullSecret` and
+Alternatively, the configuration file can be placed in `/.envbuilder/config.json`.
+The `DOCKER_CONFIG` environment variable can be used to define a custom path. The
+path must either be the path to a directory containing `config.json` or the full
+path to the JSON file itself.
+
+> [!NOTE] Providing the docker configuration through other means than the
+> `ENVBUILDER_DOCKER_CONFIG_BASE64` environment variable will leave the
+> configuration file in the container filesystem. This may be a security risk.
+
+When running `envbuilder` in Kubernetes, you can create an `ImagePullSecret` and
 pass it into the pod as a volume mount. This example will work for all registries.
 
 ```shell
