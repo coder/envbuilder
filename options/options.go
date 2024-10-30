@@ -277,7 +277,9 @@ func (o *Options) CLI() serpent.OptionSet {
 			Env:   WithEnvPrefix("DOCKER_CONFIG_BASE64"),
 			Value: serpent.StringOf(&o.DockerConfigBase64),
 			Description: "The base64 encoded Docker config file that " +
-				"will be used to pull images from private container registries.",
+				"will be used to pull images from private container registries. " +
+				"When this is set, Docker configuration set via the DOCKER_CONFIG " +
+				"environment variable is ignored.",
 		},
 		{
 			Flag:  "fallback-image",

@@ -29,6 +29,9 @@ develop:
 build: scripts/envbuilder-$(GOARCH)
 	./scripts/build.sh
 
+.PHONY: gen
+gen: docs/env-variables.md update-golden-files
+
 .PHONY: update-golden-files
 update-golden-files: .gen-golden
 
