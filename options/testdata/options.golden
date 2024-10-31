@@ -47,7 +47,9 @@ OPTIONS:
 
       --docker-config-base64 string, $ENVBUILDER_DOCKER_CONFIG_BASE64
           The base64 encoded Docker config file that will be used to pull images
-          from private container registries.
+          from private container registries. When this is set, Docker
+          configuration set via the DOCKER_CONFIG environment variable is
+          ignored.
 
       --dockerfile-path string, $ENVBUILDER_DOCKERFILE_PATH
           The relative path to the Dockerfile that will be used to build the
