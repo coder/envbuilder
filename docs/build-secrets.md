@@ -31,7 +31,7 @@ docker run -it --rm \
     -e ENVBUILDER_BUILD_SECRET_BAR='envbuilder-test-secret-bar' \
     -e ENVBUILDER_INIT_SCRIPT='/bin/sh' \
     -e ENVBUILDER_CACHE_REPO=$(docker inspect envbuilder-registry | jq -r '.[].NetworkSettings.IPAddress'):5000/test-container \
-    -e ENVBUILDER_PUSH_IMAGE=0 \
+    -e ENVBUILDER_PUSH_IMAGE=1 \
     -v $PWD:/workspaces/empty \
     ghcr.io/coder/envbuilder:latest
 ```
@@ -41,8 +41,33 @@ You can now verify two things:
 * The secrets provided to build are not available once the container is running. They are no longer on disk, nor are they in the process environment, or in `/proc/self/environ`. 
 * The secrets were still useful during the build:
 ```bash
-cat /foo_secret.txt
-cat /bar_secret.txt
+cat /foo_secret_hash.txt
+cat /bar_secret_hash.txt
+```
+
+### Verifying that images are secret free
+To verify that the build image doesn't contain build secrets, run the following:
+
+```bash
+docker pull localhost:5000/test-container:latest
+docker save -o test-container.tar localhost:5000/test-container
+mkdir -p test-container
+tar -xf test-container.tar -C test-container/
+cd test-container
+# Scan image layers for secrets:
+find . -type f | xargs tar -xOf 2>/dev/null  | strings | grep -rin "envbuilder-test-secret"
+# Scan image manifests for secrets:
+find . -type f | xargs -n1 grep -rinI 'envbuilder-test-secret'
+cd ../
+```
+
+The output of both find/grep commands should be empty.
+To verify that it scans correctly, replace "envbuilder-test-secret" with "envbuilder" and rerun the commands.
+
+Having verified that no secrets were included in the image, we can now delete the artifacts that we saved to disk.
+```bash
+rm -r test-container
+rm -r test-container.tar
 ```
 
 ## Security and Production Use
