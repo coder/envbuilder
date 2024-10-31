@@ -13,7 +13,7 @@ To illustrate build secrets in envbuilder, let's build, push and run a container
 
 First, start a local docker registry, so that we can push and inspect the built image:
 ```bash
-docker run -d -p 5000:5000 --name envbuilder-registry --volume $(PWD)/.registry-cache:/var/lib/registry registry:2;
+docker run --rm -d -p 5000:5000 --name envbuilder-registry registry:2
 ```
 
 Then, build an image based on this Dockerfile:
@@ -21,53 +21,37 @@ Then, build an image based on this Dockerfile:
 ```Dockerfile
 FROM alpine:latest
 
-RUN --mount=type=secret,id=FOO,env cat $FOO > /foo_secret.txt
-RUN --mount=type=secret,id=BAR,dst=/tmp/bar.secret cat /tmp/bar.secret > /bar_secret.txt
+RUN --mount=type=secret,id=FOO,env cat $FOO > /foo_secret_hash.txt
+RUN --mount=type=secret,id=BAR,dst=/tmp/bar.secret cat /tmp/bar.secret > /bar_secret_hash.txt
 ```
 using this command:
 ```bash
 docker run -it --rm \
-    # Set build secrets:
-    -e ENVBUILDER_SECRET_FOO='foo' \
-    -e ENVBUILDER_SECRET_BAR='bar' \
-    # Cache image layers in a local registry
-    -e CACHE_REPO='localhost:5000'\
-    # Push the image that envbuilder builds
-    -e PUSH_IMAGE='1' \
-    # Configure the envbuilder workspace
+    -e ENVBUILDER_BUILD_SECRET_FOO='envbuilder-test-secret-foo' \
+    -e ENVBUILDER_BUILD_SECRET_BAR='envbuilder-test-secret-bar' \
     -e ENVBUILDER_INIT_SCRIPT='/bin/sh' \
-    -e ENVBUILDER_WORKSPACE_FOLDER=/workspace \
-    -v $PWD:/workspace \
-    -v /var/run/docker.sock:/var/run/docker.sock \
+    -e ENVBUILDER_CACHE_REPO=$(docker inspect envbuilder-registry | jq -r '.[].NetworkSettings.IPAddress'):5000/test-container \
+    -e ENVBUILDER_PUSH_IMAGE=0 \
+    -v $PWD:/workspaces/empty \
     ghcr.io/coder/envbuilder:latest
 ```
 
 This will result in a shell session inside the built container.
 You can now verify two things:
-* The secrets provided to build are not available once the container is running. 
+* The secrets provided to build are not available once the container is running. They are no longer on disk, nor are they in the process environment, or in `/proc/self/environ`. 
 * The secrets were still useful during the build:
 ```bash
 cat /foo_secret.txt
 cat /bar_secret.txt
 ```
 
-Once done, exit the container and proceed to the next step.
-
-We have verified that build secrets do not persist into the runtime container environment. Let's now verify that they also do not persist into the built image. To do this, pull the image and save it as a .tar file. Then, extract it
-and inspect its manifests and layers.
-
-```bash
-# Determine the image name and tag
-curl ...
-# Pull and save to disk
-docker pull localhost:5000/
-docker save -o image.tar localhost:5000/
-# Inspect the contents
-
-```
-
 ## Security and Production Use
 The example above ignores various security concerns for the sake of simple illustration. To use build secrets securely, consider these factors:
+
+### Build Secret Purpose and Management
+Build secrets are meant for use cases where the secret should not be accessible from the built image, nor from the running container. If you need the secret at runtime, use a volume instead. Volumes that are mounted into a container will not be included in the final image, but still be available at runtime. 
+
+Build secrets are only protected if they are not copied or moved from their location as designated in the `RUN` directive. If a build secret is used, care should be taken to ensure that it is not copied or otherwise persisted into an image layer beyond the control of Envbuilder.
 
 ### Who should be able to access build secrets, when and where?
 The secure way to use build secrets with envbuilder is to deny users access to the platform that hosts envbuilder. Only grant access to the envbuilder container once it has concluded its build, using a trusted non-platform channel like ssh or the coder agent running inside the container. Once control has been handed to such a runtime container process, envbuilder will have cleared all secrets that it set from the container.
