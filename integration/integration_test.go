@@ -126,6 +126,7 @@ func TestLogs(t *testing.T) {
 		envbuilderEnv("GIT_URL", srv.URL),
 		"CODER_AGENT_URL=" + logSrv.URL,
 		"CODER_AGENT_TOKEN=" + token,
+		"ENVBUILDER_SETUP_SCRIPT=/bin/sh -c 'echo MY${NO_MATCH_ENV}_SETUP_SCRIPT_OUT; echo MY${NO_MATCH_ENV}_SETUP_SCRIPT_ERR' 1>&2",
 		"ENVBUILDER_INIT_SCRIPT=env",
 	}})
 	require.NoError(t, err)
@@ -158,6 +159,8 @@ func TestLogs(t *testing.T) {
 	require.NoError(t, err)
 	logs := string(logBytes)
 	require.Contains(t, logs, "CODER_AGENT_SUBSYSTEM=envbuilder")
+	require.Contains(t, logs, "MY_SETUP_SCRIPT_OUT")
+	require.Contains(t, logs, "MY_SETUP_SCRIPT_ERR")
 }
 
 func TestInitScriptInitCommand(t *testing.T) {
