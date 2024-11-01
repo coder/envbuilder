@@ -1113,36 +1113,6 @@ func TestUnsetOptionsEnv(t *testing.T) {
 	}
 }
 
-func TestUnsetSecretEnvs(t *testing.T) {
-	t.Parallel()
-
-	// Ensures that a Git repository with a devcontainer.json is cloned and built.
-	srv := gittest.CreateGitServer(t, gittest.Options{
-		Files: map[string]string{
-			".devcontainer/devcontainer.json": `{
-				"name": "Test",
-				"build": {
-					"dockerfile": "Dockerfile"
-				},
-			}`,
-			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\nENV FROM_DOCKERFILE=foo",
-		},
-	})
-	ctr, err := runEnvbuilder(t, runOpts{env: []string{
-		envbuilderEnv("GIT_URL", srv.URL),
-		envbuilderEnv("GIT_PASSWORD", "supersecret"),
-		options.EnvWithBuildSecretPrefix("FOO", "foo"),
-		envbuilderEnv("INIT_SCRIPT", "env > /root/env.txt && sleep infinity"),
-	}})
-	require.NoError(t, err)
-
-	output := execContainer(t, ctr, "cat /root/env.txt")
-	envsAvailableToInitScript := strings.Split(strings.TrimSpace(output), "\n")
-
-	leftoverBuildSecrets := options.GetBuildSecrets(envsAvailableToInitScript)
-	require.Empty(t, leftoverBuildSecrets, "build secrets should not be available to init script")
-}
-
 func TestBuildSecrets(t *testing.T) {
 	t.Parallel()
 
@@ -1172,7 +1142,7 @@ func TestBuildSecrets(t *testing.T) {
 	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", srv.URL),
 		envbuilderEnv("GIT_PASSWORD", "supersecret"),
-		options.EnvWithBuildSecretPrefix("FOO", buildSecretVal),
+		envbuilderEnv("BUILD_SECRETS", fmt.Sprintf("FOO=%s", buildSecretVal)),
 	}})
 	require.NoError(t, err)
 

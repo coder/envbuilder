@@ -12,6 +12,10 @@ OPTIONS:
           WorkspaceFolder. This path MUST be relative to the WorkspaceFolder
           path into which the repo is cloned.
 
+      --build-secrets string-array, $ENVBUILDER_BUILD_SECRETS
+          The list of secret environment variables to use when building the
+          image.
+
       --cache-repo string, $ENVBUILDER_CACHE_REPO
           The name of the container registry to push the cache image to. If this
           is empty, the cache will not be pushed.

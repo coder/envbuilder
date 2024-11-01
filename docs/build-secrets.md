@@ -4,7 +4,7 @@ Envbuilder supports [build secrets](https://docs.docker.com/reference/dockerfile
 * the secrets should not be present in the built image.
 * the secrets should not be accessible in the container after its build has concluded.
 
-If your Dockerfile contains directives of the form `RUN --mount=type=secret,...`, Envbuilder will attempt to mount build secrets as specified in the directive. Unlike the `docker build` command, Envbuilder does not support the `--secret` flag. Instead, Envbuilder collects build secrets from environment variables prefixed with `Envbuilder_BUILD_SECRET_`. These build secrets will not be present in any cached layers or images that are pushed to an image repository. Nor will they be available at run time.
+If your Dockerfile contains directives of the form `RUN --mount=type=secret,...`, Envbuilder will attempt to mount build secrets as specified in the directive. Unlike the `docker build` command, Envbuilder does not support the `--secret` flag. Instead, Envbuilder collects build secrets from the `ENVBUILDER_BUILD_SECRETS` environment variable. These build secrets will not be present in any cached layers or images that are pushed to an image repository. Nor will they be available at run time.
 
 ## Example
 
@@ -26,11 +26,10 @@ RUN --mount=type=secret,id=BAR,dst=/tmp/bar.secret cat /tmp/bar.secret > /bar_se
 using this command:
 ```bash
 docker run -it --rm \
-    -e Envbuilder_BUILD_SECRET_FOO='envbuilder-test-secret-foo' \
-    -e Envbuilder_BUILD_SECRET_BAR='envbuilder-test-secret-bar' \
-    -e Envbuilder_INIT_SCRIPT='/bin/sh' \
-    -e Envbuilder_CACHE_REPO=$(docker inspect Envbuilder-registry | jq -r '.[].NetworkSettings.IPAddress'):5000/test-container \
-    -e Envbuilder_PUSH_IMAGE=1 \
+    -e ENVBUILDER_BUILD_SECRETS='FOO=envbuilder-test-secret-foo,BAR=envbuilder-test-secret-bar' \
+    -e ENVBUILDER_INIT_SCRIPT='/bin/sh' \
+    -e ENVBUILDER_CACHE_REPO=$(docker inspect Envbuilder-registry | jq -r '.[].NetworkSettings.IPAddress'):5000/test-container \
+    -e ENVBUILDER_PUSH_IMAGE=1 \
     -v $PWD:/workspaces/empty \
     ghcr.io/coder/Envbuilder:latest
 ```
