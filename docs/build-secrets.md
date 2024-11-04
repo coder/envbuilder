@@ -12,39 +12,60 @@ To illustrate build secrets in Envbuilder, let's build, push and run a container
 
 First, start a local docker registry, so that we can push and inspect the built image:
 ```bash
-docker run --rm -d -p 5000:5000 --name Envbuilder-registry registry:2
+docker run --rm -d -p 5000:5000 --name envbuilder-registry registry:2
 ```
 
-Then, build an image based on this Dockerfile:
-
-```Dockerfile
-FROM alpine:latest
-
-RUN --mount=type=secret,id=FOO,env cat $FOO > /foo_secret_hash.txt
-RUN --mount=type=secret,id=BAR,dst=/tmp/bar.secret cat /tmp/bar.secret > /bar_secret_hash.txt
+Then, prepare the files to build our container.
+```bash
+mkdir test-build-secrets
+cd test-build-secrets
+printf 'FROM alpine:latest\n\nRUN --mount=type=secret,id=TEST_BUILD_SECRET_A,env=TEST_BUILD_SECRET_A echo -n $TEST_BUILD_SECRET_A | sha256sum > /foo_secret_hash.txt\nRUN --mount=type=secret,id=TEST_BUILD_SECRET_B,dst=/tmp/bar.secret cat /tmp/bar.secret | sha256sum > /bar_secret_hash.txt\n' > Dockerfile
+printf '{"build": { "dockerfile": "Dockerfile"}}\n' > devcontainer.json
 ```
-using this command:
+
+Inspect the Dockerfile and devcontainer.json files in the new directory.
+```bash
+cat devcontainer.json
+cat Dockerfile
+```
+
+Note that the Dockerfile requires two secrets: `TEST_BUILD_SECRET_A` and `TEST_BUILD_SECRET_B`. Their values are arbitrarily set to `secret-foo` and `secret-bar` by the command below. Building the container image writes the checksums for these secrets to disk. This illustrates that the secrets can be used in the build to enact side effects without exposing the secrets themselves.
+
+Execute the build using this command:
 ```bash
 docker run -it --rm \
-    -e ENVBUILDER_BUILD_SECRETS='FOO=envbuilder-test-secret-foo,BAR=envbuilder-test-secret-bar' \
+    -e ENVBUILDER_BUILD_SECRETS='TEST_BUILD_SECRET_A=secret-foo,TEST_BUILD_SECRET_B=secret-bar' \
     -e ENVBUILDER_INIT_SCRIPT='/bin/sh' \
-    -e ENVBUILDER_CACHE_REPO=$(docker inspect Envbuilder-registry | jq -r '.[].NetworkSettings.IPAddress'):5000/test-container \
+    -e ENVBUILDER_CACHE_REPO=$(docker inspect envbuilder-registry | jq -r '.[].NetworkSettings.IPAddress'):5000/test-container \
     -e ENVBUILDER_PUSH_IMAGE=1 \
     -v $PWD:/workspaces/empty \
-    ghcr.io/coder/Envbuilder:latest
+    ghcr.io/coder/envbuilder:latest
 ```
 
 This will result in a shell session inside the built container.
-You can now verify two things:
+You can now verify three things:
 * The secrets provided to build are not available once the container is running. They are no longer on disk, nor are they in the process environment, or in `/proc/self/environ`. 
-* The secrets were still useful during the build. The following comnmands show that the secrets had side effects inside the build, without remaining in the image:
 ```bash
+cat /proc/self/environ | tr '\0' '\n'
+printenv
+```
+* The secrets were still useful during the build. The following commands show that the secrets had side effects inside the build, without remaining in the image:
+```bash
+echo -n "secret-foo" | sha256sum
 cat /foo_secret_hash.txt
+echo -n "secret-bar" | sha256sum
 cat /bar_secret_hash.txt
 ```
 
+Notice that the first two checksums match and that the last two checksums match.
+
+Finally, exit the container:
+```bash
+exit
+```
+
 ### Verifying that images are secret free
-To verify that the build image doesn't contain build secrets, run the following:
+To verify that the built image doesn't contain build secrets, run the following:
 
 ```bash
 docker pull localhost:5000/test-container:latest
@@ -53,19 +74,24 @@ mkdir -p test-container
 tar -xf test-container.tar -C test-container/
 cd test-container
 # Scan image layers for secrets:
-find . -type f | xargs tar -xOf 2>/dev/null  | strings | grep -rin "envbuilder-test-secret"
+find . -type f | xargs tar -xOf 2>/dev/null  | strings | grep -rn "secret-foo"
+find . -type f | xargs tar -xOf 2>/dev/null  | strings | grep -rn "secret-bar"
 # Scan image manifests for secrets:
-find . -type f | xargs -n1 grep -rinI 'envbuilder-test-secret'
+find . -type f | xargs -n1 grep -rnI 'secret-foo'
+find . -type f | xargs -n1 grep -rnI 'secret-bar'
 cd ../
 ```
 
 The output of both find/grep commands should be empty.
-To verify that it scans correctly, replace "envbuilder-test-secret" with "Envbuilder" and rerun the commands. It should find strings related to Envbuilder that are not secrets.
+To verify that it scans correctly, replace "secret-foo" with "envbuilder" and rerun the commands. It should find strings related to Envbuilder that are not secrets.
 
-Having verified that no secrets were included in the image, we can now delete the artifacts that we saved to disk.
+### Cleanup
+
+Having verified that no secrets were included in the image, we can now delete the artifacts that we saved to disk and remove the containers.
 ```bash
-rm -r test-container
-rm -r test-container.tar
+cd ../
+rm -r test-build-secrets
+docker stop envbuilder-registry
 ```
 
 ## Security and Production Use
