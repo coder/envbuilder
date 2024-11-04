@@ -1,7 +1,24 @@
 # Docker inside Envbuilder
 
 There are a number of approaches you can use to have access to a Docker daemon
-from inside Envbuilder:
+from inside Envbuilder.
+
+> Note: some of the below methods involve setting `ENVBUILDER_INIT_SCRIPT` to
+> work around the lack of an init system inside the Docker container.
+> If you are attempting to use the below approaches with [Coder](https://github.com/coder/coder),
+> you may need to instead add the relevant content of the init script to your
+> agent startup script in your template.
+> For example:
+>
+> ```terraform
+>   resource "coder_agent" "dev" {
+>     ...
+>     startup_script = <<-EOT
+>         set -eux -o pipefail
+>         nohup dockerd > /var/log/docker.log 2>&1 &
+>     EOT
+>   }
+> ```
 
 ## Docker Outside of Docker (DooD)
 
@@ -27,7 +44,6 @@ docker run -it --rm \
     ghcr.io/coder/envbuilder:latest
 ```
 
-
 ## Docker-in-Docker (DinD)
 
 **Security:** Low
@@ -41,8 +57,8 @@ Example:
 
 > Note that due to a lack of init system, the Docker daemon
 > needs to be started separately inside the container. In this example, we
-> create a custom entrypoint to start the Docker daemon in the background and
-> call this entrypoint via `ENVBUILDER_INIT_SCRIPT`.
+> create a custom script to start the Docker daemon in the background and
+> call this entrypoint via the Devcontainer `onCreateCommand` lifecycle hook.
 
 ```console
 docker run -it --rm \
@@ -50,7 +66,7 @@ docker run -it --rm \
     -v /tmp/envbuilder:/workspaces \
     -e ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder \
     -e ENVBUILDER_DEVCONTAINER_DIR=/workspaces/envbuilder/examples/docker/02_dind \
-    -e ENVBUILDER_INIT_SCRIPT=/entrypoint.sh \
+    -e ENVBUILDER_INIT_SCRIPT=bash \
     ghcr.io/coder/envbuilder:latest
 ```
 
@@ -59,8 +75,14 @@ docker run -it --rm \
 The above can also be accomplished using the [`docker-in-docker` Devcontainer
 feature](https://github.com/devcontainers/features/tree/main/src/docker-in-docker).
 
-> Note: we still need the custom entrypoint to start the docker startup script.
-> See https://github.com/devcontainers/features/blob/main/src/docker-in-docker/devcontainer-feature.json#L60
+> Note: we still need the `onCreateCommand` to start Docker.
+> See
+> [here](https://github.com/devcontainers/features/blob/main/src/docker-in-docker/devcontainer-feature.json#L65)
+> for more details.
+>
+> Known issue: `/run` does not get symlinked correctly to `/var/run`.
+> To work around this, we create the symlink manually before running
+> the script to start the Docker daemon.
 
 Example:
 
@@ -70,7 +92,7 @@ docker run -it --rm \
     -v /tmp/envbuilder:/workspaces \
     -e ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder \
     -e ENVBUILDER_DEVCONTAINER_DIR=/workspaces/envbuilder/examples/docker/03_dind_feature \
-    -e ENVBUILDER_INIT_SCRIPT=/entrypoint.sh \
+    -e ENVBUILDER_INIT_SCRIPT=bash \
     ghcr.io/coder/envbuilder:latest
 ```
 
@@ -79,7 +101,7 @@ docker run -it --rm \
 **Security:** Medium
 **Convenience:** Medium
 
-This approach runs a Docker daemon in *rootless* mode.
+This approach runs a Docker daemon in _rootless_ mode.
 While this still requires a privileged container, this allows you to restrict
 usage of the `root` user inside the container, as the Docker daemon will be run
 under a "fake" root user (via `rootlesskit`). The user inside the workspace can
@@ -113,6 +135,7 @@ including transparently enabling Docker inside workspaces. Most notably, it
 access inside their workspaces, if required.
 
 Example:
+
 ```console
 docker run -it --rm \
     -v /tmp/envbuilder:/workspaces \

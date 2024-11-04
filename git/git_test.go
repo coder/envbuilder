@@ -3,6 +3,7 @@ package git_test
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http/httptest"
@@ -488,6 +489,22 @@ func TestSetupRepoAuth(t *testing.T) {
 		require.Equal(t, actualSigner, pk.Signer)
 	})
 
+	t.Run("SSH/Base64PrivateKey", func(t *testing.T) {
+		opts := &options.Options{
+			GitURL:                 "ssh://git@host.tld:repo/path",
+			GitSSHPrivateKeyBase64: base64EncodeTestPrivateKey(),
+		}
+		auth := git.SetupRepoAuth(t.Logf, opts)
+
+		pk, ok := auth.(*gitssh.PublicKeys)
+		require.True(t, ok)
+		require.NotNil(t, pk.Signer)
+
+		actualSigner, err := gossh.ParsePrivateKey([]byte(testKey))
+		require.NoError(t, err)
+		require.Equal(t, actualSigner, pk.Signer)
+	})
+
 	t.Run("SSH/NoAuthMethods", func(t *testing.T) {
 		opts := &options.Options{
 			GitURL: "ssh://git@host.tld:repo/path",
@@ -556,4 +573,8 @@ func writeTestPrivateKey(t *testing.T) string {
 	kPath := filepath.Join(tmpDir, "test.key")
 	require.NoError(t, os.WriteFile(kPath, []byte(testKey), 0o600))
 	return kPath
+}
+
+func base64EncodeTestPrivateKey() string {
+	return base64.StdEncoding.EncodeToString([]byte(testKey))
 }

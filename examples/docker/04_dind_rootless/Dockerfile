@@ -1,8 +1,11 @@
 FROM ubuntu:noble
+
 # Based on UID of ubuntu user in container.
 ENV XDG_RUNTIME_DIR /run/user/1000
 ENV DOCKER_HOST unix:///${XDG_RUNTIME_DIR}/docker.sock
+
 # Setup as root
+USER root
 RUN apt-get update && \
   # Install prerequisites
   apt-get install -y apt-transport-https curl iproute2 uidmap && \
@@ -19,6 +22,8 @@ USER ubuntu
 RUN dockerd-rootless-setuptool.sh install && \
   docker context use rootless && \
   mkdir -p /home/ubuntu/.local/share/docker
-# Add our custom entrypoint
-ADD entrypoint.sh /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
+
+# Add our onCreateCommand script.
+ADD on-create.sh /on-create.sh
+
+ENTRYPOINT ["bash"]

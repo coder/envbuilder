@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -17,20 +18,25 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/coder/coder/v2/codersdk"
+	"github.com/coder/coder/v2/codersdk/agentsdk"
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer/features"
-	"github.com/coder/envbuilder/internal/magicdir"
+	"github.com/coder/envbuilder/internal/workingdir"
 	"github.com/coder/envbuilder/options"
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/coder/envbuilder/testutil/mwtest"
 	"github.com/coder/envbuilder/testutil/registrytest"
+	"github.com/go-git/go-billy/v5/osfs"
+	gossh "golang.org/x/crypto/ssh"
 
 	clitypes "github.com/docker/cli/cli/config/types"
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
@@ -38,9 +44,11 @@ import (
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/uuid"
@@ -52,7 +60,108 @@ const (
 	testContainerLabel = "envbox-integration-test"
 	testImageAlpine    = "localhost:5000/envbuilder-test-alpine:latest"
 	testImageUbuntu    = "localhost:5000/envbuilder-test-ubuntu:latest"
+
+	// nolint:gosec // Throw-away key for testing. DO NOT REUSE.
+	testSSHKey = `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACBXOGgAge/EbcejqASqZa6s8PFXZle56DiGEt0VYnljuwAAAKgM05mUDNOZ
+lAAAAAtzc2gtZWQyNTUxOQAAACBXOGgAge/EbcejqASqZa6s8PFXZle56DiGEt0VYnljuw
+AAAEDCawwtjrM4AGYXD1G6uallnbsgMed4cfkFsQ+mLZtOkFc4aACB78Rtx6OoBKplrqzw
+8VdmV7noOIYS3RVieWO7AAAAHmNpYW5AY2RyLW1icC1mdmZmdzBuOHEwNXAuaG9tZQECAw
+QFBgc=
+-----END OPENSSH PRIVATE KEY-----`
 )
+
+func TestLogs(t *testing.T) {
+	t.Parallel()
+
+	token := uuid.NewString()
+	logsDone := make(chan struct{})
+
+	logHandler := func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/buildinfo":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"version": "v2.8.9"}`))
+			return
+		case "/api/v2/workspaceagents/me/logs":
+			w.WriteHeader(http.StatusOK)
+			tokHdr := r.Header.Get(codersdk.SessionTokenHeader)
+			assert.Equal(t, token, tokHdr)
+			var req agentsdk.PatchLogs
+			err := json.NewDecoder(r.Body).Decode(&req)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			for _, log := range req.Logs {
+				t.Logf("got log: %+v", log)
+				if strings.Contains(log.Output, "Running init command") {
+					close(logsDone)
+					return
+				}
+			}
+			return
+		default:
+			t.Errorf("unexpected request to %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}
+	logSrv := httptest.NewServer(http.HandlerFunc(logHandler))
+	defer logSrv.Close()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	srv := gittest.CreateGitServer(t, gittest.Options{
+		Files: map[string]string{
+			"devcontainer.json": `{
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			"Dockerfile": fmt.Sprintf(`FROM %s`, testImageUbuntu),
+		},
+	})
+	ctrID, err := runEnvbuilder(t, runOpts{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		"CODER_AGENT_URL=" + logSrv.URL,
+		"CODER_AGENT_TOKEN=" + token,
+		"ENVBUILDER_SETUP_SCRIPT=/bin/sh -c 'echo MY${NO_MATCH_ENV}_SETUP_SCRIPT_OUT; echo MY${NO_MATCH_ENV}_SETUP_SCRIPT_ERR' 1>&2",
+		"ENVBUILDER_INIT_SCRIPT=env",
+	}})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for logs")
+	case <-logsDone:
+	}
+
+	// Wait for the container to exit
+	client, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		status, err := client.ContainerInspect(ctx, ctrID)
+		if !assert.NoError(t, err) {
+			return false
+		}
+		return !status.State.Running
+	}, 10*time.Second, time.Second, "container never exited")
+
+	// Check the expected log output
+	logReader, err := client.ContainerLogs(ctx, ctrID, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+	})
+	require.NoError(t, err)
+	logBytes, err := io.ReadAll(logReader)
+	require.NoError(t, err)
+	logs := string(logBytes)
+	require.Contains(t, logs, "CODER_AGENT_SUBSYSTEM=envbuilder")
+	require.Contains(t, logs, "MY_SETUP_SCRIPT_OUT")
+	require.Contains(t, logs, "MY_SETUP_SCRIPT_ERR")
+}
 
 func TestInitScriptInitCommand(t *testing.T) {
 	t.Parallel()
@@ -155,8 +264,17 @@ FROM a AS b`, testImageUbuntu),
 	}})
 	require.NoError(t, err)
 
-	output := execContainer(t, ctr, "ps aux | awk '/^pickme / {print $1}' | sort -u")
-	require.Equal(t, "pickme", strings.TrimSpace(output))
+	// Check that envbuilder started command as user.
+	// Since envbuilder starts as root, probe for up to 10 seconds.
+	for i := 0; i < 10; i++ {
+		out := execContainer(t, ctr, "ps aux | awk '/^pickme * 1 / {print $1}' | sort -u")
+		got := strings.TrimSpace(out)
+		if got == "pickme" {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	require.Fail(t, "expected pid 1 to be running as pickme")
 }
 
 func TestUidGid(t *testing.T) {
@@ -298,6 +416,58 @@ func TestSucceedsGitAuth(t *testing.T) {
 	require.Contains(t, gitConfig, srv.URL)
 }
 
+func TestGitSSHAuth(t *testing.T) {
+	t.Parallel()
+
+	base64Key := base64.StdEncoding.EncodeToString([]byte(testSSHKey))
+
+	t.Run("Base64/Success", func(t *testing.T) {
+		t.Parallel()
+
+		signer, err := gossh.ParsePrivateKey([]byte(testSSHKey))
+		require.NoError(t, err)
+		require.NotNil(t, signer)
+
+		tmpDir := t.TempDir()
+		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
+
+		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "Initial commit"))
+		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
+
+		_, err = runEnvbuilder(t, runOpts{env: []string{
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			envbuilderEnv("GIT_URL", tr.String()+"."),
+			envbuilderEnv("GIT_SSH_PRIVATE_KEY_BASE64", base64Key),
+		}})
+		// TODO: Ensure it actually clones but this does mean we have
+		// successfully authenticated.
+		require.ErrorContains(t, err, "repository not found")
+	})
+
+	t.Run("Base64/Failure", func(t *testing.T) {
+		t.Parallel()
+
+		_, randomKey, err := ed25519.GenerateKey(nil)
+		require.NoError(t, err)
+		signer, err := gossh.NewSignerFromKey(randomKey)
+		require.NoError(t, err)
+		require.NotNil(t, signer)
+
+		tmpDir := t.TempDir()
+		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
+
+		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "Initial commit"))
+		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
+
+		_, err = runEnvbuilder(t, runOpts{env: []string{
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			envbuilderEnv("GIT_URL", tr.String()+"."),
+			envbuilderEnv("GIT_SSH_PRIVATE_KEY_BASE64", base64Key),
+		}})
+		require.ErrorContains(t, err, "handshake failed")
+	})
+}
+
 func TestSucceedsGitAuthInURL(t *testing.T) {
 	t.Parallel()
 	srv := gittest.CreateGitServer(t, gittest.Options{
@@ -404,30 +574,147 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 	require.Equal(t, "hello from test 3!", strings.TrimSpace(test3Output))
 }
 
-func TestBuildFromDockerfile(t *testing.T) {
-	// Ensures that a Git repository with a Dockerfile is cloned and built.
-	srv := gittest.CreateGitServer(t, gittest.Options{
-		Files: map[string]string{
-			"Dockerfile": "FROM " + testImageAlpine,
+func TestBuildFromDockerfileAndConfig(t *testing.T) {
+	t.Parallel()
+
+	type configFile struct {
+		name string
+		data string
+	}
+	type testCase struct {
+		name         string
+		env          []string
+		configFile   configFile
+		configBase64 string
+		validate     func(t *testing.T, tc testCase, ctrID, logs string)
+	}
+
+	validateDockerConfig := func(t *testing.T, tc testCase, ctrID, logs string) {
+		t.Helper()
+
+		// Ensure that the config matches the expected value, base64 is
+		// always prioritized over a file.
+		got := execContainer(t, ctrID, "cat /docker_config_json")
+		got = strings.TrimSpace(got)
+		want := tc.configBase64
+		if want == "" {
+			want = tc.configFile.data
+		}
+		if want != "" {
+			require.Contains(t, logs, "Set DOCKER_CONFIG to /.envbuilder/.docker")
+			require.Equal(t, want, got)
+		}
+
+		// Ensure that a warning message is printed if config secrets
+		// will remain in the container after build.
+		warningMessage := "this file will remain after the build"
+		if tc.configFile.name != "" {
+			require.Contains(t, logs, warningMessage)
+		} else {
+			require.NotContains(t, logs, warningMessage)
+		}
+	}
+
+	configJSONContainerPath := workingdir.Default.Join(".docker", "config.json")
+	defaultConfigJSON := `{"experimental": "enabled"}`
+
+	tests := []testCase{
+		{
+			name: "Plain",
+			validate: func(t *testing.T, tc testCase, ctrID, logs string) {
+				output := execContainer(t, ctrID, "echo hello")
+				require.Equal(t, "hello", strings.TrimSpace(output))
+			},
 		},
-	})
-	ctr, err := runEnvbuilder(t, runOpts{env: []string{
-		envbuilderEnv("GIT_URL", srv.URL),
-		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString([]byte(`{"experimental": "enabled"}`))),
-	}})
-	require.NoError(t, err)
+		{
+			name:         "ConfigBase64",
+			configBase64: defaultConfigJSON,
+			validate:     validateDockerConfig,
+		},
+		{
+			name:       "BindConfigToKnownLocation",
+			configFile: configFile{"/.envbuilder/config.json", defaultConfigJSON},
+			validate:   validateDockerConfig,
+		},
+		{
+			name:       "BindConfigToPath",
+			env:        []string{"DOCKER_CONFIG=/secret"},
+			configFile: configFile{"/secret/config.json", defaultConfigJSON},
+			validate:   validateDockerConfig,
+		},
+		{
+			name:       "BindConfigToCustomFile",
+			env:        []string{"DOCKER_CONFIG=/secret/my.json"},
+			configFile: configFile{"/secret/my.json", defaultConfigJSON},
+			validate:   validateDockerConfig,
+		},
+		{
+			name:         "ConfigBase64AndBindUsesBase64",
+			configFile:   configFile{"/.envbuilder/config.json", `{"experimental": "disabled"}`},
+			configBase64: defaultConfigJSON,
+			validate:     validateDockerConfig,
+		},
+		{
+			name:         "ConfigBase64AndCustomConfigPath",
+			env:          []string{"DOCKER_CONFIG=/secret"},
+			configBase64: defaultConfigJSON,
+			validate:     validateDockerConfig,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	output := execContainer(t, ctr, "echo hello")
-	require.Equal(t, "hello", strings.TrimSpace(output))
+			// Ensures that a Git repository with a Dockerfile is cloned and built.
+			srv := gittest.CreateGitServer(t, gittest.Options{
+				Files: map[string]string{
+					"Dockerfile": fmt.Sprintf(`
+						FROM %[1]s
+						RUN if [ -f %[2]q ]; then cat %[2]q > /docker_config_json; fi
+					`, testImageAlpine, configJSONContainerPath),
+				},
+			})
 
-	// Verify that the Docker configuration secret file is removed
-	configJSONContainerPath := magicdir.Default.Join("config.json")
-	output = execContainer(t, ctr, "stat "+configJSONContainerPath)
-	require.Contains(t, output, "No such file or directory")
+			logbuf := new(bytes.Buffer)
+			opts := runOpts{
+				env: []string{
+					envbuilderEnv("GIT_URL", srv.URL),
+					envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+				},
+				logbuf: logbuf,
+			}
+
+			if tt.configFile.name != "" {
+				dir := t.TempDir()
+				configFile := filepath.Join(dir, filepath.Base(tt.configFile.name))
+				err := os.WriteFile(configFile, []byte(tt.configFile.data), 0o600)
+				require.NoError(t, err, "failed to write config")
+
+				opts.privileged = true
+				opts.binds = []string{fmt.Sprintf("%s:%s:rw", configFile, tt.configFile.name)}
+			}
+			if tt.configBase64 != "" {
+				enc := base64.StdEncoding.EncodeToString([]byte(tt.configBase64))
+				tt.env = append(tt.env, envbuilderEnv("DOCKER_CONFIG_BASE64", enc))
+			}
+
+			opts.env = append(opts.env, tt.env...)
+
+			ctrID, err := runEnvbuilder(t, opts)
+			require.NoError(t, err)
+
+			tt.validate(t, tt, ctrID, logbuf.String())
+
+			// Always verify that the Docker configuration secret file is removed.
+			output := execContainer(t, ctrID, "stat "+configJSONContainerPath)
+			require.Contains(t, output, "No such file or directory")
+		})
+	}
 }
 
 func TestBuildPrintBuildOutput(t *testing.T) {
+	t.Parallel()
+
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	srv := gittest.CreateGitServer(t, gittest.Options{
 		Files: map[string]string{
@@ -456,6 +743,8 @@ func TestBuildPrintBuildOutput(t *testing.T) {
 }
 
 func TestBuildIgnoreVarRunSecrets(t *testing.T) {
+	t.Parallel()
+
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	srv := gittest.CreateGitServer(t, gittest.Options{
 		Files: map[string]string{
@@ -468,6 +757,8 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("ReadWrite", func(t *testing.T) {
+		t.Parallel()
+
 		ctr, err := runEnvbuilder(t, runOpts{
 			env: []string{
 				envbuilderEnv("GIT_URL", srv.URL),
@@ -482,6 +773,8 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 	})
 
 	t.Run("ReadOnly", func(t *testing.T) {
+		t.Parallel()
+
 		ctr, err := runEnvbuilder(t, runOpts{
 			env: []string{
 				envbuilderEnv("GIT_URL", srv.URL),
@@ -497,6 +790,8 @@ func TestBuildIgnoreVarRunSecrets(t *testing.T) {
 }
 
 func TestBuildWithSetupScript(t *testing.T) {
+	t.Parallel()
+
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	srv := gittest.CreateGitServer(t, gittest.Options{
 		Files: map[string]string{
@@ -588,6 +883,8 @@ func TestBuildFromDevcontainerInRoot(t *testing.T) {
 }
 
 func TestBuildCustomCertificates(t *testing.T) {
+	t.Parallel()
+
 	srv := gittest.CreateGitServer(t, gittest.Options{
 		Files: map[string]string{
 			"Dockerfile": "FROM " + testImageAlpine,
@@ -609,6 +906,8 @@ func TestBuildCustomCertificates(t *testing.T) {
 }
 
 func TestBuildStopStartCached(t *testing.T) {
+	t.Parallel()
+
 	// Ensures that a Git repository with a Dockerfile is cloned and built.
 	srv := gittest.CreateGitServer(t, gittest.Options{
 		Files: map[string]string{
@@ -764,15 +1063,17 @@ func TestContainerEnv(t *testing.T) {
 	require.NoError(t, err)
 
 	output := execContainer(t, ctr, "cat /env")
-	require.Contains(t, strings.TrimSpace(output),
-		`DEVCONTAINER=true
+	want := `DEVCONTAINER=true
 DEVCONTAINER_CONFIG=/workspaces/empty/.devcontainer/devcontainer.json
 ENVBUILDER=true
 FROM_CONTAINER_ENV=bar
 FROM_DOCKERFILE=foo
 FROM_REMOTE_ENV=baz
 PATH=/usr/local/bin:/bin:/go/bin:/opt
-REMOTE_BAR=bar`)
+REMOTE_BAR=bar`
+	if diff := cmp.Diff(want, strings.TrimSpace(output)); diff != "" {
+		require.Failf(t, "env mismatch", "diff (-want +got):\n%s", diff)
+	}
 }
 
 func TestUnsetOptionsEnv(t *testing.T) {
@@ -813,6 +1114,82 @@ func TestUnsetOptionsEnv(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestUnsetSecretEnvs(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	srv := gittest.CreateGitServer(t, gittest.Options{
+		Files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\nENV FROM_DOCKERFILE=foo",
+		},
+	})
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("GIT_PASSWORD", "supersecret"),
+		options.EnvWithBuildSecretPrefix("FOO", "foo"),
+		envbuilderEnv("INIT_SCRIPT", "env > /root/env.txt && sleep infinity"),
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /root/env.txt")
+	envsAvailableToInitScript := strings.Split(strings.TrimSpace(output), "\n")
+
+	leftoverBuildSecrets := options.GetBuildSecrets(envsAvailableToInitScript)
+	require.Empty(t, leftoverBuildSecrets, "build secrets should not be available to init script")
+}
+
+func TestBuildSecrets(t *testing.T) {
+	t.Parallel()
+
+	buildSecretVal := "foo"
+
+	srv := gittest.CreateGitServer(t, gittest.Options{
+		Files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			".devcontainer/Dockerfile": "FROM " + testImageAlpine +
+				// Test whether build secrets are written to the default location
+				"\nRUN --mount=type=secret,id=FOO cat /run/secrets/FOO > /foo_from_file" +
+				// Test whether:
+				// * build secrets are written to env
+				// * build secrets are written to a custom target
+				// * build secrets are both written to env and target if both are specified
+				"\nRUN --mount=type=secret,id=FOO,env=FOO,target=/etc/foo echo $FOO > /foo_from_env && cat /etc/foo > /foo_from_custom_target" +
+				// Test what happens when you specify the same secret twice
+				"\nRUN --mount=type=secret,id=FOO,target=/etc/duplicate_foo --mount=type=secret,id=FOO,target=/etc/duplicate_foo cat /etc/duplicate_foo > /duplicate_foo_from_custom_target",
+		},
+	})
+
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+		envbuilderEnv("GIT_PASSWORD", "supersecret"),
+		options.EnvWithBuildSecretPrefix("FOO", buildSecretVal),
+	}})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "cat /foo_from_file")
+	assert.Equal(t, buildSecretVal, strings.TrimSpace(output))
+
+	output = execContainer(t, ctr, "cat /foo_from_env")
+	assert.Equal(t, buildSecretVal, strings.TrimSpace(output))
+
+	output = execContainer(t, ctr, "cat /foo_from_custom_target")
+	assert.Equal(t, buildSecretVal, strings.TrimSpace(output))
+
+	output = execContainer(t, ctr, "cat /duplicate_foo_from_custom_target")
+	assert.Equal(t, buildSecretVal, strings.TrimSpace(output))
 }
 
 func TestLifecycleScripts(t *testing.T) {
@@ -1028,6 +1405,8 @@ func setupPassthroughRegistry(t *testing.T, image string, opts *setupPassthrough
 }
 
 func TestNoMethodFails(t *testing.T) {
+	t.Parallel()
+
 	_, err := runEnvbuilder(t, runOpts{env: []string{}})
 	require.ErrorContains(t, err, envbuilder.ErrNoFallbackImage.Error())
 }
@@ -1099,6 +1478,8 @@ COPY %s .`, testImageAlpine, inclFile)
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			srv := gittest.CreateGitServer(t, gittest.Options{
 				Files: tc.files,
 			})
@@ -1160,7 +1541,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with PUSH_IMAGE set
+		// When: we run envbuilder with no PUSH_IMAGE set
 		_, err = runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
@@ -1183,6 +1564,9 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 
 	t.Run("CacheAndPush", func(t *testing.T) {
 		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
 
 		srv := gittest.CreateGitServer(t, gittest.Options{
 			Files: map[string]string{
@@ -1210,90 +1594,33 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		opts := []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 			envbuilderEnv("VERBOSE", "1"),
-		}})
+		}
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+		)})
 		require.ErrorContains(t, err, "error probing build cache: uncached RUN command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("PUSH_IMAGE", "1"),
-			envbuilderEnv("VERBOSE", "1"),
-		}})
-		require.NoError(t, err)
+		_ = pushImage(t, ref, nil, opts...)
 
-		// Then: the image should be pushed
-		img, err := remote.Image(ref)
-		require.NoError(t, err, "expected image to be present after build + push")
-
-		// Then: the image should have its directives replaced with those required
-		// to run envbuilder automatically
-		configFile, err := img.ConfigFile()
-		require.NoError(t, err, "expected image to return a config file")
-
-		assert.Equal(t, "root", configFile.Config.User, "user must be root")
-		assert.Equal(t, "/", configFile.Config.WorkingDir, "workdir must be /")
-		if assert.Len(t, configFile.Config.Entrypoint, 1) {
-			assert.Equal(t, "/.envbuilder/bin/envbuilder", configFile.Config.Entrypoint[0], "incorrect entrypoint")
-		}
-
-		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		ctrID, err := runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-		}})
-		require.NoError(t, err)
-
-		// Then: the cached image ref should be emitted in the container logs
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
 		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 		require.NoError(t, err)
 		defer cli.Close()
-		logs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
-			ShowStdout: true,
-			ShowStderr: true,
-		})
-		require.NoError(t, err)
-		defer logs.Close()
-		logBytes, err := io.ReadAll(logs)
-		require.NoError(t, err)
-		require.Regexp(t, `ENVBUILDER_CACHED_IMAGE=(\S+)`, string(logBytes))
 
-		// When: we pull the image we just built
-		rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = rc.Close() })
-		_, err = io.ReadAll(rc)
-		require.NoError(t, err)
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
 
 		// When: we run the image we just built
-		ctr, err := cli.ContainerCreate(ctx, &container.Config{
-			Image:      ref.String(),
-			Entrypoint: []string{"sleep", "infinity"},
-			Labels: map[string]string{
-				testContainerLabel: "true",
-			},
-		}, nil, nil, nil, "")
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
-				RemoveVolumes: true,
-				Force:         true,
-			})
-		})
-		err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
-		require.NoError(t, err)
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
 
 		// Then: the envbuilder binary exists in the image!
 		out := execContainer(t, ctr.ID, "/.envbuilder/bin/envbuilder --help")
@@ -1304,6 +1631,9 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 
 	t.Run("CacheAndPushDevcontainerOnly", func(t *testing.T) {
 		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
 
 		srv := gittest.CreateGitServer(t, gittest.Options{
 			Files: map[string]string{
@@ -1319,88 +1649,209 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		opts := []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
+		}
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-		}})
+		)})
 		require.ErrorContains(t, err, "error probing build cache: uncached COPY command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("PUSH_IMAGE", "1"),
-		}})
-		require.NoError(t, err)
+		_ = pushImage(t, ref, nil, opts...)
 
-		// Then: the image should be pushed
-		img, err := remote.Image(ref)
-		require.NoError(t, err, "expected image to be present after build + push")
-
-		// Then: the image should have its directives replaced with those required
-		// to run envbuilder automatically
-		configFile, err := img.ConfigFile()
-		require.NoError(t, err, "expected image to return a config file")
-
-		assert.Equal(t, "root", configFile.Config.User, "user must be root")
-		assert.Equal(t, "/", configFile.Config.WorkingDir, "workdir must be /")
-		if assert.Len(t, configFile.Config.Entrypoint, 1) {
-			assert.Equal(t, "/.envbuilder/bin/envbuilder", configFile.Config.Entrypoint[0], "incorrect entrypoint")
-		}
-
-		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		ctrID, err := runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-		}})
-		require.NoError(t, err)
-
-		// Then: the cached image ref should be emitted in the container logs
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
 		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 		require.NoError(t, err)
 		defer cli.Close()
-		logs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
-			ShowStdout: true,
-			ShowStderr: true,
-		})
-		require.NoError(t, err)
-		defer logs.Close()
-		logBytes, err := io.ReadAll(logs)
-		require.NoError(t, err)
-		require.Regexp(t, `ENVBUILDER_CACHED_IMAGE=(\S+)`, string(logBytes))
 
-		// When: we pull the image we just built
-		rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = rc.Close() })
-		_, err = io.ReadAll(rc)
-		require.NoError(t, err)
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
 
 		// When: we run the image we just built
-		ctr, err := cli.ContainerCreate(ctx, &container.Config{
-			Image:      ref.String(),
-			Entrypoint: []string{"sleep", "infinity"},
-			Labels: map[string]string{
-				testContainerLabel: "true",
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
+
+		// Then: the envbuilder binary exists in the image!
+		out := execContainer(t, ctr.ID, "/.envbuilder/bin/envbuilder --help")
+		require.Regexp(t, `(?s)^USAGE:\s+envbuilder`, strings.TrimSpace(out))
+		require.NotEmpty(t, strings.TrimSpace(out))
+	})
+
+	t.Run("CompareBuiltAndCachedImageEnvironment", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		wantSpecificOutput := []string{
+			"containeruser",
+			"FROM_CONTAINER=container",
+			"FROM_CONTAINER_ENV=containerEnv",
+			"FROM_REMOTE_ENV=remoteEnv",
+			"CONTAINER_OVERRIDE_C=containerEnv",
+			"CONTAINER_OVERRIDE_CR=remoteEnv",
+			"CONTAINER_OVERRIDE_R=remoteEnv",
+		}
+
+		srv := gittest.CreateGitServer(t, gittest.Options{
+			Files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf(`
+					FROM %s
+					ENV FROM_CONTAINER=container
+					ENV CONTAINER_OVERRIDE_C=container
+					ENV CONTAINER_OVERRIDE_CR=container
+					ENV CONTAINER_OVERRIDE_R=container
+					RUN adduser -D containeruser
+					RUN adduser -D remoteuser
+					USER root
+				`, testImageAlpine),
+				".devcontainer/devcontainer.json": `
+					{
+						"dockerFile": "Dockerfile",
+						"containerUser": "containeruser",
+						"containerEnv": {
+							"FROM_CONTAINER_ENV": "containerEnv",
+							"CONTAINER_OVERRIDE_C": "containerEnv",
+							"CONTAINER_OVERRIDE_CR": "containerEnv",
+						},
+						"remoteUser": "remoteuser",
+						"remoteEnv": {
+							"FROM_REMOTE_ENV": "remoteEnv",
+							"CONTAINER_OVERRIDE_CR": "remoteEnv",
+							"CONTAINER_OVERRIDE_R": "remoteEnv",
+						},
+						"onCreateCommand": "echo onCreateCommand",
+						"postCreateCommand": "echo postCreateCommand",
+					}
+				`,
 			},
-		}, nil, nil, nil, "")
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
-				RemoveVolumes: true,
-				Force:         true,
-			})
 		})
-		err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
 		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		opts := []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("INIT_SCRIPT", "echo '[start]' && whoami && env && echo '[end]'"),
+			envbuilderEnv("INIT_COMMAND", "/bin/ash"),
+		}
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		ctrID, err := runEnvbuilder(t, runOpts{env: append(opts, envbuilderEnv("PUSH_IMAGE", "1"))})
+		require.NoError(t, err, "envbuilder push image failed")
+
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer cli.Close()
+
+		var started bool
+		var wantOutput, gotOutput []string
+		logs, _ := streamContainerLogs(t, cli, ctrID)
+		for {
+			log := <-logs
+			if log == "[start]" {
+				started = true
+				continue
+			}
+			if log == "[end]" {
+				break
+			}
+			if started {
+				wantOutput = append(wantOutput, log)
+			}
+		}
+		started = false
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
+
+		// When: we run the image we just built
+		ctrID, err = runEnvbuilder(t, runOpts{
+			image: cachedRef.String(),
+			env:   opts,
+		})
+		require.NoError(t, err, "envbuilder run cached image failed")
+
+		logs, _ = streamContainerLogs(t, cli, ctrID)
+		for {
+			log := <-logs
+			if log == "[start]" {
+				started = true
+				continue
+			}
+			if log == "[end]" {
+				break
+			}
+			if started {
+				gotOutput = append(gotOutput, log)
+			}
+		}
+
+		slices.Sort(wantOutput)
+		slices.Sort(gotOutput)
+		if diff := cmp.Diff(wantOutput, gotOutput); diff != "" {
+			t.Fatalf("unexpected output (-want +got):\n%s", diff)
+		}
+
+		for _, want := range wantSpecificOutput {
+			assert.Contains(t, gotOutput, want, "expected specific output %q to be present", want)
+		}
+	})
+
+	t.Run("CacheAndPushWithNoChangeLayers", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		srv := gittest.CreateGitServer(t, gittest.Options{
+			Files: map[string]string{
+				"Dockerfile": fmt.Sprintf(`
+FROM %[1]s
+RUN touch /foo
+RUN echo "Hi, please don't put me in a layer (I guess you won't listen to me...)"
+RUN touch /bar
+`, testImageAlpine),
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		opts := []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		}
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_ = pushImage(t, ref, nil, opts...)
+
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer cli.Close()
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
+
+		// When: we run the image we just built
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
 
 		// Then: the envbuilder binary exists in the image!
 		out := execContainer(t, ctr.ID, "/.envbuilder/bin/envbuilder --help")
@@ -1430,18 +1881,18 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		})
 
 		// Given: an empty registry
-		opts := setupInMemoryRegistryOpts{
+		authOpts := setupInMemoryRegistryOpts{
 			Username: "testing",
 			Password: "testing",
 		}
-		remoteAuthOpt := remote.WithAuth(&authn.Basic{Username: opts.Username, Password: opts.Password})
-		testReg := setupInMemoryRegistry(t, opts)
+		remoteAuthOpt := remote.WithAuth(&authn.Basic{Username: authOpts.Username, Password: authOpts.Password})
+		testReg := setupInMemoryRegistry(t, authOpts)
 		testRepo := testReg + "/test"
 		regAuthJSON, err := json.Marshal(envbuilder.DockerConfig{
 			AuthConfigs: map[string]clitypes.AuthConfig{
 				testRepo: {
-					Username: opts.Username,
-					Password: opts.Password,
+					Username: authOpts.Username,
+					Password: authOpts.Password,
 				},
 			},
 		})
@@ -1451,37 +1902,32 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = remote.Image(ref, remoteAuthOpt)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		opts := []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
+			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString(regAuthJSON)),
+		}
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-		}})
+		)})
 		require.ErrorContains(t, err, "error probing build cache: uncached RUN command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref, remoteAuthOpt)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("PUSH_IMAGE", "1"),
-			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString(regAuthJSON)),
-		}})
-		require.NoError(t, err)
+		_ = pushImage(t, ref, remoteAuthOpt, opts...)
 
 		// Then: the image should be pushed
 		_, err = remote.Image(ref, remoteAuthOpt)
 		require.NoError(t, err, "expected image to be present after build + push")
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		_, err = runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString(regAuthJSON)),
-		}})
+		)})
 		require.NoError(t, err)
 	})
 
@@ -1507,35 +1953,36 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		})
 
 		// Given: an empty registry
-		opts := setupInMemoryRegistryOpts{
+		authOpts := setupInMemoryRegistryOpts{
 			Username: "testing",
 			Password: "testing",
 		}
-		remoteAuthOpt := remote.WithAuth(&authn.Basic{Username: opts.Username, Password: opts.Password})
-		testReg := setupInMemoryRegistry(t, opts)
+		remoteAuthOpt := remote.WithAuth(&authn.Basic{Username: authOpts.Username, Password: authOpts.Password})
+		testReg := setupInMemoryRegistry(t, authOpts)
 		testRepo := testReg + "/test"
 		ref, err := name.ParseReference(testRepo + ":latest")
 		require.NoError(t, err)
 		_, err = remote.Image(ref, remoteAuthOpt)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		opts := []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
+		}
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-		}})
+		)})
 		require.ErrorContains(t, err, "error probing build cache: uncached RUN command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref, remoteAuthOpt)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("PUSH_IMAGE", "1"),
-		}})
+		)})
 		// Then: it should fail with an Unauthorized error
 		require.ErrorContains(t, err, "401 Unauthorized", "expected unauthorized error using no auth when cache repo requires it")
 
@@ -1546,6 +1993,9 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 
 	t.Run("CacheAndPushMultistage", func(t *testing.T) {
 		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
 
 		srv := gittest.CreateGitServer(t, gittest.Options{
 			Files: map[string]string{
@@ -1576,80 +2026,33 @@ COPY --from=prebuild /the-future/hello.txt /the-future/hello.txt
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with GET_CACHED_IMAGE
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		opts := []string{
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		}})
+		}
+
+		// When: we run envbuilder with GET_CACHED_IMAGE
+		_, err = runEnvbuilder(t, runOpts{env: append(opts,
+			envbuilderEnv("GET_CACHED_IMAGE", "1"),
+		)})
 		require.ErrorContains(t, err, "error probing build cache: uncached RUN command")
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("PUSH_IMAGE", "1"),
-			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		}})
-		require.NoError(t, err)
+		_ = pushImage(t, ref, nil, opts...)
 
-		// Then: the image should be pushed
-		_, err = remote.Image(ref)
-		require.NoError(t, err, "expected image to be present after build + push")
-
-		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
-		ctrID, err := runEnvbuilder(t, runOpts{env: []string{
-			envbuilderEnv("GIT_URL", srv.URL),
-			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("GET_CACHED_IMAGE", "1"),
-			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		}})
-		require.NoError(t, err)
-
-		// Then: the cached image ref should be emitted in the container logs
-		ctx, cancel := context.WithCancel(context.Background())
-		t.Cleanup(cancel)
 		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 		require.NoError(t, err)
 		defer cli.Close()
-		logs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
-			ShowStdout: true,
-			ShowStderr: true,
-		})
-		require.NoError(t, err)
-		defer logs.Close()
-		logBytes, err := io.ReadAll(logs)
-		require.NoError(t, err)
-		require.Regexp(t, `ENVBUILDER_CACHED_IMAGE=(\S+)`, string(logBytes))
 
-		// When: we pull the image we just built
-		rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = rc.Close() })
-		_, err = io.ReadAll(rc)
-		require.NoError(t, err)
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
 
 		// When: we run the image we just built
-		ctr, err := cli.ContainerCreate(ctx, &container.Config{
-			Image:      ref.String(),
-			Entrypoint: []string{"sleep", "infinity"},
-			Labels: map[string]string{
-				testContainerLabel: "true",
-			},
-		}, nil, nil, nil, "")
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
-				RemoveVolumes: true,
-				Force:         true,
-			})
-		})
-		err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
-		require.NoError(t, err)
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
 
 		// Then: The files from the prebuild stage are present.
 		out := execContainer(t, ctr.ID, "/bin/sh -c 'cat /the-past/hello.txt /the-future/hello.txt; readlink -f /the-past/hello.link'")
@@ -1698,17 +2101,11 @@ RUN date --utc > /root/date.txt
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
 		// When: we run envbuilder with PUSH_IMAGE set
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		_ = pushImage(t, ref, nil,
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("PUSH_IMAGE", "1"),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		}})
-		require.NoError(t, err)
-
-		// Then: the image should be pushed
-		_, err = remote.Image(ref)
-		require.NoError(t, err, "expected image to be present after build + push")
+		)
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
 		_, err = runEnvbuilder(t, runOpts{env: []string{
@@ -1725,13 +2122,11 @@ RUN date --utc > /root/date.txt
 		srv = newServer(dockerfilePrebuildContents)
 
 		// When: we rebuild the prebuild stage so that the cache is created
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		_ = pushImage(t, ref, nil,
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", testRepo),
-			envbuilderEnv("PUSH_IMAGE", "1"),
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-		}})
-		require.NoError(t, err)
+		)
 
 		// Then: re-running envbuilder with GET_CACHED_IMAGE should still fail
 		// on the second stage because the first stage file has changed.
@@ -1813,6 +2208,120 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 
 		// Then: envbuilder should fail with a descriptive error
 		require.ErrorContains(t, err, "failed to push to destination")
+	})
+
+	t.Run("CacheAndPushDevcontainerFeatures", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		srv := gittest.CreateGitServer(t, gittest.Options{
+			Files: map[string]string{
+				// NOTE(mafredri): We can't cache the feature in our local
+				// registry because the image media type is incompatible.
+				".devcontainer/devcontainer.json": fmt.Sprintf(`
+{
+	"image": %q,
+	"features": {
+		"ghcr.io/devcontainers/feature-starter/color:1": {
+				"favorite": "green"
+		}
+	}
+}
+`, testImageUbuntu),
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		opts := []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+		}
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_ = pushImage(t, ref, nil, opts...)
+
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer cli.Close()
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
+
+		// When: we run the image we just built
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
+
+		// Check that the feature is present in the image.
+		out := execContainer(t, ctr.ID, "/usr/local/bin/color")
+		require.Contains(t, strings.TrimSpace(out), "my favorite color is green")
+	})
+
+	t.Run("CacheAndPushUser", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		srv := gittest.CreateGitServer(t, gittest.Options{
+			Files: map[string]string{
+				".devcontainer/devcontainer.json": `{
+					"name": "Test",
+					"build": {
+						"dockerfile": "Dockerfile"
+					},
+				}`,
+				".devcontainer/Dockerfile": fmt.Sprintf(`FROM %s
+RUN useradd -m -s /bin/bash devalot
+USER devalot
+`, testImageUbuntu),
+			},
+		})
+
+		// Given: an empty registry
+		testReg := setupInMemoryRegistry(t, setupInMemoryRegistryOpts{})
+		testRepo := testReg + "/test"
+		ref, err := name.ParseReference(testRepo + ":latest")
+		require.NoError(t, err)
+		_, err = remote.Image(ref)
+		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
+
+		opts := []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", testRepo),
+		}
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_ = pushImage(t, ref, nil, opts...)
+
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		require.NoError(t, err)
+		defer cli.Close()
+
+		// Then: re-running envbuilder with GET_CACHED_IMAGE should succeed
+		cachedRef := getCachedImage(ctx, t, cli, opts...)
+
+		// When: we run the image we just built
+		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
+
+		// Check that envbuilder started command as user.
+		// Since envbuilder starts as root, probe for up to 10 seconds.
+		for i := 0; i < 10; i++ {
+			out := execContainer(t, ctr.ID, "ps aux | awk '/^devalot * 1 / {print $1}' | sort -u")
+			got := strings.TrimSpace(out)
+			if got == "devalot" {
+				return
+			}
+			time.Sleep(time.Second)
+		}
+		require.Fail(t, "expected pid 1 to be running as devalot")
 	})
 }
 
@@ -1935,10 +2444,98 @@ func cleanOldEnvbuilders() {
 	}
 }
 
+func pushImage(t *testing.T, ref name.Reference, remoteOpt remote.Option, env ...string) v1.Image {
+	t.Helper()
+
+	var remoteOpts []remote.Option
+	if remoteOpt != nil {
+		remoteOpts = append(remoteOpts, remoteOpt)
+	}
+
+	_, err := runEnvbuilder(t, runOpts{env: append(env, envbuilderEnv("PUSH_IMAGE", "1"))})
+	require.NoError(t, err, "envbuilder push image failed")
+
+	img, err := remote.Image(ref, remoteOpts...)
+	require.NoError(t, err, "expected image to be present after build + push")
+
+	// The image should have its directives replaced with those required
+	// to run envbuilder automatically
+	configFile, err := img.ConfigFile()
+	require.NoError(t, err, "expected image to return a config file")
+
+	assert.Equal(t, "root", configFile.Config.User, "user must be root")
+	assert.Equal(t, "/", configFile.Config.WorkingDir, "workdir must be /")
+	if assert.Len(t, configFile.Config.Entrypoint, 1) {
+		assert.Equal(t, "/.envbuilder/bin/envbuilder", configFile.Config.Entrypoint[0], "incorrect entrypoint")
+	}
+
+	require.False(t, t.Failed(), "pushImage failed")
+
+	return img
+}
+
+func getCachedImage(ctx context.Context, t *testing.T, cli *client.Client, env ...string) name.Reference {
+	ctrID, err := runEnvbuilder(t, runOpts{env: append(env, envbuilderEnv("GET_CACHED_IMAGE", "1"))})
+	require.NoError(t, err)
+
+	logs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+	})
+	require.NoError(t, err)
+	defer logs.Close()
+	logBytes, err := io.ReadAll(logs)
+	require.NoError(t, err)
+
+	re := regexp.MustCompile(`ENVBUILDER_CACHED_IMAGE=(\S+)`)
+	matches := re.FindStringSubmatch(string(logBytes))
+	require.Len(t, matches, 2, "envbuilder cached image not found")
+	ref, err := name.ParseReference(matches[1])
+	require.NoError(t, err, "failed to parse cached image reference")
+	return ref
+}
+
+func startContainerFromRef(ctx context.Context, t *testing.T, cli *client.Client, ref name.Reference) container.CreateResponse {
+	// Ensure that we can pull the image.
+	rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = rc.Close() })
+	_, err = io.Copy(io.Discard, rc)
+	require.NoError(t, err)
+
+	// Start the container.
+	ctr, err := cli.ContainerCreate(ctx, &container.Config{
+		Image: ref.String(),
+		Labels: map[string]string{
+			testContainerLabel: "true",
+		},
+	}, nil, nil, nil, "")
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		// Start a new context to ensure that the container is removed.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+			RemoveVolumes: true,
+			Force:         true,
+		})
+	})
+
+	err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
+	require.NoError(t, err)
+
+	return ctr
+}
+
 type runOpts struct {
-	binds   []string
-	env     []string
-	volumes map[string]string
+	image      string
+	privileged bool // Required for remounting.
+	binds      []string
+	env        []string
+	volumes    map[string]string
+	logbuf     *bytes.Buffer
 }
 
 // runEnvbuilder starts the envbuilder container with the given environment
@@ -1966,17 +2563,32 @@ func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 			_ = cli.VolumeRemove(ctx, volName, true)
 		})
 	}
+	img := "envbuilder:latest"
+	if opts.image != "" {
+		// Pull the image first so we can start it afterwards.
+		rc, err := cli.ImagePull(ctx, opts.image, image.PullOptions{})
+		require.NoError(t, err, "failed to pull image")
+		t.Cleanup(func() { _ = rc.Close() })
+		_, err = io.Copy(io.Discard, rc)
+		require.NoError(t, err, "failed to read image pull response")
+		img = opts.image
+	}
+	hostConfig := &container.HostConfig{
+		NetworkMode: container.NetworkMode("host"),
+		Binds:       opts.binds,
+		Mounts:      mounts,
+	}
+	if opts.privileged {
+		hostConfig.CapAdd = append(hostConfig.CapAdd, "SYS_ADMIN")
+		hostConfig.Privileged = true
+	}
 	ctr, err := cli.ContainerCreate(ctx, &container.Config{
-		Image: "envbuilder:latest",
+		Image: img,
 		Env:   opts.env,
 		Labels: map[string]string{
 			testContainerLabel: "true",
 		},
-	}, &container.HostConfig{
-		NetworkMode: container.NetworkMode("host"),
-		Binds:       opts.binds,
-		Mounts:      mounts,
-	}, nil, nil, "")
+	}, hostConfig, nil, nil, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
@@ -1990,7 +2602,10 @@ func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 	logChan, errChan := streamContainerLogs(t, cli, ctr.ID)
 	go func() {
 		for log := range logChan {
-			if strings.HasPrefix(log, "=== Running the init command") {
+			if opts.logbuf != nil {
+				opts.logbuf.WriteString(log + "\n")
+			}
+			if strings.HasPrefix(log, "=== Running init command") {
 				errChan <- nil
 				return
 			}
@@ -2007,14 +2622,14 @@ func execContainer(t *testing.T, containerID, command string) string {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	require.NoError(t, err)
 	defer cli.Close()
-	execConfig := types.ExecConfig{
+	execConfig := container.ExecOptions{
 		AttachStdout: true,
 		AttachStderr: true,
 		Cmd:          []string{"/bin/sh", "-c", command},
 	}
 	execID, err := cli.ContainerExecCreate(ctx, containerID, execConfig)
 	require.NoError(t, err)
-	resp, err := cli.ContainerExecAttach(ctx, execID.ID, types.ExecStartCheck{})
+	resp, err := cli.ContainerExecAttach(ctx, execID.ID, container.ExecAttachOptions{})
 	require.NoError(t, err)
 	defer resp.Close()
 	var buf bytes.Buffer

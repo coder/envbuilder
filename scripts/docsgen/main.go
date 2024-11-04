@@ -3,37 +3,18 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
+	"path/filepath"
 
 	"github.com/coder/envbuilder/options"
 )
 
-const (
-	startSection = "<!--- START docsgen --->"
-	endSection   = "<!--- END docsgen --->"
-)
-
 func main() {
-	readmePath := "README.md"
-	readmeFile, err := os.ReadFile(readmePath)
-	if err != nil {
-		panic("error reading " + readmePath + " file")
-	}
-	readmeContent := string(readmeFile)
-	startIndex := strings.Index(readmeContent, startSection)
-	endIndex := strings.Index(readmeContent, endSection)
-	if startIndex == -1 || endIndex == -1 {
-		panic("start or end section comments not found in the file.")
-	}
-
+	path := filepath.Join("docs", "env-variables.md")
 	var options options.Options
-	mkd := "\n## Environment Variables\n\n" + options.Markdown()
-	modifiedContent := readmeContent[:startIndex+len(startSection)] + mkd + readmeContent[endIndex:]
-
-	err = os.WriteFile(readmePath, []byte(modifiedContent), 0o644)
+	mkd := "\n# Environment Variables\n\n" + options.Markdown()
+	err := os.WriteFile(path, []byte(mkd), 0o644)
 	if err != nil {
 		panic(err)
 	}
-
-	fmt.Println("README updated successfully with the latest flags!")
+	fmt.Printf("%s updated successfully with the latest flags!\n", path)
 }

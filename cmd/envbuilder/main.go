@@ -37,6 +37,15 @@ func envbuilderCmd() serpent.Command {
 		Options: o.CLI(),
 		Handler: func(inv *serpent.Invocation) error {
 			o.SetDefaults()
+			var preExecs []func()
+			preExec := func() {
+				for _, fn := range preExecs {
+					fn()
+				}
+				preExecs = nil
+			}
+			defer preExec() // Ensure cleanup in case of error.
+
 			o.Logger = log.New(os.Stderr, o.Verbose)
 			if o.CoderAgentURL != "" {
 				if o.CoderAgentToken == "" {
@@ -49,7 +58,9 @@ func envbuilderCmd() serpent.Command {
 				coderLog, closeLogs, err := log.Coder(inv.Context(), u, o.CoderAgentToken)
 				if err == nil {
 					o.Logger = log.Wrap(o.Logger, coderLog)
-					defer closeLogs()
+					preExecs = append(preExecs, func() {
+						closeLogs()
+					})
 					// This adds the envbuilder subsystem.
 					// If telemetry is enabled in a Coder deployment,
 					// this will be reported and help us understand
@@ -62,6 +73,10 @@ func envbuilderCmd() serpent.Command {
 					// Failure to log to Coder should cause a fatal error.
 					o.Logger(log.LevelError, "unable to send logs to Coder: %s", err.Error())
 				}
+			}
+
+			if o.GitSSHPrivateKeyPath != "" && o.GitSSHPrivateKeyBase64 != "" {
+				return errors.New("cannot have both GIT_SSH_PRIVATE_KEY_PATH and GIT_SSH_PRIVATE_KEY_BASE64 set")
 			}
 
 			if o.GetCachedImage {
@@ -78,7 +93,7 @@ func envbuilderCmd() serpent.Command {
 				return nil
 			}
 
-			err := envbuilder.Run(inv.Context(), o)
+			err := envbuilder.Run(inv.Context(), o, preExec)
 			if err != nil {
 				o.Logger(log.LevelError, "error: %s", err)
 			}

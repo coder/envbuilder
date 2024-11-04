@@ -29,6 +29,9 @@ develop:
 build: scripts/envbuilder-$(GOARCH)
 	./scripts/build.sh
 
+.PHONY: gen
+gen: docs/env-variables.md update-golden-files
+
 .PHONY: update-golden-files
 update-golden-files: .gen-golden
 
@@ -36,7 +39,7 @@ update-golden-files: .gen-golden
 	go test ./options -update
 	@touch "$@"
 
-docs: options/options.go options/options_test.go
+docs/env-variables.md: options/options.go options/options_test.go
 	go run ./scripts/docsgen/main.go
 
 .PHONY: test

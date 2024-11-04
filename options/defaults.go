@@ -2,13 +2,14 @@ package options
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/go-git/go-billy/v5/osfs"
 
 	giturls "github.com/chainguard-dev/git-urls"
 	"github.com/coder/envbuilder/internal/chmodfs"
-	"github.com/coder/envbuilder/internal/magicdir"
+	"github.com/coder/envbuilder/internal/workingdir"
 )
 
 // EmptyWorkspaceDir is the path to a workspace that has
@@ -25,12 +26,14 @@ func DefaultWorkspaceFolder(repoURL string) string {
 	if err != nil {
 		return EmptyWorkspaceDir
 	}
-	name := strings.Split(parsed.Path, "/")
-	hasOwnerAndRepo := len(name) >= 2
-	if !hasOwnerAndRepo {
+	repo := path.Base(parsed.Path)
+	// Giturls parsing never actually fails since ParseLocal never
+	// errors and places the entire URL in the Path field. This check
+	// ensures it's at least a Unix path containing forwardslash.
+	if repo == repoURL || repo == "/" || repo == "." || repo == "" {
 		return EmptyWorkspaceDir
 	}
-	repo := strings.TrimSuffix(name[len(name)-1], ".git")
+	repo = strings.TrimSuffix(repo, ".git")
 	return fmt.Sprintf("/workspaces/%s", repo)
 }
 
@@ -62,7 +65,7 @@ func (o *Options) SetDefaults() {
 	if o.BinaryPath == "" {
 		o.BinaryPath = "/.envbuilder/bin/envbuilder"
 	}
-	if o.MagicDirBase == "" {
-		o.MagicDirBase = magicdir.Default.Path()
+	if o.WorkingDirBase == "" {
+		o.WorkingDirBase = workingdir.Default.Path()
 	}
 }
