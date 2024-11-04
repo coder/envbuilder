@@ -88,6 +88,9 @@ type Options struct {
 	// IgnorePaths is the comma separated list of paths to ignore when building
 	// the workspace.
 	IgnorePaths []string
+	// BuildSecrets is the list of secret environment variables to use when
+	// building the image.
+	BuildSecrets []string
 	// SkipRebuild skips building if the MagicFile exists. This is used to skip
 	// building when a container is restarting. e.g. docker stop -> docker start
 	// This value can always be set to true - even if the container is being
@@ -322,6 +325,12 @@ func (o *Options) CLI() serpent.OptionSet {
 			Value: serpent.StringArrayOf(&o.IgnorePaths),
 			Description: "The comma separated list of paths to ignore when " +
 				"building the workspace.",
+		},
+		{
+			Flag:        "build-secrets",
+			Env:         WithEnvPrefix("BUILD_SECRETS"),
+			Value:       serpent.StringArrayOf(&o.BuildSecrets),
+			Description: "The list of secret environment variables to use " + "when building the image.",
 		},
 		{
 			Flag:  "skip-rebuild",

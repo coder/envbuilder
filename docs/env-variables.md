@@ -21,6 +21,7 @@
 | `--force-safe` | `ENVBUILDER_FORCE_SAFE` |  | Ignores any filesystem safety checks. This could cause serious harm to your system! This is used in cases where bypass is needed to unblock customers. |
 | `--insecure` | `ENVBUILDER_INSECURE` |  | Bypass TLS verification when cloning and pulling from container registries. |
 | `--ignore-paths` | `ENVBUILDER_IGNORE_PATHS` |  | The comma separated list of paths to ignore when building the workspace. |
+| `--build-secrets` | `ENVBUILDER_BUILD_SECRETS` |  | The list of secret environment variables to use when building the image. |
 | `--skip-rebuild` | `ENVBUILDER_SKIP_REBUILD` |  | Skip building if the MagicFile exists. This is used to skip building when a container is restarting. e.g. docker stop -> docker start This value can always be set to true - even if the container is being started for the first time. |
 | `--git-url` | `ENVBUILDER_GIT_URL` |  | The URL of a Git repository containing a Devcontainer or Docker image to clone. This is optional. |
 | `--git-clone-depth` | `ENVBUILDER_GIT_CLONE_DEPTH` |  | The depth to use when cloning the Git repository. |

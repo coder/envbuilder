@@ -530,10 +530,6 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				destinations = append(destinations, opts.CacheRepo)
 			}
 
-			buildSecrets := options.GetBuildSecrets(os.Environ())
-			// Ensure that build secrets do not make it into the runtime environment or the setup script:
-			options.ClearBuildSecretsFromProcessEnvironment()
-
 			kOpts := &config.KanikoOptions{
 				// Boilerplate!
 				CustomPlatform:     platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
@@ -558,7 +554,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				},
 				ForceUnpack:       true,
 				BuildArgs:         buildParams.BuildArgs,
-				BuildSecrets:      buildSecrets,
+				BuildSecrets:      opts.BuildSecrets,
 				CacheRepo:         opts.CacheRepo,
 				Cache:             opts.CacheRepo != "" || opts.BaseImageCacheDir != "",
 				DockerfilePath:    buildParams.DockerfilePath,
@@ -1258,6 +1254,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	if opts.CacheRepo != "" {
 		destinations = append(destinations, opts.CacheRepo)
 	}
+
 	kOpts := &config.KanikoOptions{
 		// Boilerplate!
 		CustomPlatform:     platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
@@ -1282,6 +1279,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		},
 		ForceUnpack:       true,
 		BuildArgs:         buildParams.BuildArgs,
+		BuildSecrets:      opts.BuildSecrets,
 		CacheRepo:         opts.CacheRepo,
 		Cache:             opts.CacheRepo != "" || opts.BaseImageCacheDir != "",
 		DockerfilePath:    buildParams.DockerfilePath,
