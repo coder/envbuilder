@@ -32,9 +32,10 @@ cat << EOF > devcontainer.json
     }
 }
 EOF
+echo 'runtime-secret-a' > runtime-secret.txt
 ```
 
-The Dockerfile requires two secrets: `TEST_BUILD_SECRET_A` and `TEST_BUILD_SECRET_B`. Their values are arbitrarily set to `secret-foo` and `secret-bar` by the command below. Building the container image writes the checksums for these secrets to disk. This illustrates that the secrets can be used in the build to enact side effects without exposing the secrets themselves.
+The Dockerfile requires two build secrets: `TEST_BUILD_SECRET_A` and `TEST_BUILD_SECRET_B`. Their values are arbitrarily set to `secret-foo` and `secret-bar` by the command below. Building the container image writes the checksums for these secrets to disk. This illustrates that the secrets can be used in the build to enact side effects without exposing the secrets themselves.
 
 Execute the build using this command:
 ```bash
@@ -44,11 +45,12 @@ docker run -it --rm \
     -e ENVBUILDER_CACHE_REPO=$(docker inspect envbuilder-registry | jq -r '.[].NetworkSettings.IPAddress'):5000/test-container \
     -e ENVBUILDER_PUSH_IMAGE=1 \
     -v $PWD:/workspaces/empty \
+    -v $PWD/runtime-secret.txt:/runtime-secret.txt \
     ghcr.io/coder/envbuilder:latest
 ```
 
 This will result in a shell session inside the built container.
-You can now verify two things:
+You can now verify three things:
 
 Firstly, the secrets provided to build are not available once the container is running. They are no longer on disk, nor are they in the process environment, or in `/proc/self/environ`: 
 ```bash
@@ -82,7 +84,7 @@ DEVCONTAINER=true
 /workspaces/empty # 
 ```
 
-Finally, the secrets were still useful during the build. The following commands show that the secrets had side effects inside the build, without remaining in the image:
+Secondly, the secrets were still useful during the build. The following commands show that the secrets had side effects inside the build, without remaining in the image:
 ```bash
 echo -n "secret-foo" | sha256sum
 cat /foo_secret_hash.txt
@@ -103,6 +105,8 @@ fb1c9d1220e429b30c60d028b882f735b5af72d7b5496d9202737fe9f1d38289  -
 /workspaces/empty # 
 ```
 
+Thirdly, the runtime secret that was mounted as a volume is still mounted into the container and accessible. This is why volumes are inappropriate analogues to native docker build secrets. However, notice further down that this runtime secret volume's contents are not present in the built image. It is therefore safe to mount a volume into envbuilder for use during runtime without fear that it will be present in the image that envbuilder builds.
+
 Finally, exit the container:
 ```bash
 exit
@@ -120,13 +124,15 @@ cd test-container
 # Scan image layers for secrets:
 find . -type f | xargs tar -xOf 2>/dev/null  | strings | grep -rn "secret-foo"
 find . -type f | xargs tar -xOf 2>/dev/null  | strings | grep -rn "secret-bar"
+find . -type f | xargs tar -xOf 2>/dev/null  | strings | grep -rn "runtime-secret"
 # Scan image manifests for secrets:
 find . -type f | xargs -n1 grep -rnI 'secret-foo'
 find . -type f | xargs -n1 grep -rnI 'secret-bar'
+find . -type f | xargs -n1 grep -rnI 'runtime-secret'
 cd ../
 ```
 
-The output of both find/grep commands should be empty.
+The output of all find/grep commands should be empty.
 To verify that it scans correctly, replace "secret-foo" with "envbuilder" and rerun the commands. It should find strings related to Envbuilder that are not secrets.
 
 ### Cleanup
