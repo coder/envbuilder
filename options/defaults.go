@@ -59,11 +59,11 @@ func (o *Options) SetDefaults() {
 	if o.Filesystem == nil {
 		o.Filesystem = chmodfs.New(osfs.New("/"))
 	}
-	if o.WorkspacesFolder == "" {
-		o.WorkspacesFolder = "/workspaces"
+	if o.WorkspaceBaseDir == "" {
+		o.WorkspaceBaseDir = "/workspaces"
 	}
 	if o.WorkspaceFolder == "" {
-		o.WorkspaceFolder = DefaultWorkspaceFolder(o.WorkspacesFolder, o.GitURL)
+		o.WorkspaceFolder = DefaultWorkspaceFolder(o.WorkspaceBaseDir, o.GitURL)
 	}
 	if o.BinaryPath == "" {
 		o.BinaryPath = "/.envbuilder/bin/envbuilder"

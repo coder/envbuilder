@@ -16,111 +16,111 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 	t.Parallel()
 
 	successTests := []struct {
-		name             string
-		workspacesFolder string
-		gitURL           string
-		expected         string
+		name     string
+		baseDir  string
+		gitURL   string
+		expected string
 	}{
 		{
-			name:             "HTTP",
-			workspacesFolder: "/workspaces",
-			gitURL:           "https://github.com/coder/envbuilder.git",
-			expected:         "/workspaces/envbuilder",
+			name:     "HTTP",
+			baseDir:  "/workspaces",
+			gitURL:   "https://github.com/coder/envbuilder.git",
+			expected: "/workspaces/envbuilder",
 		},
 		{
-			name:             "SSH",
-			workspacesFolder: "/workspaces",
-			gitURL:           "git@github.com:coder/envbuilder.git",
-			expected:         "/workspaces/envbuilder",
+			name:     "SSH",
+			baseDir:  "/workspaces",
+			gitURL:   "git@github.com:coder/envbuilder.git",
+			expected: "/workspaces/envbuilder",
 		},
 		{
-			name:             "username and password",
-			workspacesFolder: "/workspaces",
-			gitURL:           "https://username:password@github.com/coder/envbuilder.git",
-			expected:         "/workspaces/envbuilder",
+			name:     "username and password",
+			baseDir:  "/workspaces",
+			gitURL:   "https://username:password@github.com/coder/envbuilder.git",
+			expected: "/workspaces/envbuilder",
 		},
 		{
-			name:             "trailing",
-			workspacesFolder: "/workspaces",
-			gitURL:           "https://github.com/coder/envbuilder.git/",
-			expected:         "/workspaces/envbuilder",
+			name:     "trailing",
+			baseDir:  "/workspaces",
+			gitURL:   "https://github.com/coder/envbuilder.git/",
+			expected: "/workspaces/envbuilder",
 		},
 		{
-			name:             "trailing-x2",
-			workspacesFolder: "/workspaces",
-			gitURL:           "https://github.com/coder/envbuilder.git//",
-			expected:         "/workspaces/envbuilder",
+			name:     "trailing-x2",
+			baseDir:  "/workspaces",
+			gitURL:   "https://github.com/coder/envbuilder.git//",
+			expected: "/workspaces/envbuilder",
 		},
 		{
-			name:             "no .git",
-			workspacesFolder: "/workspaces",
-			gitURL:           "https://github.com/coder/envbuilder",
-			expected:         "/workspaces/envbuilder",
+			name:     "no .git",
+			baseDir:  "/workspaces",
+			gitURL:   "https://github.com/coder/envbuilder",
+			expected: "/workspaces/envbuilder",
 		},
 		{
-			name:             "trailing no .git",
-			workspacesFolder: "/workspaces",
-			gitURL:           "https://github.com/coder/envbuilder/",
-			expected:         "/workspaces/envbuilder",
+			name:     "trailing no .git",
+			baseDir:  "/workspaces",
+			gitURL:   "https://github.com/coder/envbuilder/",
+			expected: "/workspaces/envbuilder",
 		},
 		{
-			name:             "fragment",
-			workspacesFolder: "/workspaces",
-			gitURL:           "https://github.com/coder/envbuilder.git#feature-branch",
-			expected:         "/workspaces/envbuilder",
+			name:     "fragment",
+			baseDir:  "/workspaces",
+			gitURL:   "https://github.com/coder/envbuilder.git#feature-branch",
+			expected: "/workspaces/envbuilder",
 		},
 		{
-			name:             "fragment-trailing",
-			workspacesFolder: "/workspaces",
-			gitURL:           "https://github.com/coder/envbuilder.git/#refs/heads/feature-branch",
-			expected:         "/workspaces/envbuilder",
+			name:     "fragment-trailing",
+			baseDir:  "/workspaces",
+			gitURL:   "https://github.com/coder/envbuilder.git/#refs/heads/feature-branch",
+			expected: "/workspaces/envbuilder",
 		},
 		{
-			name:             "fragment-trailing no .git",
-			workspacesFolder: "/workspaces",
-			gitURL:           "https://github.com/coder/envbuilder/#refs/heads/feature-branch",
-			expected:         "/workspaces/envbuilder",
+			name:     "fragment-trailing no .git",
+			baseDir:  "/workspaces",
+			gitURL:   "https://github.com/coder/envbuilder/#refs/heads/feature-branch",
+			expected: "/workspaces/envbuilder",
 		},
 		{
-			name:             "space",
-			workspacesFolder: "/workspaces",
-			gitURL:           "https://github.com/coder/env%20builder.git",
-			expected:         "/workspaces/env builder",
+			name:     "space",
+			baseDir:  "/workspaces",
+			gitURL:   "https://github.com/coder/env%20builder.git",
+			expected: "/workspaces/env builder",
 		},
 		{
-			name:             "Unix path",
-			workspacesFolder: "/workspaces",
-			gitURL:           "/repo",
-			expected:         "/workspaces/repo",
+			name:     "Unix path",
+			baseDir:  "/workspaces",
+			gitURL:   "/repo",
+			expected: "/workspaces/repo",
 		},
 		{
-			name:             "Unix subpath",
-			workspacesFolder: "/workspaces",
-			gitURL:           "/path/to/repo",
-			expected:         "/workspaces/repo",
+			name:     "Unix subpath",
+			baseDir:  "/workspaces",
+			gitURL:   "/path/to/repo",
+			expected: "/workspaces/repo",
 		},
 		{
-			name:             "empty",
-			workspacesFolder: "/workspaces",
-			gitURL:           "",
-			expected:         "/workspaces/empty",
+			name:     "empty",
+			baseDir:  "/workspaces",
+			gitURL:   "",
+			expected: "/workspaces/empty",
 		},
 		{
-			name:             "non default workspaces folder",
-			workspacesFolder: "/foo",
-			gitURL:           "https://github.com/coder/envbuilder.git",
-			expected:         "/foo/envbuilder",
+			name:     "non default workspaces folder",
+			baseDir:  "/foo",
+			gitURL:   "https://github.com/coder/envbuilder.git",
+			expected: "/foo/envbuilder",
 		},
 		{
-			name:             "non default workspaces folder empty git URL",
-			workspacesFolder: "/foo",
-			gitURL:           "",
-			expected:         "/foo/empty",
+			name:     "non default workspaces folder empty git URL",
+			baseDir:  "/foo",
+			gitURL:   "",
+			expected: "/foo/empty",
 		},
 	}
 	for _, tt := range successTests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir := options.DefaultWorkspaceFolder(tt.workspacesFolder, tt.gitURL)
+			dir := options.DefaultWorkspaceFolder(tt.baseDir, tt.gitURL)
 			require.Equal(t, tt.expected, dir)
 		})
 	}
@@ -167,7 +167,7 @@ func TestOptions_SetDefaults(t *testing.T) {
 		IgnorePaths:      []string{"/var/run", "/product_uuid", "/product_name"},
 		Filesystem:       chmodfs.New(osfs.New("/")),
 		GitURL:           "",
-		WorkspacesFolder: "/workspaces",
+		WorkspaceBaseDir: "/workspaces",
 		WorkspaceFolder:  "/workspaces/empty",
 		WorkingDirBase:   "/.envbuilder",
 		BinaryPath:       "/.envbuilder/bin/envbuilder",
