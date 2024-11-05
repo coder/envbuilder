@@ -834,7 +834,7 @@ func TestBuildFromDevcontainerInCustomPath(t *testing.T) {
 	require.Equal(t, "hello", strings.TrimSpace(output))
 }
 
-func TestBuildFromCustomWorkspacesFolder(t *testing.T) {
+func TestBuildFromCustomWorkspaceBaseDir(t *testing.T) {
 	t.Parallel()
 
 	// Ensures that a Git repository with a devcontainer.json is cloned and built.
@@ -846,7 +846,7 @@ func TestBuildFromCustomWorkspacesFolder(t *testing.T) {
 	ctr, err := runEnvbuilder(t, runOpts{
 		env: []string{
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-			envbuilderEnv("WORKSPACES_FOLDER", "/foo"),
+			envbuilderEnv("WORKSPACE_BASE_DIR", "/foo"),
 			envbuilderEnv("GIT_URL", srv.URL),
 		},
 	})
