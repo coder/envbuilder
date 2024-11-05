@@ -178,4 +178,10 @@ OPTIONS:
 
       --workspace-folder string, $ENVBUILDER_WORKSPACE_FOLDER
           The path to the workspace folder that will be built. This is optional.
+          Defaults to `[workspaces folder]/[name]` where name is the name of the
+          repository or `empty`.
+
+      --workspaces-folder string, $ENVBUILDER_WORKSPACES_FOLDER (default: /workspaces)
+          The path under which workspaces will be placed when workspace folder
+          option is not given.
 

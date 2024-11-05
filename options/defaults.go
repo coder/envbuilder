@@ -12,29 +12,29 @@ import (
 	"github.com/coder/envbuilder/internal/workingdir"
 )
 
-// EmptyWorkspaceDir is the path to a workspace that has
-// nothing going on... it's empty!
-var EmptyWorkspaceDir = "/workspaces/empty"
-
 // DefaultWorkspaceFolder returns the default workspace folder
 // for a given repository URL.
-func DefaultWorkspaceFolder(repoURL string) string {
+func DefaultWorkspaceFolder(workspacesFolder, repoURL string) string {
+	// emptyWorkspaceDir is the path to a workspace that has
+	// nothing going on... it's empty!
+	emptyWorkspaceDir := workspacesFolder + "/empty"
+
 	if repoURL == "" {
-		return EmptyWorkspaceDir
+		return emptyWorkspaceDir
 	}
 	parsed, err := giturls.Parse(repoURL)
 	if err != nil {
-		return EmptyWorkspaceDir
+		return emptyWorkspaceDir
 	}
 	repo := path.Base(parsed.Path)
 	// Giturls parsing never actually fails since ParseLocal never
 	// errors and places the entire URL in the Path field. This check
 	// ensures it's at least a Unix path containing forwardslash.
 	if repo == repoURL || repo == "/" || repo == "." || repo == "" {
-		return EmptyWorkspaceDir
+		return emptyWorkspaceDir
 	}
 	repo = strings.TrimSuffix(repo, ".git")
-	return fmt.Sprintf("/workspaces/%s", repo)
+	return fmt.Sprintf("%s/%s", workspacesFolder, repo)
 }
 
 func (o *Options) SetDefaults() {
@@ -59,8 +59,11 @@ func (o *Options) SetDefaults() {
 	if o.Filesystem == nil {
 		o.Filesystem = chmodfs.New(osfs.New("/"))
 	}
+	if o.WorkspacesFolder == "" {
+		o.WorkspacesFolder = "/workspaces"
+	}
 	if o.WorkspaceFolder == "" {
-		o.WorkspaceFolder = DefaultWorkspaceFolder(o.GitURL)
+		o.WorkspaceFolder = DefaultWorkspaceFolder(o.WorkspacesFolder, o.GitURL)
 	}
 	if o.BinaryPath == "" {
 		o.BinaryPath = "/.envbuilder/bin/envbuilder"
