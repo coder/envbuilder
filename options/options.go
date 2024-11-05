@@ -79,8 +79,8 @@ type Options struct {
 	// container stops if the build process encounters an error.
 	ExitOnBuildFailure bool
 	// ExitOnPushFailure terminates the container upon a push failure. This is
-	// useful if failure to push the built image should not block usage
-	// of the workspace.
+	// useful if failure to push the built image should abort execution
+	// and result in an error.
 	ExitOnPushFailure bool
 	// ForceSafe ignores any filesystem safety checks. This could cause serious
 	// harm to your system! This is used in cases where bypass is needed to
@@ -313,8 +313,8 @@ func (o *Options) CLI() serpent.OptionSet {
 			Env:   WithEnvPrefix("EXIT_ON_PUSH_FAILURE"),
 			Value: serpent.BoolOf(&o.ExitOnPushFailure),
 			Description: "ExitOnPushFailure terminates the container upon a push failure. " +
-				"This is useful if failure to push the built image should not block " +
-				"usage of the workspace.",
+				"This is useful if failure to push the built image should abort execution " +
+				"and result in an error.",
 		},
 		{
 			Flag:  "force-safe",
