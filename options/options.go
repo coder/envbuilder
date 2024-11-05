@@ -78,6 +78,10 @@ type Options struct {
 	// devcontainer.json or image is provided. However, it ensures that the
 	// container stops if the build process encounters an error.
 	ExitOnBuildFailure bool
+	// ExitOnPushFailure terminates the container upon a push failure. This is
+	// useful if failure to push the built image should abort execution
+	// and result in an error.
+	ExitOnPushFailure bool
 	// ForceSafe ignores any filesystem safety checks. This could cause serious
 	// harm to your system! This is used in cases where bypass is needed to
 	// unblock customers.
@@ -303,6 +307,14 @@ func (o *Options) CLI() serpent.OptionSet {
 				"This is handy when preferring the FALLBACK_IMAGE in cases where " +
 				"no devcontainer.json or image is provided. However, it ensures " +
 				"that the container stops if the build process encounters an error.",
+		},
+		{
+			Flag:  "exit-on-push-failure",
+			Env:   WithEnvPrefix("EXIT_ON_PUSH_FAILURE"),
+			Value: serpent.BoolOf(&o.ExitOnPushFailure),
+			Description: "ExitOnPushFailure terminates the container upon a push failure. " +
+				"This is useful if failure to push the built image should abort execution " +
+				"and result in an error.",
 		},
 		{
 			Flag:  "force-safe",
