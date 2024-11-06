@@ -120,6 +120,8 @@ type Options struct {
 	GitSSHPrivateKeyBase64 string
 	// GitHTTPProxyURL is the URL for the HTTP proxy. This is optional.
 	GitHTTPProxyURL string
+	// GitRef is the git ref to checkout after clone. This is optional.
+	GitRef string
 	// WorkspaceFolder is the path to the workspace folder that will be built.
 	// This is optional.
 	WorkspaceFolder string
@@ -382,6 +384,12 @@ func (o *Options) CLI() serpent.OptionSet {
 			Env:         WithEnvPrefix("GIT_PASSWORD"),
 			Value:       serpent.StringOf(&o.GitPassword),
 			Description: "The password to use for Git authentication. This is optional.",
+		},
+		{
+			Flag:        "git-ref",
+			Env:         WithEnvPrefix("GIT_REF"),
+			Value:       serpent.StringOf(&o.GitRef),
+			Description: "The git ref to checkout for Git repositories. This is optional.",
 		},
 		{
 			Flag:  "git-ssh-private-key-path",
