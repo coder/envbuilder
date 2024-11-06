@@ -34,6 +34,7 @@ type CloneRepoOptions struct {
 
 	RepoURL      string
 	RepoAuth     transport.AuthMethod
+	GitRef       string
 	Progress     sideband.Progress
 	Insecure     bool
 	SingleBranch bool
@@ -84,6 +85,8 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 	reference := parsed.Fragment
 	if reference == "" && opts.SingleBranch {
 		reference = "refs/heads/main"
+	} else if reference == "" && opts.GitRef != "" {
+		reference = opts.GitRef
 	}
 	parsed.RawFragment = ""
 	parsed.Fragment = ""
@@ -343,6 +346,7 @@ func CloneOptionsFromOptions(logf func(string, ...any), options options.Options)
 
 	cloneOpts := CloneRepoOptions{
 		RepoURL:      options.GitURL,
+		GitRef:       options.GitRef,
 		Path:         options.WorkspaceFolder,
 		Storage:      options.Filesystem,
 		Insecure:     options.Insecure,
