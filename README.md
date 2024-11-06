@@ -84,7 +84,7 @@ You can see all the supported environment variables in [this document](./docs/en
 
 ### Development Containers
 
-[This document](./docs/supported-features.md) keeps track of what parts of the Dev Container specification Envbuilder currently supports.
+[This document](./docs/devcontainer-spec-support.md) keeps track of what parts of the Dev Container specification Envbuilder currently supports.
 
 Feel free to [create a new issue](https://github.com/coder/envbuilder/issues/new) if you'd like Envbuilder to support a particular feature.
 
