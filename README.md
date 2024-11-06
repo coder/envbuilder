@@ -82,19 +82,11 @@ docker run -it --rm
 
 You can see all the supported environment variables in [this document](./docs/env-variables.md).
 
-## Unsupported Features
-
 ### Development Containers
 
-The table below keeps track of features we plan to implement. Feel free to [create a new issue](https://github.com/coder/envbuilder/issues/new) if you'd like Envbuilder to support a particular feature.
+[This document](./docs/supported-features.md) keeps track of what parts of the Dev Container specification Envbuilder currently supports.
 
-| Name                     | Description                                                                                                   | Known Issues                                           |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| Volume mounts            | Volumes are used to persist data and share directories between the host and container.                        | [#220](https://github.com/coder/envbuilder/issues/220) |
-| Port forwarding          | Port forwarding allows exposing container ports to the host, making services accessible.                      | [#48](https://github.com/coder/envbuilder/issues/48)   |
-| Script init & Entrypoint | `init` adds a tiny init process to the container, and `entrypoint` sets a script to run at container startup. | [#221](https://github.com/coder/envbuilder/issues/221) |
-| Customizations           | Product-specific properties, e.g., _VS Code_ settings and extensions.                                         | [#43](https://github.com/coder/envbuilder/issues/43)   |
-| Composefile              | Define multiple containers and services for more complex development environments.                            | [#236](https://github.com/coder/envbuilder/issues/236) |
+Feel free to [create a new issue](https://github.com/coder/envbuilder/issues/new) if you'd like Envbuilder to support a particular feature.
 
 ### Devfile
 
