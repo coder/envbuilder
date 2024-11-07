@@ -1971,9 +1971,10 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = remote.Image(ref, remoteAuthOpt)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
 
-		// When: we run envbuilder with PUSH_IMAGE set
+		// When: we run envbuilder with PUSH_IMAGE and EXIT_ON_PUSH_FAILURE set
 		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("PUSH_IMAGE", "1"),
+			envbuilderEnv("EXIT_ON_PUSH_FAILURE", "1"),
 		)})
 		// Then: it should fail with an Unauthorized error
 		require.ErrorContains(t, err, "401 Unauthorized", "expected unauthorized error using no auth when cache repo requires it")
@@ -2166,7 +2167,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.ErrorContains(t, err, "--cache-repo must be set when using --push-image")
 	})
 
-	t.Run("PushErr", func(t *testing.T) {
+	t.Run("PushErr/ExitOnPushFail", func(t *testing.T) {
 		t.Parallel()
 
 		srv := gittest.CreateGitServer(t, gittest.Options{
@@ -2196,10 +2197,48 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 			envbuilderEnv("GIT_URL", srv.URL),
 			envbuilderEnv("CACHE_REPO", notRegURL),
 			envbuilderEnv("PUSH_IMAGE", "1"),
+			envbuilderEnv("EXIT_ON_PUSH_FAILURE", "1"),
 		}})
 
 		// Then: envbuilder should fail with a descriptive error
 		require.ErrorContains(t, err, "failed to push to destination")
+	})
+
+	t.Run("PushErr/NoExitOnPushFail", func(t *testing.T) {
+		t.Parallel()
+
+		srv := gittest.CreateGitServer(t, gittest.Options{
+			Files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf(`FROM %s
+USER root
+ARG WORKDIR=/
+WORKDIR $WORKDIR
+ENV FOO=bar
+RUN echo $FOO > /root/foo.txt
+RUN date --utc > /root/date.txt`, testImageAlpine),
+				".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			},
+		})
+
+		// Given: registry is not set up (in this case, not a registry)
+		notRegSrv := httptest.NewServer(http.NotFoundHandler())
+		notRegURL := strings.TrimPrefix(notRegSrv.URL, "http://") + "/test"
+
+		// When: we run envbuilder with PUSH_IMAGE set
+		_, err := runEnvbuilder(t, runOpts{env: []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", notRegURL),
+			envbuilderEnv("PUSH_IMAGE", "1"),
+			envbuilderEnv("EXIT_ON_PUSH_FAILURE", "0"),
+		}})
+
+		// Then: envbuilder should not fail
+		require.NoError(t, err)
 	})
 
 	t.Run("CacheAndPushDevcontainerFeatures", func(t *testing.T) {
@@ -2443,8 +2482,13 @@ func pushImage(t *testing.T, ref name.Reference, remoteOpt remote.Option, env ..
 	if remoteOpt != nil {
 		remoteOpts = append(remoteOpts, remoteOpt)
 	}
-
-	_, err := runEnvbuilder(t, runOpts{env: append(env, envbuilderEnv("PUSH_IMAGE", "1"))})
+	opts := runOpts{
+		env: append(env,
+			envbuilderEnv("PUSH_IMAGE", "1"),
+			envbuilderEnv("EXIT_ON_PUSH_FAILURE", "1"),
+		),
+	}
+	_, err := runEnvbuilder(t, opts)
 	require.NoError(t, err, "envbuilder push image failed")
 
 	img, err := remote.Image(ref, remoteOpts...)
