@@ -117,8 +117,12 @@ type Options struct {
 	GitSSHPrivateKeyBase64 string
 	// GitHTTPProxyURL is the URL for the HTTP proxy. This is optional.
 	GitHTTPProxyURL string
+	// WorkspaceBaseDir is the path under which workspaces will be placed when
+	// workspace folder option is not given.
+	WorkspaceBaseDir string
 	// WorkspaceFolder is the path to the workspace folder that will be built.
-	// This is optional.
+	// This is optional. Defaults to `[workspace base dir]/[name]` where name is
+	// the name of the repository or "empty".
 	WorkspaceFolder string
 	// SSLCertBase64 is the content of an SSL cert file. This is useful for
 	// self-signed certificates.
@@ -395,11 +399,20 @@ func (o *Options) CLI() serpent.OptionSet {
 			Description: "The URL for the HTTP proxy. This is optional.",
 		},
 		{
+			Flag:    "workspace-base-dir",
+			Env:     WithEnvPrefix("WORKSPACE_BASE_DIR"),
+			Value:   serpent.StringOf(&o.WorkspaceBaseDir),
+			Default: "/workspaces",
+			Description: "The path under which workspaces will be placed when " +
+				"workspace folder option is not given.",
+		},
+		{
 			Flag:  "workspace-folder",
 			Env:   WithEnvPrefix("WORKSPACE_FOLDER"),
 			Value: serpent.StringOf(&o.WorkspaceFolder),
-			Description: "The path to the workspace folder that will " +
-				"be built. This is optional.",
+			Description: "The path to the workspace folder that will be built. " +
+				"This is optional. Defaults to `[workspace base dir]/[name]` where " +
+				"name is the name of the repository or `empty`.",
 		},
 		{
 			Flag:  "ssl-cert-base64",
