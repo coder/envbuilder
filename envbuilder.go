@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	stdlog "log"
 	"maps"
 	"net"
 	"net/http"
@@ -43,6 +44,7 @@ import (
 	dockerconfig "github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/fatih/color"
+	"github.com/google/go-containerregistry/pkg/logs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/kballard/go-shellquote"
@@ -583,6 +585,19 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			endStage("🏗️ Built image!")
 			if opts.PushImage {
 				endStage = startStage("🏗️ Pushing image...")
+				kOpts.PushRetry = 3
+				// kOpts.PushIgnoreImmutableTagErrors = true
+				logs.Debug = stdlog.New(os.Stderr, "", 0)
+				logs.Warn = stdlog.New(os.Stderr, "", 0)
+				logs.Progress = stdlog.New(os.Stderr, "", 0)
+				layers, _ := image.Layers()
+				for _, layer := range layers {
+					mediaType, _ := layer.MediaType()
+					diffID, _ := layer.DiffID()
+					digest, _ := layer.Digest()
+					size, _ := layer.Size()
+					opts.Logger(log.LevelDebug, "Layer: %s %s %s %d", mediaType, diffID, digest, size)
+				}
 				if err := executor.DoPush(image, kOpts); err == nil {
 					endStage("🏗️ Pushed image!")
 				} else if !opts.ExitOnPushFailure {
