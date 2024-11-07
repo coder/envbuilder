@@ -834,6 +834,28 @@ func TestBuildFromDevcontainerInCustomPath(t *testing.T) {
 	require.Equal(t, "hello", strings.TrimSpace(output))
 }
 
+func TestBuildFromCustomWorkspaceBaseDir(t *testing.T) {
+	t.Parallel()
+
+	// Ensures that a Git repository with a devcontainer.json is cloned and built.
+	srv := gittest.CreateGitServer(t, gittest.Options{
+		Files: map[string]string{
+			"Dockerfile": "FROM " + testImageUbuntu,
+		},
+	})
+	ctr, err := runEnvbuilder(t, runOpts{
+		env: []string{
+			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			envbuilderEnv("WORKSPACE_BASE_DIR", "/foo"),
+			envbuilderEnv("GIT_URL", srv.URL),
+		},
+	})
+	require.NoError(t, err)
+
+	output := execContainer(t, ctr, "readlink /proc/1/cwd")
+	require.Contains(t, output, "/foo/")
+}
+
 func TestBuildFromDevcontainerInSubfolder(t *testing.T) {
 	t.Parallel()
 
