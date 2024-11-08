@@ -105,11 +105,10 @@ func Run(ctx context.Context, opts options.Options, preExec ...func()) error {
 		return fmt.Errorf("set uid: %w", err)
 	}
 
-	initCmd := append([]string{opts.InitCommand}, args.InitArgs...)
-	opts.Logger(log.LevelInfo, "=== Running init command as user %q", args.UserInfo.user.Username)
-	for _, line := range wordwrap.WrapString(initCmd, 76) {
-		opts.Logger(log.LevelInfo, "    "+line)
-	}
+	initCmd := strings.Join(append([]string{opts.InitCommand}, args.InitArgs...), " ")
+	opts.Logger(log.LevelInfo, "=== Running init command as user %q:", args.UserInfo.user.Username)
+	opts.Logger(log.LevelInfo, wordwrap.WrapString(initCmd, 80))
+	opts.Logger(log.LevelInfo, "===")
 	for _, fn := range preExec {
 		fn()
 	}
