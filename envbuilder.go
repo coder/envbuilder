@@ -47,6 +47,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/kballard/go-shellquote"
 	"github.com/mattn/go-isatty"
+	"github.com/mitchellh/go-wordwrap"
 	"github.com/sirupsen/logrus"
 	"github.com/tailscale/hujson"
 	"golang.org/x/xerrors"
@@ -104,7 +105,11 @@ func Run(ctx context.Context, opts options.Options, preExec ...func()) error {
 		return fmt.Errorf("set uid: %w", err)
 	}
 
-	opts.Logger(log.LevelInfo, "=== Running init command as user %q: %q", args.UserInfo.user.Username, append([]string{opts.InitCommand}, args.InitArgs...))
+	initCmd := append([]string{opts.InitCommand}, args.InitArgs...)
+	opts.Logger(log.LevelInfo, "=== Running init command as user %q", args.UserInfo.user.Username)
+	for _, line := range wordwrap.WrapString(initCmd, 76) {
+		opts.Logger(log.LevelInfo, "    "+line)
+	}
 	for _, fn := range preExec {
 		fn()
 	}
