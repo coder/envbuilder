@@ -5,7 +5,7 @@ Envbuilder can be used from behind transparent TLS proxies that would normally r
 A summary of how to configure Envbuilder to run behind a HTTPS proxy is provided in the next section. Thereafter an illustrative example is provided that can be followed to prove the concept from first principles before applying it in production.
 
 ## Summary
-To use Envbuilder behind a proxy that requires a custom certificate, the following configuration needs to be applied. Note that if you are using Envbuilder in conjunction with Coder, these variables should be set on the envbuilder container itself, not on the Coder agent.
+To use Envbuilder behind a proxy that requires a custom certificate, the following configuration needs to be applied. Note that if you are using Envbuilder in conjunction with Coder, these variables should be set on the Envbuilder container itself, not on the Coder agent.
 
 To configure Envbuilder to route HTTP traffic for git and the container registry to the proxy do at least one of the following:
 * Set the `https_proxy=https://host:port` environment variable for the envbuilder container. This will also proxy traffic for other programs in the container that respect `https_proxy`. If you do set it, look into the related `http_proxy` and `no_proxy` environment variables.
