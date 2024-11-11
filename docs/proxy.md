@@ -41,7 +41,7 @@ After some time building, a shell will be presented inside the devcontainer envi
 exit
 ```
 
-Let's now temporarily break Envbuilder by introducing a transparent TLS intercepting proxy. To do this, we'll use [mitmproxy](https://mitmproxy.org/). Start mitmproxy in a container, by running the following:
+Let's now temporarily break Envbuilder by introducing a transparent TLS proxy to intercept traffic. To do this, we'll use [mitmproxy](https://mitmproxy.org/). Start mitmproxy in a container by running the following:
 ```bash
 docker run --rm -d --user $(id -u):$(id -g) --name mitmproxy -v ./certs:/home/mitmproxy/.mitmproxy -p 8080:8080 -p 127.0.0.1:8081:8081 mitmproxy/mitmproxy mitmweb --web-host 0.0.0.0 --set http2=false
 ```
