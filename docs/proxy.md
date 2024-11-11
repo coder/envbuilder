@@ -59,7 +59,7 @@ yields:
 
 You may see a different IP address. If you do, use that wherever we use `172.17.0.2` below. 
 
-A new directory called certs should also be present in your current working directory. It will contain a CA certificate called  `mitmproxy-ca-cert.pem`. This will be what we provide to Envbuilder to help it trust our proxy.
+A new directory called certs should also be present in your current working directory. It will contain a CA certificate called  `mitmproxy-ca-cert.pem`. This will be what we provide to Envbuilder to trust our proxy.
 
 Optionally, inspect the certificates served by mitmproxy:
 ```bash
