@@ -9,7 +9,7 @@ To use Envbuilder behind a proxy that requires a custom certificate, the followi
 
 To configure Envbuilder to route HTTP traffic for git and the container registry to the proxy, do at least one of the following:
 * Set the `https_proxy=https://host:port` environment variable for the envbuilder container. This will also proxy traffic for other programs in the container that respect `https_proxy`. If you do set it, look into the related `http_proxy` and `no_proxy` environment variables.
-* Set the `ENVBUILDER_GIT_HTTP_PROXY_URL=https://host:port` environment variable. This will specifically route traffic for Envbuilder's git and container registry without affecting other programs inside the container.
+* Set the `ENVBUILDER_GIT_HTTP_PROXY_URL=https://host:port` environment variable. This will specifically route traffic for Envbuilder's git operations and communication with the container registry without affecting other programs inside the container.
 
 Once traffic is routed to the proxy, you will need to install the proxy's CA certificate into Envbuilder. To do this, you can do one of the following:
 * Set `ENVBUILDER_SSL_CERT_BASE64=...` for Envbuilder to the base64 encoded value of your proxy's CA certificate. This will only apply to Envbuilder. Other TLS connections within your container will not be aware of this certificate.
