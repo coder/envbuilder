@@ -2,7 +2,7 @@
 
 Envbuilder can be used from behind transparent TLS proxies that would normally risk interrupting TLS verification.
 
-A summary of how to configure Envbuilder to run behind an HTTPS proxy is provided in the next session. Thereafter an illustrative example is provided that can be followed to prove the concept from first principles before applying it in production.
+A summary of how to configure Envbuilder to run behind a HTTPS proxy is provided in the next section. Thereafter an illustrative example is provided that can be followed to prove the concept from first principles before applying it in production.
 
 ## Summary
 To use Envbuilder behind a proxy that requires a custom certificate, the following configuration needs to be applied. Note that if you are using Envbuilder in conjunction with Coder, these variables should be set on the envbuilder container itself, not on the Coder agent.
