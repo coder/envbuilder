@@ -19,7 +19,7 @@ Once traffic is routed to the proxy, you will need to install the proxy's CA cer
 ## Demonstration
 Envbuilder clones a repository that contains your `devcontainer.json` and optional `Dockerfile` so that it can build your container. If the clone is done using HTTPS, then TLS verification must succeed or be disabled. If a transparent HTTPS proxy is present, TLS verification will fail unless Envbuilder trusts the proxy’s certificate. Therefore, we need to configure Envbuilder to trust your proxy. 
 
-For this example we'll use docker, but the configuration is applied using environment variables that can be set analogously in Kubernetes or elsewhere.
+For this example we'll use docker to show how to apply the configuration in practice. The configuration is applied using environment variables that can be set analogously in Kubernetes or elsewhere.
 
 Before we introduce an HTTPS proxy, let's prove that envbuilder runs normally. Run the following docker command to obtain a shell within an Envbuilder built environment:
 ```bash
