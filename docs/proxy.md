@@ -17,7 +17,7 @@ Once traffic is routed to the proxy, you will need to install the proxy's CA cer
 * Mount a directory containing all relevant CA certificates into the Envbuilder container and then set `ENVBUILDER_SSL_CERT_DIR=/path/to/certs/`.
 
 ## Demonstration
-Envbuilder clones a repository that contains your devcontainer.json and optional Dockerfile so that it can build your container. If the clone is done using HTTPS, then TLS verification will have to succeed, or be disabled. If a transparent HTTPS proxy is present, TLS verification will fail unless Envbuilder trusts the certificate used by the transparent proxy. Therefore, we need to tell Envbuilder how to trust your transparent proxy. 
+Envbuilder clones a repository that contains your `devcontainer.json` and optional `Dockerfile` so that it can build your container. If the clone is done using HTTPS, then TLS verification must succeed or be disabled. If a transparent HTTPS proxy is present, TLS verification will fail unless Envbuilder trusts the proxy’s certificate. Therefore, we need to configure Envbuilder to trust your proxy. 
 
 The summary in the previous section shows how to configure Envbuilder using Terraform for Docker and Kubernetes. For this example we'll use docker directly to avoid complexity that might result in confusion. Docker is also more likely than Terraform to already be installed in your testing environment.
 
