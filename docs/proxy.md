@@ -114,7 +114,7 @@ docker run -it --rm \
 As before, this command yields a shell inside an Envbuilder built environment. Feel free to test it and then exit the container. Assuming this worked, Envbuilder will have cloned a repository and built the relevant container using a proxy that required accepting a custom CA certificate.
 
 ### Bonus
-To prove that Envbuilder did in fact use the proxy, and also because it is interesting to observe, open `http://localhost:8081/` in your local browser and you see the mitmproxy web interface. In the flow tab, there be a list of all of the HTTP requests that were required to build the container. The first few requests will be those used to clone the Git repository. The rest will be the requests that were used to pull the devcontainer image.
+To prove that Envbuilder did in fact use the proxy, and also because it is interesting to observe, open `http://localhost:8081/` in your local browser and you see the mitmproxy web interface. In the flow tab, there will be a list of all of the HTTP requests that were required to build the container. The first few requests will be those used to clone the Git repository. The rest will be the requests that were used to pull the devcontainer image.
 
 ![Proxied requests](./img/proxy.png)
 
