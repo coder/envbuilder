@@ -5,10 +5,10 @@ Envbuilder can be used from behind transparent TLS proxies that would normally r
 A summary of how to configure Envbuilder to run behind a HTTPS proxy is provided in the next section. Thereafter an illustrative example is provided that can be followed to prove the concept from first principles before applying it in production.
 
 ## Summary
-To use Envbuilder behind a proxy that requires a custom certificate, the following configuration needs to be applied. Note that if you are using Envbuilder in conjunction with Coder, these variables should be set on the Envbuilder container itself, not on the Coder agent.
+To use Envbuilder behind a proxy that requires a custom certificate, the following configuration needs to be applied. Note that if you are using Envbuilder in conjunction with Coder, set these variables on the Envbuilder container itself, not on the Coder agent.
 
 To configure Envbuilder to route HTTP traffic for git and the container registry to the proxy, do at least one of the following:
-* Set the `https_proxy=https://host:port` environment variable for the envbuilder container. This will also proxy traffic for other programs in the container that respect `https_proxy`. If you do set it, look into the related `http_proxy` and `no_proxy` environment variables.
+* Set the `https_proxy=https://host:port` environment variable for the envbuilder container. This will also proxy traffic for other programs in the container that respect `https_proxy`. If you do set it, look into the related `http_proxy` and `no_proxy` environment variables. For compatibility, set these environment variables in [lowercase](https://about.gitlab.com/blog/2021/01/27/we-need-to-talk-no-proxy/#http_proxy-and-https_proxy). 
 * Set the `ENVBUILDER_GIT_HTTP_PROXY_URL=https://host:port` environment variable. This will specifically route traffic for Envbuilder's git operations and communication with the container registry without affecting other programs inside the container.
 
 Once traffic is routed to the proxy, you will need to install the proxy's CA certificate into Envbuilder. To do this, you can do one of the following:
@@ -46,7 +46,7 @@ Let's now temporarily break Envbuilder by introducing a transparent TLS proxy to
 docker run --rm -d --user $(id -u):$(id -g) --name mitmproxy -v ./certs:/home/mitmproxy/.mitmproxy -p 8080:8080 -p 127.0.0.1:8081:8081 mitmproxy/mitmproxy mitmweb --web-host 0.0.0.0 --set http2=false
 ```
 
-Notice that we disable HTTP2 on mitmproxy. This is because Envbuilder and mitmproxy do not seem to be able to negotiate which version of HTTP to use. mitmproxy seems to interpret Envbuilder's HTTP1.1 request as an HTTP2 request and then fails to find the expected HTTP2 preamble (because there is no HTTP2 preamble in an HTTP1.1 request). If your production proxy exhibits this behavior, please file a GitHub issue.
+Notice that we disable HTTP2 on mitmproxy. This is because Envbuilder and mitmproxy do not seem to be able to negotiate which version of HTTP to use. mitmproxy interprets Envbuilder's HTTP1.1 request as an HTTP2 request and then fails to find the expected HTTP2 preamble (because there is no HTTP2 preamble in an HTTP1.1 request). If your production proxy exhibits this behavior, please file a GitHub issue.
 
 Confirm that mitmproxy is running and determine its IP address:
 ```bash
@@ -59,13 +59,13 @@ yields:
 
 You may see a different IP address. If you do, use that wherever we use `172.17.0.2` below. 
 
-A new directory called certs should also be present in your current working directory. It will contain a CA certificate called  `mitmproxy-ca-cert.pem`. This will be what we provide to Envbuilder to trust our proxy.
+A new directory called certs will be present in your current working directory. It will contain a CA certificate called  `mitmproxy-ca-cert.pem`. This will be what we provide to Envbuilder to trust our proxy.
 
-Optionally, inspect the certificates served by mitmproxy:
+To understand why certificate verification fails, inspect the certificates served by mitmproxy:
 ```bash
 openssl s_client -proxy localhost:8080 -servername github.com -connect github.com:443 | head -n 10
 ```
-In the output, notice that we are served a certificate that is ostensibly for github.com. However, its issuer common name is "mitmproxy" and s_client couldn't verify the certificate:
+In the output, notice that we are served a certificate that is ostensibly for github.com. However, its issuer common name is "mitmproxy" and s_client couldn't verify the certificate. This is because s_client can't find a CA certificate that trusts the certificate that was served by mitmproxy instead of the actual github.com certificate.
 ```
 depth=0 CN = github.com
 verify error:num=20:unable to get local issuer certificate
@@ -100,7 +100,7 @@ From the logs, notice that certificate verification fails. It fails because it d
 Failed to clone repository: clone "https://github.com/coder/envbuilder.git": Get "https://github.com/coder/envbuilder.git/info/refs?service=git-upload-pack": proxyconnect tcp: tls: failed to verify certificate: x509: certificate signed by unknown authority
 ```
 
-To fix this, we need to provide a ca certificate that Envbuilder can use to verify the server certificate that mitmproxy serves instead of github's actual certificate. Envbuilder provides a few environment variables to accomplish this. They are documented in the summary section above. For this example, we have the ca certificate saved in a directory. The easiest way to provide the ca certificate to envbuilder is therefore to mount it as a volume in the envbuilder container and tell envbuilder to use it. For this, we can use the `SSL_CERT_FILE` environment variable. The command to run Envbuilder is now:
+To resolve this, we need to provide a CA certificate that Envbuilder can use to verify the server certificate served by mitmproxy, instead of GitHub’s. Envbuilder offers environment variables for this, as documented above. In this example, the CA certificate is saved in a directory. The simplest approach is to mount this directory as a volume in the Envbuilder container and use the `SSL_CERT_FILE` environment variable. The command to run Envbuilder is now:
 ```bash
 docker run -it --rm \
     -v $PWD/certs:/certs \
@@ -111,10 +111,10 @@ docker run -it --rm \
     ghcr.io/coder/envbuilder:latest
 ```
 
-As before, this command should yield a shell inside an Envbuilder built environment. Feel free to test it and then exit the container. Assuming this worked, Envbuilder will have cloned a repository and built the relevant container using a proxy that required accepting a custom CA certificate.
+As before, this command yields a shell inside an Envbuilder built environment. Feel free to test it and then exit the container. Assuming this worked, Envbuilder will have cloned a repository and built the relevant container using a proxy that required accepting a custom CA certificate.
 
 ### Bonus
-To prove that Envbuilder did in fact use the proxy, and also because it is interesting to observe, open `http://localhost:8081/` in your local browser and you should see the mitmproxy web interface. In the flow tab, there should be a list of all of the HTTP requests that were required to build the container. The first three will be the requests that were used by git to clone the repository. The rest will be the requests that were used to clone the devcontainer image.
+To prove that Envbuilder did in fact use the proxy, and also because it is interesting to observe, open `http://localhost:8081/` in your local browser and you see the mitmproxy web interface. In the flow tab, there be a list of all of the HTTP requests that were required to build the container. The first few requests will be those used to clone the Git repository. The rest will be the requests that were used to pull the devcontainer image.
 
 ![Proxied requests](./img/proxy.png)
 
@@ -124,5 +124,3 @@ Once the demonstration has concluded, cleanup the artifacts that were used in th
 docker stop mitmproxy
 rm -r certs/
 ```
-
-You may require 
