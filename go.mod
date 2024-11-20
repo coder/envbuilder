@@ -21,7 +21,7 @@ require (
 	github.com/distribution/distribution/v3 v3.0.0-alpha.1
 	github.com/docker/cli v27.2.1+incompatible
 	github.com/docker/docker v27.3.1+incompatible
-	github.com/fatih/color v1.17.0
+	github.com/fatih/color v1.18.0
 	github.com/gliderlabs/ssh v0.3.7
 	github.com/go-git/go-billy/v5 v5.5.0
 	github.com/go-git/go-git/v5 v5.12.0
@@ -274,7 +274,7 @@ require (
 	golang.org/x/exp v0.0.0-20240416160154-fe59bbe5cc7f // indirect
 	golang.org/x/net v0.26.0 // indirect
 	golang.org/x/oauth2 v0.20.0 // indirect
-	golang.org/x/sys v0.23.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/term v0.23.0 // indirect
 	golang.org/x/text v0.17.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
