@@ -582,6 +582,16 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			endStage("🏗️ Built image!")
 			if opts.PushImage {
 				endStage = startStage("🏗️ Pushing image...")
+
+				// To debug registry issues, enable logging:
+				//
+				// 	import (
+				// 		stdlog "log"
+				// 		reglogs "github.com/google/go-containerregistry/pkg/logs"
+				// 	)
+				// 	reglogs.Debug = stdlog.New(os.Stderr, "", 0)
+				// 	reglogs.Warn = stdlog.New(os.Stderr, "", 0)
+				// 	reglogs.Progress = stdlog.New(os.Stderr, "", 0)
 				if err := executor.DoPush(image, kOpts); err == nil {
 					endStage("🏗️ Pushed image!")
 				} else if !opts.ExitOnPushFailure {
