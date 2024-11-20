@@ -171,8 +171,8 @@ github.com/cockroachdb/errors v1.2.4/go.mod h1:rQD95gz6FARkaKkQXUksEje/d9a6wBJoC
 github.com/cockroachdb/logtags v0.0.0-20190617123548-eb05cc24525f/go.mod h1:i/u985jwjWRlyHXQbwatDASoW0RMlZ/3i9yJHE2xLkI=
 github.com/coder/coder/v2 v2.10.1-0.20240704130443-c2d44d16a352 h1:L/EjCuZxs5tOcqqCaASj/nu65TRYEFcTt8qRQfHZXX0=
 github.com/coder/coder/v2 v2.10.1-0.20240704130443-c2d44d16a352/go.mod h1:P1KoQSgnKEAG6Mnd3YlGzAophty+yKA9VV48LpfNRvo=
-github.com/coder/kaniko v0.0.0-20241120115946-327ae3f1c802 h1:6vcTuyI9pLlmEkSOw0cT+T74DuqYWMcBJFGj+32C7qk=
-github.com/coder/kaniko v0.0.0-20241120115946-327ae3f1c802/go.mod h1:3rM/KOQ4LgF8mE+O1P6pLDa/E57mzxIxNdUOMKi1qpg=
+github.com/coder/kaniko v0.0.0-20241120132148-131d6094d781 h1:/4SMdrjLQL1BseLSnMd9nYQSI+E63CXcyFGC7ZHHj8I=
+github.com/coder/kaniko v0.0.0-20241120132148-131d6094d781/go.mod h1:3rM/KOQ4LgF8mE+O1P6pLDa/E57mzxIxNdUOMKi1qpg=
 github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0 h1:3A0ES21Ke+FxEM8CXx9n47SZOKOpgSE1bbJzlE4qPVs=
 github.com/coder/pretty v0.0.0-20230908205945-e89ba86370e0/go.mod h1:5UuS2Ts+nTToAMeOjNlnHFkPahrtDkmpydBen/3wgZc=
 github.com/coder/quartz v0.1.0 h1:cLL+0g5l7xTf6ordRnUMMiZtRE8Sq5LxpghS63vEXrQ=
