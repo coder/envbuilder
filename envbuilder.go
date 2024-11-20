@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	stdlog "log"
 	"maps"
 	"net"
 	"net/http"
@@ -44,7 +43,6 @@ import (
 	dockerconfig "github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/fatih/color"
-	"github.com/google/go-containerregistry/pkg/logs"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/kballard/go-shellquote"
@@ -543,7 +541,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				NoPush:             !opts.PushImage || len(destinations) == 0,
 				CacheRunLayers:     true,
 				CacheCopyLayers:    true,
-				ForceBuildMetadata: false, // Force layers with no changes to be cached, required for cache probing.
+				ForceBuildMetadata: opts.PushImage, // Force layers with no changes to be cached, required for cache probing.
 				CompressedCaching:  true,
 				Compression:        config.ZStd,
 				// Maps to "default" level, ~100-300 MB/sec according to
@@ -585,19 +583,16 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			endStage("🏗️ Built image!")
 			if opts.PushImage {
 				endStage = startStage("🏗️ Pushing image...")
-				kOpts.PushRetry = 3
-				// kOpts.PushIgnoreImmutableTagErrors = true
-				logs.Debug = stdlog.New(os.Stderr, "", 0)
-				logs.Warn = stdlog.New(os.Stderr, "", 0)
-				logs.Progress = stdlog.New(os.Stderr, "", 0)
-				layers, _ := image.Layers()
-				for _, layer := range layers {
-					mediaType, _ := layer.MediaType()
-					diffID, _ := layer.DiffID()
-					digest, _ := layer.Digest()
-					size, _ := layer.Size()
-					opts.Logger(log.LevelDebug, "Layer: %s %s %s %d", mediaType, diffID, digest, size)
-				}
+
+				// To debug registry issues, enable logging:
+				//
+				// 	import (
+				// 		stdlog "log"
+				// 		reglogs "github.com/google/go-containerregistry/pkg/logs"
+				// 	)
+				// 	reglogs.Debug = stdlog.New(os.Stderr, "", 0)
+				// 	reglogs.Warn = stdlog.New(os.Stderr, "", 0)
+				// 	reglogs.Progress = stdlog.New(os.Stderr, "", 0)
 				if err := executor.DoPush(image, kOpts); err == nil {
 					endStage("🏗️ Pushed image!")
 				} else if !opts.ExitOnPushFailure {
@@ -1284,7 +1279,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 		NoPush:             true,
 		CacheRunLayers:     true,
 		CacheCopyLayers:    true,
-		ForceBuildMetadata: false, // Force layers with no changes to be cached, required for cache probing.
+		ForceBuildMetadata: true, // Force layers with no changes to be cached, required for cache probing.
 		CompressedCaching:  true,
 		Compression:        config.ZStd,
 		// Maps to "default" level, ~100-300 MB/sec according to
