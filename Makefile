@@ -67,7 +67,7 @@ test-registry-container: .registry-cache
 
 # Pulls images referenced in integration tests and pushes them to the local cache.
 .PHONY: test-images-push
-test-images-push: .registry-cache/docker/registry/v2/repositories/envbuilder-test-alpine .registry-cache/docker/registry/v2/repositories/envbuilder-test-ubuntu .registry-cache/docker/registry/v2/repositories/envbuilder-test-codercom-code-server
+test-images-push: .registry-cache/docker/registry/v2/repositories/envbuilder-test-alpine .registry-cache/docker/registry/v2/repositories/envbuilder-test-ubuntu .registry-cache/docker/registry/v2/repositories/envbuilder-test-codercom-code-server .registry-cache/docker/registry/v2/repositories/envbuilder-test-blob-unknown
 
 .PHONY: test-images-pull
 test-images-pull:
@@ -77,6 +77,7 @@ test-images-pull:
 	docker tag ubuntu:latest localhost:5000/envbuilder-test-ubuntu:latest
 	docker pull codercom/code-server:latest
 	docker tag codercom/code-server:latest localhost:5000/envbuilder-test-codercom-code-server:latest
+	docker build -t localhost:5000/envbuilder-test-blob-unknown:latest -f integration/testdata/blob-unknown/Dockerfile integration/testdata/blob-unknown
 
 .registry-cache:
 	mkdir -p .registry-cache && chmod -R ag+w .registry-cache
@@ -89,3 +90,6 @@ test-images-pull:
 
 .registry-cache/docker/registry/v2/repositories/envbuilder-test-codercom-code-server:
 	docker push localhost:5000/envbuilder-test-codercom-code-server:latest
+
+.registry-cache/docker/registry/v2/repositories/envbuilder-test-blob-unknown:
+	docker push localhost:5000/envbuilder-test-blob-unknown:latest
