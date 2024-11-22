@@ -169,6 +169,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 		RemoteEnv:    make(map[string]string),
 	}
 	if fileExists(opts.Filesystem, workingDir.Image()) {
+		opts.Logger(log.LevelInfo, "Found magic image file at %s", workingDir.Image())
 		if err = parseMagicImageFile(opts.Filesystem, workingDir.Image(), &runtimeData); err != nil {
 			return fmt.Errorf("parse magic image file: %w", err)
 		}
@@ -287,6 +288,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 
 		var buildParams *devcontainer.Compiled
 		if opts.DockerfilePath == "" {
+			opts.Logger(log.LevelInfo, "No Dockerfile specified, looking for a devcontainer.json...")
 			// Only look for a devcontainer if a Dockerfile wasn't specified.
 			// devcontainer is a standard, so it's reasonable to be the default.
 			var devcontainerDir string
@@ -296,6 +298,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				opts.Logger(log.LevelError, "Failed to locate devcontainer.json: %s", err.Error())
 				opts.Logger(log.LevelError, "Falling back to the default image...")
 			} else {
+				opts.Logger(log.LevelInfo, "Found devcontainer.json at %s", strings.TrimPrefix(runtimeData.DevcontainerPath, buildTimeWorkspaceFolder))
 				// We know a devcontainer exists.
 				// Let's parse it and use it!
 				file, err := opts.Filesystem.Open(runtimeData.DevcontainerPath)
@@ -334,6 +337,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 		} else {
 			// If a Dockerfile was specified, we use that.
 			dockerfilePath := filepath.Join(buildTimeWorkspaceFolder, opts.DockerfilePath)
+			opts.Logger(log.LevelInfo, "Using Dockerfile: %s", opts.DockerfilePath)
 
 			// If the dockerfilePath is specified and deeper than the base of WorkspaceFolder AND the BuildContextPath is
 			// not defined, show a warning
@@ -1406,6 +1410,7 @@ func execOneLifecycleScript(
 	userInfo userInfo,
 ) error {
 	if s.IsEmpty() {
+		logf(log.LevelInfo, "=== no %s specified", scriptName)
 		return nil
 	}
 	logf(log.LevelInfo, "=== Running %s as the %q user...", scriptName, userInfo.user.Username)
@@ -1424,6 +1429,7 @@ func execLifecycleScripts(
 	userInfo userInfo,
 ) error {
 	if options.PostStartScriptPath != "" {
+		options.Logger(log.LevelDebug, "Removing postStartScriptPath %s", options.PostStartScriptPath)
 		_ = os.Remove(options.PostStartScriptPath)
 	}
 
@@ -1432,6 +1438,8 @@ func execLifecycleScripts(
 			// skip remaining lifecycle commands
 			return nil
 		}
+	} else {
+		options.Logger(log.LevelDebug, "Skipping onCreateCommand for subsequent starts...")
 	}
 	if err := execOneLifecycleScript(ctx, options.Logger, scripts.UpdateContentCommand, "updateContentCommand", userInfo); err != nil {
 		// skip remaining lifecycle commands
