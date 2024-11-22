@@ -298,7 +298,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				opts.Logger(log.LevelError, "Failed to locate devcontainer.json: %s", err.Error())
 				opts.Logger(log.LevelError, "Falling back to the default image...")
 			} else {
-				opts.Logger(log.LevelInfo, "Found devcontainer.json at %s", strings.TrimPrefix(runtimeData.DevcontainerPath, buildTimeWorkspaceFolder))
+				opts.Logger(log.LevelInfo, "Building in Devcontainer mode using %s", strings.TrimPrefix(runtimeData.DevcontainerPath, buildTimeWorkspaceFolder))
 				// We know a devcontainer exists.
 				// Let's parse it and use it!
 				file, err := opts.Filesystem.Open(runtimeData.DevcontainerPath)
@@ -337,7 +337,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 		} else {
 			// If a Dockerfile was specified, we use that.
 			dockerfilePath := filepath.Join(buildTimeWorkspaceFolder, opts.DockerfilePath)
-			opts.Logger(log.LevelInfo, "Using Dockerfile: %s", opts.DockerfilePath)
+			opts.Logger(log.LevelInfo, "Building in Dockerfile-only mode using %s", opts.DockerfilePath)
 
 			// If the dockerfilePath is specified and deeper than the base of WorkspaceFolder AND the BuildContextPath is
 			// not defined, show a warning
@@ -1410,7 +1410,7 @@ func execOneLifecycleScript(
 	userInfo userInfo,
 ) error {
 	if s.IsEmpty() {
-		logf(log.LevelInfo, "=== no %s specified", scriptName)
+		logf(log.LevelInfo, "=== No %s script specified", scriptName)
 		return nil
 	}
 	logf(log.LevelInfo, "=== Running %s as the %q user...", scriptName, userInfo.user.Username)
