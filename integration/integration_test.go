@@ -1188,37 +1188,88 @@ func TestBuildSecrets(t *testing.T) {
 func TestLifecycleScripts(t *testing.T) {
 	t.Parallel()
 
-	// Ensures that a Git repository with a devcontainer.json is cloned and built.
-	srv := gittest.CreateGitServer(t, gittest.Options{
-		Files: map[string]string{
-			".devcontainer/devcontainer.json": `{
-				"name": "Test",
-				"build": {
-					"dockerfile": "Dockerfile"
-				},
-				"onCreateCommand": "echo create > /tmp/out",
-				"updateContentCommand": ["sh", "-c", "echo update >> /tmp/out"],
-				"postCreateCommand": "(echo -n postCreate. ; id -un) >> /tmp/out",
-				"postStartCommand": {
-					"parallel1": "echo parallel1 > /tmp/parallel1",
-					"parallel2": ["sh", "-c", "echo parallel2 > /tmp/parallel2"]
-				}
-			}`,
-			".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\nUSER nobody",
+	for _, tt := range []struct {
+		name         string
+		files        map[string]string
+		outputCmd    string
+		expectOutput string
+	}{
+		{
+			name: "build",
+			files: map[string]string{
+				".devcontainer/devcontainer.json": `{
+					"name": "Test",
+					"build": {
+						"dockerfile": "Dockerfile"
+					},
+					"onCreateCommand": "echo create > /tmp/out",
+					"updateContentCommand": ["sh", "-c", "echo update >> /tmp/out"],
+					"postCreateCommand": "(echo -n postCreate. ; id -un) >> /tmp/out",
+					"postStartCommand": {
+						"parallel1": "echo parallel1 > /tmp/parallel1",
+						"parallel2": ["sh", "-c", "echo parallel2 > /tmp/parallel2"]
+					}
+				}`,
+				".devcontainer/Dockerfile": "FROM " + testImageAlpine + "\nUSER nobody",
+			},
+			outputCmd:    "cat /tmp/out /tmp/parallel1 /tmp/parallel2",
+			expectOutput: "create\nupdate\npostCreate.nobody\nparallel1\nparallel2",
 		},
-	})
-	ctr, err := runEnvbuilder(t, runOpts{env: []string{
-		envbuilderEnv("GIT_URL", srv.URL),
-	}})
-	require.NoError(t, err)
-
-	output := execContainer(t, ctr, "cat /tmp/out /tmp/parallel1 /tmp/parallel2")
-	require.Equal(t,
-		`create
-update
-postCreate.nobody
-parallel1
-parallel2`, strings.TrimSpace(output))
+		{
+			name: "image",
+			files: map[string]string{
+				".devcontainer/devcontainer.json": fmt.Sprintf(`{
+					"name": "Test",
+					"image": %q,
+					"containerUser": "nobody",
+					"onCreateCommand": "echo create > /tmp/out",
+					"updateContentCommand": ["sh", "-c", "echo update >> /tmp/out"],
+					"postCreateCommand": "(echo -n postCreate. ; id -un) >> /tmp/out",
+					"postStartCommand": {
+						"parallel1": "echo parallel1 > /tmp/parallel1",
+						"parallel2": ["sh", "-c", "echo parallel2 > /tmp/parallel2"]
+					}
+				}`, testImageAlpine),
+			},
+			outputCmd:    "cat /tmp/out /tmp/parallel1 /tmp/parallel2",
+			expectOutput: "create\nupdate\npostCreate.nobody\nparallel1\nparallel2",
+		},
+		{
+			name: "label",
+			files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf(`FROM %s
+					LABEL devcontainer.metadata='[{ \
+						"onCreateCommand": "echo create > /tmp/out", \
+						"updateContentCommand": ["sh", "-c", "echo update >> /tmp/out"], \
+						"postCreateCommand": "(echo -n postCreate. ; id -un) >> /tmp/out", \
+						"postStartCommand": { \
+							"parallel1": "echo parallel1 > /tmp/parallel1", \
+							"parallel2": ["sh", "-c", "echo parallel2 > /tmp/parallel2"] \
+						} \
+					}]'
+					USER nobody`, testImageAlpine),
+			},
+			outputCmd:    "cat /tmp/out /tmp/parallel1 /tmp/parallel2",
+			expectOutput: "create\nupdate\npostCreate.nobody\nparallel1\nparallel2",
+		},
+	} {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			srv := gittest.CreateGitServer(t, gittest.Options{
+				Files: tt.files,
+			})
+			env := []string{
+				envbuilderEnv("GIT_URL", srv.URL),
+			}
+			if _, ok := tt.files[".devcontainer/devcontainer.json"]; !ok {
+				env = append(env, envbuilderEnv("DOCKERFILE_PATH", ".devcontainer/Dockerfile"))
+			}
+			ctr, err := runEnvbuilder(t, runOpts{env: env})
+			require.NoError(t, err, "failed to run envbuilder")
+			output := execContainer(t, ctr, tt.outputCmd)
+			require.Equal(t, tt.expectOutput, strings.TrimSpace(output))
+		})
+	}
 }
 
 func TestPostStartScript(t *testing.T) {
