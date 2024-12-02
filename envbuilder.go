@@ -581,6 +581,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			endStage("🏗️ Built image!")
 			if opts.PushImage {
 				endStage = startStage("🏗️ Pushing image...")
+
 				// To debug registry issues, enable logging:
 				//
 				// 	import (
