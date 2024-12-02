@@ -62,6 +62,11 @@ OPTIONS:
           image is provided. However, it ensures that the container stops if the
           build process encounters an error.
 
+      --exit-on-push-failure bool, $ENVBUILDER_EXIT_ON_PUSH_FAILURE
+          ExitOnPushFailure terminates the container upon a push failure. This
+          is useful if failure to push the built image should abort execution
+          and result in an error.
+
       --export-env-file string, $ENVBUILDER_EXPORT_ENV_FILE
           Optional file path to a .env file where envbuilder will dump
           environment variables from devcontainer.json and the built container
