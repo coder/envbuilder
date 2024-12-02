@@ -7,6 +7,10 @@
 
 # Envbuilder
 
+![envbuilder](https://github.com/user-attachments/assets/0a49f5cd-2040-4a07-84ba-8b765b954e57)
+
+_(Video created using [asciinema](https://github.com/asciinema/asciinema) and [agg](https://github.com/asciinema/agg))_
+
 Build development environments from a Dockerfile on Docker, Kubernetes, and OpenShift. Allow developers to modify their environment in a tight feedback loop.
 
 - Supports [`devcontainer.json`](https://containers.dev/) and `Dockerfile`
