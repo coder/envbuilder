@@ -1,7 +1,6 @@
 package envbuilder
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -898,16 +897,8 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			cmd.Stderr = os.Stderr
 			cmd.Stdin = os.Stdin
 		} else {
-			var buf bytes.Buffer
-			go func() {
-				scanner := bufio.NewScanner(&buf)
-				for scanner.Scan() {
-					opts.Logger(log.LevelInfo, "%s", scanner.Text())
-				}
-			}()
-
-			cmd.Stdout = &buf
-			cmd.Stderr = &buf
+			cmd.Stdout = newWriteLogger(opts.Logger, log.LevelInfo)
+			cmd.Stderr = newWriteLogger(opts.Logger, log.LevelError)
 		}
 		err = cmd.Run()
 		if err != nil {
@@ -1825,6 +1816,23 @@ func onceErrFunc(f func() error) func() error {
 		})
 		return err
 	}
+}
+
+type writeLogger struct {
+	logf  log.Func
+	level log.Level
+}
+
+func newWriteLogger(logf log.Func, level log.Level) io.Writer {
+	return writeLogger{logf: logf, level: level}
+}
+
+func (l writeLogger) Write(p []byte) (n int, err error) {
+	lines := bytes.Split(p, []byte("\n"))
+	for _, line := range lines {
+		l.logf(l.level, "%s", line)
+	}
+	return len(p), nil
 }
 
 // Allows quick testing of layer caching using a local directory!
