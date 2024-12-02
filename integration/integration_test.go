@@ -432,7 +432,7 @@ func TestGitSSHAuth(t *testing.T) {
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
-		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "Initial commit"))
+		_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "Initial commit"))
 		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
 
 		_, err = runEnvbuilder(t, runOpts{env: []string{
@@ -457,7 +457,7 @@ func TestGitSSHAuth(t *testing.T) {
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
-		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "Initial commit"))
+		_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "Initial commit"))
 		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
 
 		_, err = runEnvbuilder(t, runOpts{env: []string{
@@ -2130,7 +2130,7 @@ RUN echo $FOO > /root/foo.txt
 RUN date --utc > /root/date.txt
 `, testImageAlpine)
 
-		newServer := func(dockerfile string) *httptest.Server {
+		newServer := func(dockerfile string) *gittest.GitServer {
 			return gittest.CreateGitServer(t, gittest.Options{
 				Files: map[string]string{"Dockerfile": dockerfile},
 			})
