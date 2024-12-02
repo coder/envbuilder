@@ -31,7 +31,8 @@
 | `--git-ssh-private-key-path` | `ENVBUILDER_GIT_SSH_PRIVATE_KEY_PATH` |  | Path to an SSH private key to be used for Git authentication. If this is set, then GIT_SSH_PRIVATE_KEY_BASE64 cannot be set. |
 | `--git-ssh-private-key-base64` | `ENVBUILDER_GIT_SSH_PRIVATE_KEY_BASE64` |  | Base64 encoded SSH private key to be used for Git authentication. If this is set, then GIT_SSH_PRIVATE_KEY_PATH cannot be set. |
 | `--git-http-proxy-url` | `ENVBUILDER_GIT_HTTP_PROXY_URL` |  | The URL for the HTTP proxy. This is optional. |
-| `--workspace-folder` | `ENVBUILDER_WORKSPACE_FOLDER` |  | The path to the workspace folder that will be built. This is optional. |
+| `--workspace-base-dir` | `ENVBUILDER_WORKSPACE_BASE_DIR` | `/workspaces` | The path under which workspaces will be placed when workspace folder option is not given. |
+| `--workspace-folder` | `ENVBUILDER_WORKSPACE_FOLDER` |  | The path to the workspace folder that will be built. This is optional. Defaults to `[workspace base dir]/[name]` where name is the name of the repository or `empty`. |
 | `--ssl-cert-base64` | `ENVBUILDER_SSL_CERT_BASE64` |  | The content of an SSL cert file. This is useful for self-signed certificates. |
 | `--export-env-file` | `ENVBUILDER_EXPORT_ENV_FILE` |  | Optional file path to a .env file where envbuilder will dump environment variables from devcontainer.json and the built container image. |
 | `--post-start-script-path` | `ENVBUILDER_POST_START_SCRIPT_PATH` |  | The path to a script that will be created by envbuilder based on the postStartCommand in devcontainer.json, if any is specified (otherwise the script is not created). If this is set, the specified InitCommand should check for the presence of this script and execute it after successful startup. |

@@ -177,6 +177,12 @@ OPTIONS:
       --verbose bool, $ENVBUILDER_VERBOSE
           Enable verbose logging.
 
+      --workspace-base-dir string, $ENVBUILDER_WORKSPACE_BASE_DIR (default: /workspaces)
+          The path under which workspaces will be placed when workspace folder
+          option is not given.
+
       --workspace-folder string, $ENVBUILDER_WORKSPACE_FOLDER
           The path to the workspace folder that will be built. This is optional.
+          Defaults to `[workspace base dir]/[name]` where name is the name of
+          the repository or `empty`.
 
