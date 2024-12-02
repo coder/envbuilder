@@ -58,9 +58,10 @@ import (
 )
 
 const (
-	testContainerLabel = "envbox-integration-test"
-	testImageAlpine    = "localhost:5000/envbuilder-test-alpine:latest"
-	testImageUbuntu    = "localhost:5000/envbuilder-test-ubuntu:latest"
+	testContainerLabel   = "envbox-integration-test"
+	testImageAlpine      = "localhost:5000/envbuilder-test-alpine:latest"
+	testImageUbuntu      = "localhost:5000/envbuilder-test-ubuntu:latest"
+	testImageBlobUnknown = "localhost:5000/envbuilder-test-blob-unknown:latest"
 
 	// nolint:gosec // Throw-away key for testing. DO NOT REUSE.
 	testSSHKey = `-----BEGIN OPENSSH PRIVATE KEY-----
@@ -2287,6 +2288,38 @@ USER devalot
 		}
 		require.Fail(t, "expected pid 1 to be running as devalot")
 	})
+
+	t.Run("PushDuplicateLayersNoBlobUnknown", func(t *testing.T) {
+		t.Parallel()
+
+		srv := gittest.CreateGitServer(t, gittest.Options{
+			Files: map[string]string{
+				".devcontainer/Dockerfile": fmt.Sprintf(`FROM %s
+USER root
+RUN echo "hi i r empty"
+RUN echo "who u"
+`, testImageBlobUnknown),
+				".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+			}`,
+			},
+		})
+
+		// NOTE(mafredri): The in-memory registry doesn't catch this error so we
+		// have to use registry:2.
+		ref, err := name.ParseReference(fmt.Sprintf("localhost:5000/test-blob-unknown-%s", uuid.NewString()))
+		require.NoError(t, err)
+		opts := []string{
+			envbuilderEnv("GIT_URL", srv.URL),
+			envbuilderEnv("CACHE_REPO", ref.String()),
+			envbuilderEnv("VERBOSE", "1"),
+		}
+
+		_ = pushImage(t, ref, nil, opts...)
+	})
 }
 
 func TestChownHomedir(t *testing.T) {
@@ -2465,6 +2498,8 @@ func getCachedImage(ctx context.Context, t *testing.T, cli *client.Client, env .
 }
 
 func startContainerFromRef(ctx context.Context, t *testing.T, cli *client.Client, ref name.Reference) container.CreateResponse {
+	t.Helper()
+
 	// Ensure that we can pull the image.
 	rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
 	require.NoError(t, err)
