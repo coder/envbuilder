@@ -47,7 +47,7 @@ To explore more examples, tips, and advanced usage, check out the following guid
 - [Container Registry Authentication](./docs/container-registry-auth.md)
 - [Git Authentication](./docs/git-auth.md)
 - [Caching](./docs/caching.md)
-- [Custom Certificates](./docs/custom-certificates.md)
+- [Custom Certificates & Proxies](./docs/proxy.md)
 - [Users](./docs/users.md)
 
 ## Setup Script
