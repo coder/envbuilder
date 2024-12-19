@@ -3,45 +3,46 @@ package registrytest
 import (
 	"archive/tar"
 	"bytes"
-	"context"
 	"crypto"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/distribution/distribution/v3/configuration"
-	"github.com/distribution/distribution/v3/registry/handlers"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
 	// needed by the registry
 	_ "github.com/distribution/distribution/v3/registry/storage/driver/inmemory"
 )
 
-// New creates a new registry server that discards all logs.
-func New(t *testing.T) string {
-	cfg := &configuration.Configuration{
-		Storage: configuration.Storage{
-			"inmemory": configuration.Parameters{},
-		},
+// New starts a new Docker registry listening on localhost.
+// It will automatically shut down when the test finishes.
+// It will store data in memory.
+func New(t testing.TB, mws ...func(http.Handler) http.Handler) string {
+	t.Helper()
+	regHandler := registry.New(registry.WithBlobHandler(registry.NewInMemoryBlobHandler()))
+	for _, mw := range mws {
+		regHandler = mw(regHandler)
 	}
-	logrus.SetOutput(io.Discard)
-	app := handlers.NewApp(context.Background(), cfg)
-	srv := httptest.NewServer(app)
-	t.Cleanup(srv.Close)
-	return srv.URL
+	regSrv := httptest.NewServer(regHandler)
+	t.Cleanup(func() { regSrv.Close() })
+	regSrvURL, err := url.Parse(regSrv.URL)
+	require.NoError(t, err)
+	return fmt.Sprintf("localhost:%s", regSrvURL.Port())
 }
 
 // WriteContainer uploads a container to the registry server.
@@ -96,11 +97,17 @@ func WriteContainer(t *testing.T, serverURL, containerRef, mediaType string, fil
 	})
 	require.NoError(t, err)
 
+	// url.Parse will interpret localhost:12345 as scheme localhost and host 12345
+	// so we need to add a scheme to the URL
+	if !strings.HasPrefix(serverURL, "http://") {
+		serverURL = "http://" + serverURL
+	}
 	parsed, err := url.Parse(serverURL)
 	require.NoError(t, err)
 	parsed.Path = containerRef
+	parsedStr := parsed.String()
 
-	ref, err := name.ParseReference(strings.TrimPrefix(parsed.String(), "http://"))
+	ref, err := name.ParseReference(strings.TrimPrefix(parsedStr, "http://"))
 	require.NoError(t, err)
 
 	err = remote.Write(ref, image)

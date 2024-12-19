@@ -231,7 +231,7 @@ func TestUserFrom(t *testing.T) {
 		}})
 		require.NoError(t, err)
 
-		parsed, err := url.Parse(registry)
+		parsed, err := url.Parse("http://" + registry)
 		require.NoError(t, err)
 		parsed.Path = "coder/test:latest"
 		ref, err := name.ParseReference(strings.TrimPrefix(parsed.String(), "http://"))
@@ -306,7 +306,7 @@ func TestUserFrom(t *testing.T) {
 				},
 			}})
 			require.NoError(t, err)
-			parsed, err := url.Parse(registry)
+			parsed, err := url.Parse("http://" + registry)
 			require.NoError(t, err)
 			parsed.Path = "coder/test:" + tag
 			ref, err := name.ParseReference(strings.TrimPrefix(parsed.String(), "http://"))
