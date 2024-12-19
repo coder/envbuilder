@@ -1545,6 +1545,23 @@ COPY %s .`, testImageAlpine, inclFile)
 func TestPushImage(t *testing.T) {
 	t.Parallel()
 
+	// Write a test feature to an in-memory registry.
+	testFeature := registrytest.WriteContainer(t, registrytest.New(t), "features/test-feature:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": `#!/bin/sh
+			echo "${MESSAGE}" > /root/message.txt`,
+		"devcontainer-feature.json": features.Spec{
+			ID:      "test-feature",
+			Name:    "test feature",
+			Version: "v0.0.1",
+			Options: map[string]features.Option{
+				"message": {
+					Type:    "string",
+					Default: "hello world",
+				},
+			},
+		},
+	})
+
 	t.Run("CacheWithoutPush", func(t *testing.T) {
 		t.Parallel()
 
@@ -1557,12 +1574,15 @@ WORKDIR $WORKDIR
 ENV FOO=bar
 RUN echo $FOO > /root/foo.txt
 RUN date --utc > /root/date.txt`, testImageAlpine),
-				".devcontainer/devcontainer.json": `{
+				".devcontainer/devcontainer.json": fmt.Sprintf(`{
 				"name": "Test",
 				"build": {
 					"dockerfile": "Dockerfile"
 				},
-			}`,
+				"features": {
+					%q: {}
+				}
+			}`, testFeature),
 			},
 		})
 
@@ -1603,7 +1623,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 		}})
-		require.ErrorContains(t, err, "uncached COPY command is not supported in cache probe mode")
+		require.Regexp(t, `uncached.*command.*is not supported in cache probe mode`, err.Error())
 	})
 
 	t.Run("CacheAndPush", func(t *testing.T) {
@@ -1612,21 +1632,27 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
 
+		// Given: a git repository with a devcontainer.json that references the
+		// feature
 		srv := gittest.CreateGitServer(t, gittest.Options{
 			Files: map[string]string{
 				".devcontainer/Dockerfile": fmt.Sprintf(`FROM %s
-USER root
-ARG WORKDIR=/
-WORKDIR $WORKDIR
-ENV FOO=bar
-RUN echo $FOO > /root/foo.txt
-RUN date --utc > /root/date.txt`, testImageAlpine),
-				".devcontainer/devcontainer.json": `{
-				"name": "Test",
-				"build": {
-					"dockerfile": "Dockerfile"
-				},
-			}`,
+					USER root
+					ARG WORKDIR=/
+					WORKDIR $WORKDIR
+					ENV FOO=bar
+					RUN echo $FOO > /root/foo.txt
+					RUN date --utc > /root/date.txt`, testImageAlpine),
+				".devcontainer/devcontainer.json": fmt.Sprintf(`
+				{
+					"name": "Test",
+					"build": {
+						"dockerfile": "Dockerfile"
+					},
+					"features": {
+						%q: {}
+					}
+				}`, testFeature),
 			},
 		})
 
@@ -1671,6 +1697,9 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.Regexp(t, `(?s)^USAGE:\s+envbuilder`, strings.TrimSpace(out))
 		out = execContainer(t, ctr.ID, "cat /root/date.txt")
 		require.NotEmpty(t, strings.TrimSpace(out))
+		// Then: the feature install script was run
+		out = execContainer(t, ctr.ID, "cat /root/message.txt")
+		require.Equal(t, "hello world", strings.TrimSpace(out))
 	})
 
 	t.Run("CacheAndPushDevcontainerOnly", func(t *testing.T) {
@@ -1702,7 +1731,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 		)})
-		require.ErrorContains(t, err, "error probing build cache: uncached COPY command")
+		require.Regexp(t, "error probing build cache: uncached.*command.*is not supported in cache probe mode", err.Error())
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
@@ -2293,7 +2322,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		require.NoError(t, err)
 	})
 
-	t.Run("CacheAndPushDevcontainerFeatures", func(t *testing.T) {
+	t.Run("CacheAndPushDevcontainerFeaturesOverrideOption", func(t *testing.T) {
 		t.Parallel()
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -2301,18 +2330,15 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 
 		srv := gittest.CreateGitServer(t, gittest.Options{
 			Files: map[string]string{
-				// NOTE(mafredri): We can't cache the feature in our local
-				// registry because the image media type is incompatible.
 				".devcontainer/devcontainer.json": fmt.Sprintf(`
-{
-	"image": %q,
-	"features": {
-		"ghcr.io/devcontainers/feature-starter/color:1": {
-				"favorite": "green"
-		}
-	}
-}
-`, testImageUbuntu),
+					{
+						"image": %q,
+						"features": {
+							%q: {
+								"message": "my favorite color is green"
+							}
+						}
+					}`, testImageUbuntu, testFeature),
 			},
 		})
 
@@ -2343,7 +2369,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		ctr := startContainerFromRef(ctx, t, cli, cachedRef)
 
 		// Check that the feature is present in the image.
-		out := execContainer(t, ctr.ID, "/usr/local/bin/color")
+		out := execContainer(t, ctr.ID, "cat /root/message.txt")
 		require.Contains(t, strings.TrimSpace(out), "my favorite color is green")
 	})
 
