@@ -47,7 +47,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
@@ -2507,14 +2506,8 @@ type setupInMemoryRegistryOpts struct {
 
 func setupInMemoryRegistry(t *testing.T, opts setupInMemoryRegistryOpts) string {
 	t.Helper()
-	tempDir := t.TempDir()
-	regHandler := registry.New(registry.WithBlobHandler(registry.NewDiskBlobHandler(tempDir)))
-	authHandler := mwtest.BasicAuthMW(opts.Username, opts.Password)(regHandler)
-	regSrv := httptest.NewServer(authHandler)
-	t.Cleanup(func() { regSrv.Close() })
-	regSrvURL, err := url.Parse(regSrv.URL)
-	require.NoError(t, err)
-	return fmt.Sprintf("localhost:%s", regSrvURL.Port())
+	regSrv := registrytest.New(t, mwtest.BasicAuthMW(opts.Username, opts.Password))
+	return regSrv
 }
 
 // TestMain runs before all tests to build the envbuilder image.
