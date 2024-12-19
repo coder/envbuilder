@@ -1623,7 +1623,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 			envbuilderEnv("CACHE_REPO", testRepo),
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 		}})
-		require.Regexp(t, `uncached.*?command.*?is not supported in cache probe mode`, err.Error())
+		require.Regexp(t, `uncached.*command.*is not supported in cache probe mode`, err.Error())
 	})
 
 	t.Run("CacheAndPush", func(t *testing.T) {
@@ -1731,7 +1731,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		_, err = runEnvbuilder(t, runOpts{env: append(opts,
 			envbuilderEnv("GET_CACHED_IMAGE", "1"),
 		)})
-		require.Regexp(t, "error probing build cache: uncached.*?command.*?is not supported in cache probe mode", err.Error())
+		require.Regexp(t, "error probing build cache: uncached.*command.*is not supported in cache probe mode", err.Error())
 		// Then: it should fail to build the image and nothing should be pushed
 		_, err = remote.Image(ref)
 		require.ErrorContains(t, err, "NAME_UNKNOWN", "expected image to not be present before build + push")
