@@ -23,6 +23,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -39,6 +40,7 @@ func TestCloneRepo(t *testing.T) {
 		mungeURL    func(*string)
 		expectError string
 		expectClone bool
+		prepFS      func(billy.Filesystem)
 	}{
 		{
 			name:        "no auth",
@@ -84,26 +86,36 @@ func TestCloneRepo(t *testing.T) {
 			// We do not overwrite a repo if one is already present.
 			t.Run("AlreadyCloned", func(t *testing.T) {
 				srvFS := memfs.New()
-				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+				_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
 				clientFS := memfs.New()
 				// A repo already exists!
-				_ = gittest.NewRepo(t, clientFS)
+				_ = gittest.NewRepo(t, clientFS).Commit(gittest.Commit(t, "WRITEME.md", "I'm already here!", "Wow!"))
 				cloned, err := git.CloneRepo(context.Background(), t.Logf, git.CloneRepoOptions{
-					Path:    "/",
+					Path:    "/workspace",
 					RepoURL: srv.URL,
 					Storage: clientFS,
+					RepoAuth: &githttp.BasicAuth{
+						Username: tc.username,
+						Password: tc.password,
+					},
 				})
-				require.NoError(t, err)
-				require.False(t, cloned)
+				if tc.expectError != "" {
+					assert.ErrorContains(t, err, tc.expectError)
+				}
+				assert.False(t, cloned)
+
+				// Ensure we do not overwrite the existing repo.
+				readme := mustRead(t, clientFS, "/workspace/WRITEME.md")
+				assert.Equal(t, "I'm already here!", readme)
 			})
 
 			// Basic Auth
 			t.Run("BasicAuth", func(t *testing.T) {
 				t.Parallel()
 				srvFS := memfs.New()
-				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+				_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
 				clientFS := memfs.New()
@@ -136,7 +148,7 @@ func TestCloneRepo(t *testing.T) {
 			t.Run("InURL", func(t *testing.T) {
 				t.Parallel()
 				srvFS := memfs.New()
-				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+				_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
 
@@ -174,7 +186,7 @@ func TestShallowCloneRepo(t *testing.T) {
 	t.Run("NotEmpty", func(t *testing.T) {
 		t.Parallel()
 		srvFS := memfs.New()
-		_ = gittest.NewRepo(t, srvFS,
+		_ = gittest.NewRepo(t, srvFS).Commit(
 			gittest.Commit(t, "README.md", "Hello, world!", "Many wow!"),
 			gittest.Commit(t, "foo", "bar!", "Such commit!"),
 			gittest.Commit(t, "baz", "qux", "V nice!"),
@@ -208,7 +220,7 @@ func TestShallowCloneRepo(t *testing.T) {
 
 		t.Parallel()
 		srvFS := memfs.New()
-		_ = gittest.NewRepo(t, srvFS,
+		_ = gittest.NewRepo(t, srvFS).Commit(
 			gittest.Commit(t, "README.md", "Hello, world!", "Many wow!"),
 			gittest.Commit(t, "foo", "bar!", "Such commit!"),
 			gittest.Commit(t, "baz", "qux", "V nice!"),
@@ -235,6 +247,49 @@ func TestShallowCloneRepo(t *testing.T) {
 	})
 }
 
+func TestFetchAfterClone(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	// ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	// defer cancel()
+
+	// setup a git repo
+	srvDir := t.TempDir()
+	srvFS := osfs.New(srvDir)
+	repo := gittest.NewRepo(t, srvFS)
+	repo.Commit(gittest.Commit(t, "README.md", "Hello, worldd!", "initial commit"))
+	srv := httptest.NewServer(gittest.NewServer(srvFS))
+
+	// clone to a tempdir
+	clientDir := t.TempDir()
+	clientFS := osfs.New(clientDir)
+	cloned, err := git.CloneRepo(ctx, t.Logf, git.CloneRepoOptions{
+		Path:    "/repo",
+		RepoURL: srv.URL,
+		Storage: clientFS,
+	})
+	require.NoError(t, err)
+	require.True(t, cloned)
+
+	// add some commits on the server
+	repo.Commit(gittest.Commit(t, "README.md", "Hello, world!", "fix typo"))
+
+	// run CloneRepo again
+	clonedAgain, err := git.CloneRepo(ctx, t.Logf, git.CloneRepoOptions{
+		Path:    "/repo",
+		RepoURL: srv.URL,
+		Storage: clientFS,
+	})
+	require.NoError(t, err)
+	require.True(t, clonedAgain)
+	contentAfter, err := clientFS.Open("/repo/README.md")
+	require.NoError(t, err)
+	content, err := io.ReadAll(contentAfter)
+	require.NoError(t, err)
+	require.Equal(t, "Hello, world!", string(content), "expected client repo to be updated after fetch")
+}
+
 func TestCloneRepoSSH(t *testing.T) {
 	t.Parallel()
 
@@ -245,7 +300,7 @@ func TestCloneRepoSSH(t *testing.T) {
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
-		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+		_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 		key := randKeygen(t)
 		tr := gittest.NewServerSSH(t, srvFS, key.PublicKey())
 		gitURL := tr.String()
@@ -276,7 +331,7 @@ func TestCloneRepoSSH(t *testing.T) {
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
-		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+		_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 		key := randKeygen(t)
 		tr := gittest.NewServerSSH(t, srvFS, key.PublicKey())
 		gitURL := tr.String()
@@ -307,7 +362,7 @@ func TestCloneRepoSSH(t *testing.T) {
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
-		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
+		_ = gittest.NewRepo(t, srvFS).Commit(gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 		key := randKeygen(t)
 		tr := gittest.NewServerSSH(t, srvFS, key.PublicKey())
 		gitURL := tr.String()
