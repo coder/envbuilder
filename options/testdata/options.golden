@@ -173,8 +173,9 @@ OPTIONS:
           when a container is restarting. e.g. docker stop -> docker start This
           value can always be set to true - even if the container is being
           started for the first time.
+
       --skip-unused-stages bool, $ENVBUILDER_SKIP_UNUSED_STAGES
-         Skip building all unused docker stages. Otherwise it builds by default
+          Skip building all unused docker stages. Otherwise it builds by default
           all stages, even the unnecessary ones until it reaches the target
           stage / end of Dockerfile.
 
