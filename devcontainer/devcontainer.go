@@ -69,7 +69,7 @@ type Compiled struct {
 	BuildContext      string
 	FeatureContexts   map[string]string
 	BuildArgs         []string
-	Target			  string
+	Target            string
 
 	User         string
 	ContainerEnv map[string]string
