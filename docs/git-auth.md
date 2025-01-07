@@ -49,6 +49,18 @@ envbuilder will assume SSH authentication. You have the following options:
       ghcr.io/coder/envbuilder
    ```
 
+    Alternatively, you can set `ENVBUILDER_GIT_SSH_PRIVATE_KEY_BASE64` to the
+    base64-encoded content of your private key. Example:
+
+    ```bash
+    docker run -it --rm \
+        -v /tmp/envbuilder:/workspaces \
+        -e ENVBUILDER_GIT_URL=git@example.com:path/to/private/repo.git \
+        -e ENVBUILDER_INIT_SCRIPT=bash \
+        -e ENVBUILDER_GIT_SSH_PRIVATE_KEY_BASE64=$(base64 < ~/.ssh/id_ed25519) \
+        ghcr.io/coder/envbuilder
+    ```
+
 1. Agent-based authentication: set `SSH_AUTH_SOCK` and mount in your agent socket, for example:
 
 ```bash
