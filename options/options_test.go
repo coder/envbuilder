@@ -38,31 +38,39 @@ func TestEnvOptionParsing(t *testing.T) {
 		t.Run("lowercase", func(t *testing.T) {
 			t.Setenv(options.WithEnvPrefix("SKIP_REBUILD"), "true")
 			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "false")
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_THINPACK"), "false")
 			o := runCLI()
 			require.True(t, o.SkipRebuild)
 			require.False(t, o.GitCloneSingleBranch)
+			require.False(t, o.GitCloneThinPack)
 		})
 
 		t.Run("uppercase", func(t *testing.T) {
 			t.Setenv(options.WithEnvPrefix("SKIP_REBUILD"), "TRUE")
 			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "FALSE")
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_THINPACK"), "FALSE")
 			o := runCLI()
 			require.True(t, o.SkipRebuild)
 			require.False(t, o.GitCloneSingleBranch)
+			require.False(t, o.GitCloneThinPack)
 		})
 
 		t.Run("numeric", func(t *testing.T) {
 			t.Setenv(options.WithEnvPrefix("SKIP_REBUILD"), "1")
 			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "0")
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_THINPACK"), "0")
 			o := runCLI()
 			require.True(t, o.SkipRebuild)
 			require.False(t, o.GitCloneSingleBranch)
+			require.False(t, o.GitCloneThinPack)
 		})
 
 		t.Run("empty", func(t *testing.T) {
 			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"), "")
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_THINPACK"), "")
 			o := runCLI()
 			require.False(t, o.GitCloneSingleBranch)
+			require.False(t, o.GitCloneThinPack)
 		})
 	})
 }
