@@ -37,6 +37,7 @@ type CloneRepoOptions struct {
 	Progress     sideband.Progress
 	Insecure     bool
 	SingleBranch bool
+	ThinPack     bool
 	Depth        int
 	CABundle     []byte
 	ProxyOptions transport.ProxyOptions
@@ -53,7 +54,7 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 		return false, fmt.Errorf("parse url %q: %w", opts.RepoURL, err)
 	}
 	logf("Parsed Git URL as %q", parsed.Redacted())
-	if parsed.Hostname() == "dev.azure.com" {
+	if parsed.Hostname() == "dev.azure.com" || opts.ThinPack {
 		// Azure DevOps requires capabilities multi_ack / multi_ack_detailed,
 		// which are not fully implemented and by default are included in
 		// transport.UnsupportedCapabilities.
@@ -347,6 +348,7 @@ func CloneOptionsFromOptions(logf func(string, ...any), options options.Options)
 		Storage:      options.Filesystem,
 		Insecure:     options.Insecure,
 		SingleBranch: options.GitCloneSingleBranch,
+		ThinPack:     options.GitCloneThinPack,
 		Depth:        int(options.GitCloneDepth),
 		CABundle:     caBundle,
 	}
