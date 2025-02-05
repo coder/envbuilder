@@ -19,10 +19,11 @@ Build development environments from a Dockerfile on Docker, Kubernetes, and Open
 
 ## Getting Started
 
-The easiest way to get started is by running the `envbuilder` Docker container that clones a repository, builds the image from a Dockerfile, and runs the `$ENVBUILDER_INIT_SCRIPT` in the freshly built container.
+The easiest way to get started is by running the `envbuilder` Docker container that clones a repository specified by `ENVBUILDER_GIT_URL`, builds the image from a Dockerfile or `devcontainer.json`, and runs the `$ENVBUILDER_INIT_SCRIPT` in the freshly built container.
 
-> **Note**: The `/tmp/envbuilder` directory persists demo data between commands. You can choose a different directory if needed.
-
+> **Tips**:
+> - The `/tmp/envbuilder` directory persists demo data between commands. You can choose a different directory if needed.
+> - To clone a different branch, you append it to `ENVBUILDER_GIT_URL` in the form `#refs/heads/my-branch`. For example: `https://github.com/coder/envbuilder-starter-devcontainer#refs/heads/boring-prompt`.
 ```bash
 docker run -it --rm
     -v /tmp/envbuilder:/workspaces
