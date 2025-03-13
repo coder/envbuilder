@@ -378,11 +378,13 @@ func (o *Options) CLI() serpent.OptionSet {
 			Description: "Clone only a single branch of the Git repository.",
 		},
 		{
-			Flag:        "git-clone-thinpack",
-			Env:         WithEnvPrefix("GIT_CLONE_THINPACK"),
-			Value:       serpent.BoolOf(&o.GitCloneThinPack),
-			Default:     "true",
-			Description: "Git clone with thin pack compatibility enable.",
+			Flag:    "git-clone-thinpack",
+			Env:     WithEnvPrefix("GIT_CLONE_THINPACK"),
+			Value:   serpent.BoolOf(&o.GitCloneThinPack),
+			Default: "true",
+			Description: "Git clone with thin pack compatibility enabled, " +
+				"ensuring that even when thin pack compatibility is activated," +
+				"it will not be turned on for the domain dev.zaure.com.",
 		},
 		{
 			Flag:        "git-username",

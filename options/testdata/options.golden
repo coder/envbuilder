@@ -99,8 +99,10 @@ OPTIONS:
       --git-clone-single-branch bool, $ENVBUILDER_GIT_CLONE_SINGLE_BRANCH
           Clone only a single branch of the Git repository.
 
-      --git-clone-thinpack bool, $ENVBUILDER_GIT_CLONE_THINPACK
-          Git clone with thin pack compatibility enable.
+      --git-clone-thinpack bool, $ENVBUILDER_GIT_CLONE_THINPACK (default: true)
+          Git clone with thin pack compatibility enabled, ensuring that even
+          when thin pack compatibility is activated,it will not be turned on for
+          the domain dev.zaure.com.
 
       --git-http-proxy-url string, $ENVBUILDER_GIT_HTTP_PROXY_URL
           The URL for the HTTP proxy. This is optional.
