@@ -381,7 +381,8 @@ func (o *Options) CLI() serpent.OptionSet {
 			Flag:        "git-clone-thinpack",
 			Env:         WithEnvPrefix("GIT_CLONE_THINPACK"),
 			Value:       serpent.BoolOf(&o.GitCloneThinPack),
-			Description: "Clone with thin pack compabilities.",
+			Default:     "true",
+			Description: "Git clone with thin pack compatibility enable.",
 		},
 		{
 			Flag:        "git-username",

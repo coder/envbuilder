@@ -70,7 +70,7 @@ func TestEnvOptionParsing(t *testing.T) {
 			t.Setenv(options.WithEnvPrefix("GIT_CLONE_THINPACK"), "")
 			o := runCLI()
 			require.False(t, o.GitCloneSingleBranch)
-			require.False(t, o.GitCloneThinPack)
+			require.True(t, o.GitCloneThinPack)
 		})
 	})
 }

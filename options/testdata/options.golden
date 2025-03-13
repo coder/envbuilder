@@ -100,7 +100,7 @@ OPTIONS:
           Clone only a single branch of the Git repository.
 
       --git-clone-thinpack bool, $ENVBUILDER_GIT_CLONE_THINPACK
-          Clone with thin pack compabilities.
+          Git clone with thin pack compatibility enable.
 
       --git-http-proxy-url string, $ENVBUILDER_GIT_HTTP_PROXY_URL
           The URL for the HTTP proxy. This is optional.
