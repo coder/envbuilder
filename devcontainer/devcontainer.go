@@ -69,6 +69,7 @@ type Compiled struct {
 	BuildContext      string
 	FeatureContexts   map[string]string
 	BuildArgs         []string
+	Target            string
 
 	User         string
 	ContainerEnv map[string]string
@@ -140,6 +141,7 @@ func (s Spec) HasDockerfile() bool {
 func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, fallbackDockerfile, workspaceFolder string, useBuildContexts bool, lookupEnv func(string) (string, bool)) (*Compiled, error) {
 	params := &Compiled{
 		User:         s.ContainerUser,
+		Target:       s.Build.Target,
 		ContainerEnv: s.ContainerEnv,
 		RemoteEnv:    s.RemoteEnv,
 	}
