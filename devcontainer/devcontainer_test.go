@@ -43,6 +43,26 @@ func TestParse(t *testing.T) {
 	require.Equal(t, "Dockerfile", parsed.Build.Dockerfile)
 }
 
+func TestParseDirectTarball(t *testing.T) {
+	t.Parallel()
+	raw := `{
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".",
+  },
+  // Comments here!
+  "image": "codercom/code-server:latest",
+  "features": {
+      "https://github.com/coder/envbuilder/raw/94e6c14f5252ae47fcaf0886e6f3f7db91a75ce8/devcontainer/features/testdata/feature-tarball/devcontainer-feature-hello.tgz": {
+          "greeting": "Hello"
+      }
+  }
+}`
+	parsed, err := devcontainer.Parse([]byte(raw))
+	require.NoError(t, err)
+	require.Equal(t, "Dockerfile", parsed.Build.Dockerfile)
+}
+
 func TestCompileWithFeatures(t *testing.T) {
 	t.Parallel()
 	registry := registrytest.New(t)

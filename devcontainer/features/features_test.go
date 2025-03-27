@@ -51,6 +51,25 @@ func TestExtract(t *testing.T) {
 		_, err := features.Extract(fs, "", "/", ref)
 		require.ErrorContains(t, err, "id is required")
 	})
+
+	t.Run("LoadTarballArtifacts", func(t *testing.T) {
+		t.Run("Success", func(t *testing.T) {
+			t.Parallel()
+			ref := "https://127.0.0.1:12345/devcontainer-feature-hello.tgz"
+			fs := memfs.New()
+			_, err := features.Extract(fs, "", "/", ref)
+			require.NoError(t, err)
+		})
+		t.Run("InvalidName", func(t *testing.T) {
+			t.Parallel()
+
+			ref := "https://127.0.0.1:12345/invalid-name-hello.tgz"
+
+			fs := memfs.New()
+			_, err := features.Extract(fs, "", "/", ref)
+			require.ErrorContains(t, err, "invalid name")
+		})
+	})
 	t.Run("Success", func(t *testing.T) {
 		t.Parallel()
 		registry := registrytest.New(t)
@@ -117,4 +136,11 @@ func TestCompile(t *testing.T) {
 		require.Equal(t, "FROM scratch AS envbuilder_feature_test\nCOPY --from=coder/test:latest / /", strings.TrimSpace(fromDirective))
 		require.Equal(t, "WORKDIR /.envbuilder/features/test\nRUN --mount=type=bind,from=envbuilder_feature_test,target=/.envbuilder/features/test,rw _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(runDirective))
 	})
+	// t.Run("Tarball", func(t *testing.T) {
+	// 	t.Parallel()
+	// 	spec := &features.Spec{}
+	// 	_, directive, err := spec.Compile("https://127.0.0.1:12345/devcontainer-feature-hello.tgz", "hello", "/", "containerUser", "remoteUser", false, nil)
+	// 	require.NoError(t, err)
+	// 	require.Equal(t, "WORKDIR /\nRUN _CONTAINER_USER=\"containerUser\" _REMOTE_USER=\"remoteUser\" ./install.sh", strings.TrimSpace(directive))
+	// })
 }

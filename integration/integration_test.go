@@ -574,6 +574,31 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 	require.Equal(t, "hello from test 3!", strings.TrimSpace(test3Output))
 }
 
+func TestDirectTarballFeaturePath(t *testing.T) {
+	t.Parallel()
+	feature3Spec, err := json.Marshal(features.Spec{
+		ID:      "test3",
+		Name:    "test3",
+		Version: "1.0.0",
+		Options: map[string]features.Option{
+			"grape": {
+				Type: "string",
+			},
+		},
+	}
+	spec := `{
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+        "https://github.com/coder/envbuilder/raw/94e6c14f5252ae47fcaf0886e6f3f7db91a75ce8/devcontainer/features/testdata/feature-tarball/devcontainer-feature-hello.tgz": {
+            "greeting": "Hello"
+        }
+    }
+}`
+spec := &features.Spec{}
+require.Equal(t, "/.envbuilder/feature/test-d8e8fc", spec.Compile()("test"))
+}
+
+
 func TestBuildFromDockerfileAndConfig(t *testing.T) {
 	t.Parallel()
 
