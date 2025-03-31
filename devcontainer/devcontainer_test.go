@@ -222,7 +222,7 @@ func TestImageFromDockerfile(t *testing.T) {
 }
 
 func TestImageFromDockerfileWithArgs(t *testing.T) {
-	t.Parallel()	
+	t.Parallel()
 	for _, tc := range []struct {
 		content string
 		image   string
