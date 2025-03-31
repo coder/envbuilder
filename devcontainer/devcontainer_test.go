@@ -205,6 +205,9 @@ func TestImageFromDockerfile(t *testing.T) {
 		content: "ARG VARIANT=\"3.10\"\nFROM mcr.microsoft.com/devcontainers/python:0-${VARIANT}",
 		image:   "mcr.microsoft.com/devcontainers/python:0-3.10",
 	}, {
+		content: "ARG VARIANT=3-bookworm\nFROM mcr.microsoft.com/devcontainers/python:1-${VARIANT}",
+		image:   "mcr.microsoft.com/devcontainers/python:1-3-bookworm",
+	}, {
 		content: "ARG VARIANT=\"3.10\"\nFROM mcr.microsoft.com/devcontainers/python:0-$VARIANT ",
 		image:   "mcr.microsoft.com/devcontainers/python:0-3.10",
 	}} {
