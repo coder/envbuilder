@@ -221,6 +221,41 @@ func TestImageFromDockerfile(t *testing.T) {
 	}
 }
 
+func TestImageFromDockerfileWithArgs(t *testing.T) {
+	t.Parallel()
+	dc := &devcontainer.Spec{
+			Build: devcontainer.BuildSpec{
+				Dockerfile: "Dockerfile",
+				Context:    ".",
+				Args: map[string]string{
+					"VARIANT": "3.11-bookworm",
+				},
+			},
+		}
+	fs := memfs.New()
+	params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+	require.Equal(t, "VARIANT=3.11-bookworm", params.BuildArgs[0])
+	
+	for _, tc := range []struct {
+		content string
+		image   string
+	}{{
+		content: "ARG VARIANT=3-bookworm\nFROM mcr.microsoft.com/devcontainers/python:1-${VARIANT}",
+		image:   "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+	}, {
+		content: "ARG VARIANT=\"3.10\"\nFROM mcr.microsoft.com/devcontainers/python:1-$VARIANT ",
+		image:   "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+	}} {
+		tc := tc
+		t.Run(tc.image, func(t *testing.T) {
+			t.Parallel()
+			ref, err := devcontainer.ImageFromDockerfile(tc.content)
+			require.NoError(t, err)
+			require.Equal(t, tc.image, ref.Name())
+		})
+	}
+}
+
 func TestUserFrom(t *testing.T) {
 	t.Parallel()
 
