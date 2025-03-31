@@ -255,6 +255,7 @@ func TestImageFromDockerfileWithArgs(t *testing.T) {
 			require.NoError(t, err)
 			_ = file.Close()
 			params, err := dc.Compile(fs, dcDir, workingDir, "", "/var/workspace", false, stubLookupEnv)
+			require.NoError(t, err)
 			require.Equal(t, "VARIANT=3.11-bookworm", params.BuildArgs[0])
 			require.Equal(t, params.DockerfileContent, tc.content)
 			ref, err := devcontainer.ImageFromDockerfile(tc.content)
