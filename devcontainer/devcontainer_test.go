@@ -232,9 +232,6 @@ func TestImageFromDockerfileWithArgs(t *testing.T) {
 				},
 			},
 		}
-	fs := memfs.New()
-	params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
-	require.Equal(t, "VARIANT=3.11-bookworm", params.BuildArgs[0])
 	
 	for _, tc := range []struct {
 		content string
@@ -249,6 +246,21 @@ func TestImageFromDockerfileWithArgs(t *testing.T) {
 		tc := tc
 		t.Run(tc.image, func(t *testing.T) {
 			t.Parallel()
+
+			fs := memfs.New()
+			dcDir := "/workspaces/coder/.devcontainer"
+			err := fs.MkdirAll(dcDir, 0o755)
+			require.NoError(t, err)
+			file, err := fs.OpenFile(filepath.Join(dcDir, "Dockerfile"), os.O_CREATE|os.O_WRONLY, 0o644)
+			require.NoError(t, err)
+			_, err = io.WriteString(file, tc.content)
+			require.NoError(t, err)
+			_ = file.Close()
+			params, err := dc.Compile(fs, dcDir, workingDir, "", "/var/workspace", false, stubLookupEnv)
+			
+			require.Equal(t, "VARIANT=3.11-bookworm", params.BuildArgs[0])
+			require.Equal(t, params.DockerfileContent, tc.content)
+			
 			ref, err := devcontainer.ImageFromDockerfile(tc.content)
 			require.NoError(t, err)
 			require.Equal(t, tc.image, ref.Name())
