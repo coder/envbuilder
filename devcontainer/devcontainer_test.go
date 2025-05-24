@@ -224,13 +224,76 @@ func TestImageFromDockerfile(t *testing.T) {
 func TestImageFromDockerfileWithArgs(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
+		default_image string
+		content       string
+		image         string
+	}{{
+		default_image: "mcr.microsoft.com/devcontainers/python:1-3-bookworm",
+		content:       "ARG VARIANT=3-bookworm\nFROM mcr.microsoft.com/devcontainers/python:1-${VARIANT}",
+		image:         "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+	}, {
+		default_image: "mcr.microsoft.com/devcontainers/python:1-3.10",
+		content:       "ARG VARIANT=\"3.10\"\nFROM mcr.microsoft.com/devcontainers/python:1-$VARIANT",
+		image:         "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+	}, {
+		default_image: "mcr.microsoft.com/devcontainers/python:1-3.10",
+		content:       "ARG VARIANT=\"3.10\"\nFROM mcr.microsoft.com/devcontainers/python:1-$VARIANT\nUSER app",
+		image:         "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+	}} {
+		tc := tc
+		t.Run(tc.image, func(t *testing.T) {
+			t.Parallel()
+			dc := &devcontainer.Spec{
+				Build: devcontainer.BuildSpec{
+					Dockerfile: "Dockerfile",
+					Context:    ".",
+					Args: map[string]string{
+						"VARIANT": "3.11-bookworm",
+					},
+				},
+			}
+			fs := memfs.New()
+			dcDir := "/workspaces/coder/.devcontainer"
+			err := fs.MkdirAll(dcDir, 0o755)
+			require.NoError(t, err)
+			file, err := fs.OpenFile(filepath.Join(dcDir, "Dockerfile"), os.O_CREATE|os.O_WRONLY, 0o644)
+			require.NoError(t, err)
+			_, err = io.WriteString(file, tc.content)
+			require.NoError(t, err)
+			_ = file.Close()
+			params, err := dc.Compile(fs, dcDir, workingDir, "", "/var/workspace", false, stubLookupEnv)
+			require.NoError(t, err)
+			require.Equal(t, "VARIANT=3.11-bookworm", params.BuildArgs[0])
+			require.Equal(t, params.DockerfileContent, tc.content)
+			ref, err := devcontainer.ImageFromDockerfile(tc.content, params.BuildArgs)
+			require.NoError(t, err)
+			require.Equal(t, tc.image, ref.Name())
+			// Test without args (using defaults)
+			fmt.Println("Testing ImageFromDockerfile without args...")
+			ref1, err := devcontainer.ImageFromDockerfile(tc.content)
+			require.NoError(t, err)
+			require.Equal(t, tc.default_image, ref1.Name())
+		})
+	}
+}
+
+func TestUserFromDockerfileWithArgs(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		user    string
 		content string
 		image   string
 	}{{
+		user:    "root",
 		content: "ARG VARIANT=3-bookworm\nFROM mcr.microsoft.com/devcontainers/python:1-${VARIANT}",
 		image:   "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
 	}, {
-		content: "ARG VARIANT=\"3.10\"\nFROM mcr.microsoft.com/devcontainers/python:1-$VARIANT ",
+		user:    "root",
+		content: "ARG VARIANT=\"3.10\"\nFROM mcr.microsoft.com/devcontainers/python:1-$VARIANT",
+		image:   "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+	}, {
+		user:    "app",
+		content: "ARG VARIANT=\"3.10\"\nFROM mcr.microsoft.com/devcontainers/python:1-$VARIANT\nUSER app",
 		image:   "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
 	}} {
 		tc := tc
@@ -258,9 +321,17 @@ func TestImageFromDockerfileWithArgs(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "VARIANT=3.11-bookworm", params.BuildArgs[0])
 			require.Equal(t, params.DockerfileContent, tc.content)
-			ref, err := devcontainer.ImageFromDockerfile(tc.content)
+			// Test UserFromDockerfile without args
+			fmt.Println("\nTesting UserFromDockerfile without args...")
+			user1, err := devcontainer.UserFromDockerfile(tc.content)
 			require.NoError(t, err)
-			require.Equal(t, tc.image, ref.Name())
+			require.Equal(t, tc.user, user1)
+			// Test UserFromDockerfile with args
+			fmt.Println("\nTesting UserFromDockerfile with args...")
+			user2, err := devcontainer.UserFromDockerfile(tc.content, params.BuildArgs)
+			require.NoError(t, err)
+			require.Equal(t, tc.user, user2)
+
 		})
 	}
 }
