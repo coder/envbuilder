@@ -331,7 +331,6 @@ func TestUserFromDockerfileWithArgs(t *testing.T) {
 			user2, err := devcontainer.UserFromDockerfile(tc.content, params.BuildArgs)
 			require.NoError(t, err)
 			require.Equal(t, tc.user, user2)
-
 		})
 	}
 }
