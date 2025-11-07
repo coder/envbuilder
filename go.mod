@@ -1,6 +1,6 @@
 module github.com/coder/envbuilder
 
-go 1.22.4
+go 1.24.6
 
 // There are a few options we need added to Kaniko!
 // See: https://github.com/GoogleContainerTools/kaniko/compare/main...coder:kaniko:main
