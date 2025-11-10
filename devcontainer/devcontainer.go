@@ -204,7 +204,7 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, 
 		// We should make a best-effort attempt to find the user.
 		// Features must be executed as root, so we need to swap back
 		// to the running user afterwards.
-		params.User, err = UserFromDockerfile(params.DockerfileContent)
+		params.User, err = UserFromDockerfile(params.DockerfileContent, buildArgs)
 		if err != nil {
 			return nil, fmt.Errorf("user from dockerfile: %w", err)
 		}
@@ -308,10 +308,55 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 
 // UserFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the user that will be used to run the container.
-func UserFromDockerfile(dockerfileContent string) (user string, err error) {
+// Optionally accepts build args that may override default values in the Dockerfile.
+func UserFromDockerfile(dockerfileContent string, buildArgs ...[]string) (user string, err error) {
+	var args []string
+	if len(buildArgs) > 0 {
+		args = buildArgs[0]
+	}
+
 	res, err := parser.Parse(strings.NewReader(dockerfileContent))
 	if err != nil {
 		return "", fmt.Errorf("parse dockerfile: %w", err)
+	}
+
+	// Parse build args and ARG instructions to build the substitution context
+	lexer := shell.NewLex('\\')
+
+	// Start with build args provided externally (e.g., from devcontainer.json)
+	argsCopy := make([]string, len(args))
+	copy(argsCopy, args)
+
+	// Parse build args into a map for easy lookup
+	buildArgsMap := make(map[string]string)
+	for _, arg := range args {
+		if parts := strings.SplitN(arg, "=", 2); len(parts) == 2 {
+			buildArgsMap[parts[0]] = parts[1]
+		}
+	}
+
+	// Process ARG instructions to add default values if not overridden
+	lines := strings.Split(dockerfileContent, "\n")
+	for _, line := range lines {
+		if arg, ok := strings.CutPrefix(line, "ARG "); ok {
+			arg = strings.TrimSpace(arg)
+			if strings.Contains(arg, "=") {
+				parts := strings.SplitN(arg, "=", 2)
+				key, _, err := lexer.ProcessWord(parts[0], shell.EnvsFromSlice(argsCopy))
+				if err != nil {
+					return "", fmt.Errorf("processing %q: %w", line, err)
+				}
+
+				// Only use the default value if no build arg was provided
+				if _, exists := buildArgsMap[key]; !exists {
+					val, _, err := lexer.ProcessWord(parts[1], shell.EnvsFromSlice(argsCopy))
+					if err != nil {
+						return "", fmt.Errorf("processing %q: %w", line, err)
+					}
+					argsCopy = append(argsCopy, key+"="+val)
+				}
+			}
+		}
 	}
 
 	// Parse stages and user commands to determine the relevant user
@@ -371,10 +416,16 @@ func UserFromDockerfile(dockerfileContent string) (user string, err error) {
 		}
 
 		// If we can't find a user command, try to find the user from
-		// the image.
-		ref, err := name.ParseReference(strings.TrimSpace(stage.BaseName))
+		// the image. First, substitute any ARG variables in the image name.
+		imageRef := stage.BaseName
+		imageRef, _, err := lexer.ProcessWord(imageRef, shell.EnvsFromSlice(argsCopy))
 		if err != nil {
-			return "", fmt.Errorf("parse image ref %q: %w", stage.BaseName, err)
+			return "", fmt.Errorf("processing image ref %q: %w", stage.BaseName, err)
+		}
+
+		ref, err := name.ParseReference(strings.TrimSpace(imageRef))
+		if err != nil {
+			return "", fmt.Errorf("parse image ref %q: %w", imageRef, err)
 		}
 		user, err := UserFromImage(ref)
 		if err != nil {
@@ -388,27 +439,50 @@ func UserFromDockerfile(dockerfileContent string) (user string, err error) {
 
 // ImageFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the image that will be used to run the container.
-func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
-	lexer := shell.NewLex('\\')
+// Optionally accepts build args that may override default values in the Dockerfile.
+func ImageFromDockerfile(dockerfileContent string, buildArgs ...[]string) (name.Reference, error) {
 	var args []string
+	if len(buildArgs) > 0 {
+		args = buildArgs[0]
+	}
+
+	lexer := shell.NewLex('\\')
+
+	// Start with build args provided externally (e.g., from devcontainer.json)
+	// These have higher precedence than default values in ARG instructions
+	argsCopy := make([]string, len(args))
+	copy(argsCopy, args)
+
+	// Parse build args into a map for easy lookup
+	buildArgsMap := make(map[string]string)
+	for _, arg := range args {
+		if parts := strings.SplitN(arg, "=", 2); len(parts) == 2 {
+			buildArgsMap[parts[0]] = parts[1]
+		}
+	}
+
 	var imageRef string
 	lines := strings.Split(dockerfileContent, "\n")
-	// Iterate over lines in reverse
+	// Iterate over lines in reverse to find ARG declarations and FROM instruction
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := lines[i]
 		if arg, ok := strings.CutPrefix(line, "ARG "); ok {
 			arg = strings.TrimSpace(arg)
 			if strings.Contains(arg, "=") {
 				parts := strings.SplitN(arg, "=", 2)
-				key, _, err := lexer.ProcessWord(parts[0], shell.EnvsFromSlice(args))
+				key, _, err := lexer.ProcessWord(parts[0], shell.EnvsFromSlice(argsCopy))
 				if err != nil {
 					return nil, fmt.Errorf("processing %q: %w", line, err)
 				}
-				val, _, err := lexer.ProcessWord(parts[1], shell.EnvsFromSlice(args))
-				if err != nil {
-					return nil, fmt.Errorf("processing %q: %w", line, err)
+
+				// Only use the default value if no build arg was provided
+				if _, exists := buildArgsMap[key]; !exists {
+					val, _, err := lexer.ProcessWord(parts[1], shell.EnvsFromSlice(argsCopy))
+					if err != nil {
+						return nil, fmt.Errorf("processing %q: %w", line, err)
+					}
+					argsCopy = append(argsCopy, key+"="+val)
 				}
-				args = append(args, key+"="+val)
 			}
 			continue
 		}
@@ -421,7 +495,7 @@ func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
 	if imageRef == "" {
 		return nil, fmt.Errorf("no FROM directive found")
 	}
-	imageRef, _, err := lexer.ProcessWord(imageRef, shell.EnvsFromSlice(args))
+	imageRef, _, err := lexer.ProcessWord(imageRef, shell.EnvsFromSlice(argsCopy))
 	if err != nil {
 		return nil, fmt.Errorf("processing %q: %w", imageRef, err)
 	}

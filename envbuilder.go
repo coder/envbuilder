@@ -493,7 +493,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			defer cleanupBuildContext()
 			if runtimeData.Built && opts.SkipRebuild {
 				endStage := startStage("🏗️ Skipping build because of cache...")
-				imageRef, err := devcontainer.ImageFromDockerfile(buildParams.DockerfileContent)
+				imageRef, err := devcontainer.ImageFromDockerfile(buildParams.DockerfileContent, buildParams.BuildArgs)
 				if err != nil {
 					return nil, fmt.Errorf("image from dockerfile: %w", err)
 				}
