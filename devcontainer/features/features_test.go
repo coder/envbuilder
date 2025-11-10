@@ -7,15 +7,18 @@ import (
 	"github.com/coder/envbuilder/devcontainer/features"
 	"github.com/coder/envbuilder/testutil/registrytest"
 	"github.com/go-git/go-billy/v5/memfs"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/stretchr/testify/require"
 )
+
+var emptyRemoteOpts []remote.Option
 
 func TestExtract(t *testing.T) {
 	t.Parallel()
 	t.Run("MissingMediaType", func(t *testing.T) {
 		t.Parallel()
 		registry := registrytest.New(t)
-		ref := registrytest.WriteContainer(t, registry, "coder/test:latest", "some/type", nil)
+		ref := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/test:latest", "some/type", nil)
 		fs := memfs.New()
 		_, err := features.Extract(fs, "", "/", ref)
 		require.ErrorContains(t, err, "no tar layer found")
@@ -23,7 +26,7 @@ func TestExtract(t *testing.T) {
 	t.Run("MissingInstallScript", func(t *testing.T) {
 		t.Parallel()
 		registry := registrytest.New(t)
-		ref := registrytest.WriteContainer(t, registry, "coder/test:latest", features.TarLayerMediaType, map[string]any{
+		ref := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/test:latest", features.TarLayerMediaType, map[string]any{
 			"devcontainer-feature.json": "{}",
 		})
 		fs := memfs.New()
@@ -33,7 +36,7 @@ func TestExtract(t *testing.T) {
 	t.Run("MissingFeatureFile", func(t *testing.T) {
 		t.Parallel()
 		registry := registrytest.New(t)
-		ref := registrytest.WriteContainer(t, registry, "coder/test:latest", features.TarLayerMediaType, map[string]any{
+		ref := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/test:latest", features.TarLayerMediaType, map[string]any{
 			"install.sh": "hey",
 		})
 		fs := memfs.New()
@@ -43,7 +46,7 @@ func TestExtract(t *testing.T) {
 	t.Run("MissingFeatureProperties", func(t *testing.T) {
 		t.Parallel()
 		registry := registrytest.New(t)
-		ref := registrytest.WriteContainer(t, registry, "coder/test:latest", features.TarLayerMediaType, map[string]any{
+		ref := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/test:latest", features.TarLayerMediaType, map[string]any{
 			"install.sh":                "hey",
 			"devcontainer-feature.json": features.Spec{},
 		})
@@ -54,7 +57,7 @@ func TestExtract(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		t.Parallel()
 		registry := registrytest.New(t)
-		ref := registrytest.WriteContainer(t, registry, "coder/test:latest", features.TarLayerMediaType, map[string]any{
+		ref := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/test:latest", features.TarLayerMediaType, map[string]any{
 			"install.sh": "hey",
 			"devcontainer-feature.json": features.Spec{
 				ID:      "go",

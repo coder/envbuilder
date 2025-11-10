@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/GoogleContainerTools/kaniko/pkg/creds"
 	"github.com/go-git/go-billy/v5"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -25,7 +26,7 @@ func extractFromImage(fs billy.Filesystem, directory, reference string) error {
 	if err != nil {
 		return fmt.Errorf("parse feature ref %s: %w", reference, err)
 	}
-	image, err := remote.Image(ref)
+	image, err := remote.Image(ref, remote.WithAuthFromKeychain(creds.GetKeychain()))
 	if err != nil {
 		return fmt.Errorf("fetch feature image %s: %w", reference, err)
 	}
