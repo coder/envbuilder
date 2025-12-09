@@ -41,6 +41,7 @@ type CloneRepoOptions struct {
 	Depth        int
 	CABundle     []byte
 	ProxyOptions transport.ProxyOptions
+	Submodules   bool
 }
 
 // CloneRepo will clone the repository at the given URL into the given path.
@@ -119,7 +120,7 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 		return false, nil
 	}
 
-	_, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
+	repo, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
 		URL:             parsed.String(),
 		Auth:            opts.RepoAuth,
 		Progress:        opts.Progress,
@@ -136,6 +137,15 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 	if err != nil {
 		return false, fmt.Errorf("clone %q: %w", opts.RepoURL, err)
 	}
+
+	// Initialize submodules if requested
+	if opts.Submodules {
+		err = initSubmodules(ctx, logf, repo, opts)
+		if err != nil {
+			return true, fmt.Errorf("init submodules: %w", err)
+		}
+	}
+
 	return true, nil
 }
 
@@ -361,6 +371,7 @@ func CloneOptionsFromOptions(logf func(string, ...any), options options.Options)
 		ThinPack:     options.GitCloneThinPack,
 		Depth:        int(options.GitCloneDepth),
 		CABundle:     caBundle,
+		Submodules:   options.GitCloneSubmodules,
 	}
 
 	cloneOpts.RepoAuth = SetupRepoAuth(logf, &options)
@@ -417,4 +428,69 @@ func ProgressWriter(write func(line string, args ...any)) io.WriteCloser {
 		r:           reader,
 		done:        done,
 	}
+}
+
+// initSubmodules recursively initializes and updates all submodules in the repository.
+func initSubmodules(ctx context.Context, logf func(string, ...any), repo *git.Repository, opts CloneRepoOptions) error {
+	logf("🔗 Initializing git submodules...")
+
+	w, err := repo.Worktree()
+	if err != nil {
+		return fmt.Errorf("get worktree: %w", err)
+	}
+
+	subs, err := w.Submodules()
+	if err != nil {
+		return fmt.Errorf("get submodules: %w", err)
+	}
+
+	if len(subs) == 0 {
+		logf("No submodules found")
+		return nil
+	}
+
+	logf("Found %d submodule(s)", len(subs))
+
+	for _, sub := range subs {
+		logf("📦 Initializing submodule: %s", sub.Config().Name)
+
+		// Explicitly initialize the submodule first
+		err := sub.Init()
+		if err != nil {
+			return fmt.Errorf("init submodule %q: %w", sub.Config().Name, err)
+		}
+
+		// Update without recursion to avoid calling git binary
+		err = sub.UpdateContext(ctx, &git.SubmoduleUpdateOptions{
+			Init: true,
+			Auth: opts.RepoAuth,
+		})
+		if err != nil {
+			return fmt.Errorf("update submodule %q: %w", sub.Config().Name, err)
+		}
+
+		// Manually recurse into nested submodules
+		subRepo, err := sub.Repository()
+		if err != nil {
+			// Not all submodules may have a repository yet, that's okay
+			logf("  ⚠ Could not get repository for submodule %s: %v", sub.Config().Name, err)
+		} else {
+			subWorktree, err := subRepo.Worktree()
+			if err == nil {
+				nestedSubs, err := subWorktree.Submodules()
+				if err == nil && len(nestedSubs) > 0 {
+					logf("  Found %d nested submodule(s) in %s", len(nestedSubs), sub.Config().Name)
+					err = initSubmodules(ctx, logf, subRepo, opts)
+					if err != nil {
+						return fmt.Errorf("init nested submodules in %q: %w", sub.Config().Name, err)
+					}
+				}
+			}
+		}
+
+		logf("✓ Submodule initialized: %s", sub.Config().Name)
+	}
+
+	logf("✓ All submodules initialized successfully")
+	return nil
 }
