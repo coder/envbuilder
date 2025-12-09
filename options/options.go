@@ -108,6 +108,9 @@ type Options struct {
 	GitCloneSingleBranch bool
 	// GitCloneThinPack clone with thin pack compabilities. This is optional.
 	GitCloneThinPack bool
+	// GitCloneSubmodules recursively initializes submodules after cloning.
+	// This is optional and defaults to false.
+	GitCloneSubmodules bool
 	// GitUsername is the username to use for Git authentication. This is
 	// optional.
 	GitUsername string
@@ -385,6 +388,12 @@ func (o *Options) CLI() serpent.OptionSet {
 			Description: "Git clone with thin pack compatibility enabled, " +
 				"ensuring that even when thin pack compatibility is activated," +
 				"it will not be turned on for the domain dev.zaure.com.",
+		},
+		{
+			Flag:        "git-clone-submodules",
+			Env:         WithEnvPrefix("GIT_CLONE_SUBMODULES"),
+			Value:       serpent.BoolOf(&o.GitCloneSubmodules),
+			Description: "Recursively clone Git submodules after cloning the repository.",
 		},
 		{
 			Flag:        "git-username",
