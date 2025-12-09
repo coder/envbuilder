@@ -122,3 +122,6 @@ On macOS or Windows systems, we recommend using a VM or the provided `.devcontai
 **Submodule Handling Fix**
 
 An issue concerning git's submodule handling has been resolved through iterative refinements. This fix ensures robust submodule cloning and URL resolution without relying on the calls to the git binary (current fallback).
+```
+ENVBUILDER_GIT_CLONE_SUBMODULES=true
+```
