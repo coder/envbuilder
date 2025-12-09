@@ -72,6 +72,25 @@ func TestEnvOptionParsing(t *testing.T) {
 			require.False(t, o.GitCloneSingleBranch)
 			require.True(t, o.GitCloneThinPack)
 		})
+
+		t.Run("remote repo build mode", func(t *testing.T) {
+			t.Setenv(options.WithEnvPrefix("REMOTE_REPO_BUILD_MODE"), "true")
+			o := runCLI()
+			require.True(t, o.RemoteRepoBuildMode)
+		})
+
+		t.Run("binary path", func(t *testing.T) {
+			const val = "/usr/local/bin/envbuilder"
+			t.Setenv(options.WithEnvPrefix("BINARY_PATH"), val)
+			o := runCLI()
+			require.Equal(t, o.BinaryPath, val)
+		})
+
+		t.Run("git clone submodules", func(t *testing.T) {
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SUBMODULES"), "true")
+			o := runCLI()
+			require.True(t, o.GitCloneSubmodules)
+		})
 	})
 }
 
