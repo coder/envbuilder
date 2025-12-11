@@ -28,6 +28,7 @@
 | `--git-clone-depth` | `ENVBUILDER_GIT_CLONE_DEPTH` |  | The depth to use when cloning the Git repository. |
 | `--git-clone-single-branch` | `ENVBUILDER_GIT_CLONE_SINGLE_BRANCH` |  | Clone only a single branch of the Git repository. |
 | `--git-clone-thinpack` | `ENVBUILDER_GIT_CLONE_THINPACK` | `true` | Git clone with thin pack compatibility enabled, ensuring that even when thin pack compatibility is activated,it will not be turned on for the domain dev.zaure.com. |
+| `--git-clone-submodules` | `ENVBUILDER_GIT_CLONE_SUBMODULES` |  | Recursively clone Git submodules after cloning the repository. |
 | `--git-username` | `ENVBUILDER_GIT_USERNAME` |  | The username to use for Git authentication. This is optional. |
 | `--git-password` | `ENVBUILDER_GIT_PASSWORD` |  | The password to use for Git authentication. This is optional. |
 | `--git-ssh-private-key-path` | `ENVBUILDER_GIT_SSH_PRIVATE_KEY_PATH` |  | Path to an SSH private key to be used for Git authentication. If this is set, then GIT_SSH_PRIVATE_KEY_BASE64 cannot be set. |

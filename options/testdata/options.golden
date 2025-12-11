@@ -99,6 +99,9 @@ OPTIONS:
       --git-clone-single-branch bool, $ENVBUILDER_GIT_CLONE_SINGLE_BRANCH
           Clone only a single branch of the Git repository.
 
+      --git-clone-submodules bool, $ENVBUILDER_GIT_CLONE_SUBMODULES
+          Recursively clone Git submodules after cloning the repository.
+
       --git-clone-thinpack bool, $ENVBUILDER_GIT_CLONE_THINPACK (default: true)
           Git clone with thin pack compatibility enabled, ensuring that even
           when thin pack compatibility is activated,it will not be turned on for
