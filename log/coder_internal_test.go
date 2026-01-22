@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -198,16 +199,26 @@ func TestCoder(t *testing.T) {
 		defer cancel()
 
 		token := uuid.NewString()
-		done := make(chan struct{})
-		handlerSend := make(chan int)
+		var calls atomic.Int64
 		handler := func(w http.ResponseWriter, r *http.Request) {
-			t.Logf("test handler: %s", r.URL.Path)
 			if r.URL.Path == "/api/v2/buildinfo" {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"version": "v2.9.0"}`))
 				return
 			}
-			code := <-handlerSend
+			n := calls.Add(1)
+			t.Logf("test handler: %s call %d", r.URL.Path, n)
+			var code int
+			switch n {
+			// The first two calls should fail with a 401.
+			case 1, 2:
+				code = http.StatusUnauthorized
+			case 3:
+				code = http.StatusOK
+			default:
+				cancel()
+				return
+			}
 			t.Logf("test handler response: %d", code)
 			w.WriteHeader(code)
 		}
@@ -216,25 +227,10 @@ func TestCoder(t *testing.T) {
 
 		u, err := url.Parse(srv.URL)
 		require.NoError(t, err)
-		var connectError error
-		go func() {
-			defer close(handlerSend)
-			defer close(done)
-			_, _, connectError = Coder(ctx, u, token)
-		}()
-
-		// Initial: unauthorized
-		handlerSend <- http.StatusUnauthorized
-		// 2nd try: still unauthorized
-		handlerSend <- http.StatusUnauthorized
-		// 3rd try: authorized
-		handlerSend <- http.StatusOK
-
-		cancel()
-
-		<-done
-		require.ErrorContains(t, connectError, "failed to WebSocket dial")
+		_, _, connectError := Coder(ctx, u, token)
 		require.ErrorIs(t, connectError, context.Canceled)
+		// Should have retried at least twice.
+		require.Greater(t, calls.Load(), int64(2))
 	})
 }
 
