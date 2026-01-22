@@ -239,10 +239,9 @@ func TestShallowCloneRepo(t *testing.T) {
 func TestCloneRepoSSH(t *testing.T) {
 	t.Parallel()
 
-	t.Run("AuthSuccess", func(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
 		t.Parallel()
 
-		// TODO: test the rest of the cloning flow. This just tests successful auth.
 		tmpDir := t.TempDir()
 		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
 
@@ -265,10 +264,9 @@ func TestCloneRepoSSH(t *testing.T) {
 				},
 			},
 		})
-		// TODO: ideally, we want to test the entire cloning flow.
-		// For now, this indicates successful ssh key auth.
-		require.ErrorContains(t, err, "repository not found")
-		require.False(t, cloned)
+		require.NoError(t, err)
+		require.True(t, cloned)
+		require.Equal(t, "Hello, world!", mustRead(t, clientFS, "/workspace/README.md"))
 	})
 
 	t.Run("AuthFailure", func(t *testing.T) {
