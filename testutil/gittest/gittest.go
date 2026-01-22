@@ -269,6 +269,40 @@ func NewRepo(t *testing.T, fs billy.Filesystem, commits ...CommitFunc) *git.Repo
 	return repo
 }
 
+// CreateGitServerWithSubmodule creates a parent git repo with a submodule pointing to another repo.
+// Returns the parent server and the submodule server.
+func CreateGitServerWithSubmodule(t *testing.T, opts Options, submoduleOpts Options) (parentSrv *httptest.Server, submoduleSrv *httptest.Server) {
+	t.Helper()
+
+	// Create the submodule repo first
+	submoduleSrv = CreateGitServer(t, submoduleOpts)
+
+	// Create the parent repo with .gitmodules pointing to submodule
+	if opts.AuthMW == nil {
+		opts.AuthMW = mwtest.BasicAuthMW(opts.Username, opts.Password)
+	}
+
+	fs := memfs.New()
+	commits := make([]CommitFunc, 0)
+	for path, content := range opts.Files {
+		commits = append(commits, Commit(t, path, content, "my test commit"))
+	}
+	// Add gitmodules file pointing to the submodule server
+	gitmodulesContent := fmt.Sprintf(`[submodule "submod"]
+	path = submod
+	url = %s
+`, submoduleSrv.URL)
+	commits = append(commits, Commit(t, ".gitmodules", gitmodulesContent, "add submodule"))
+	_ = NewRepo(t, fs, commits...)
+
+	if opts.TLS {
+		parentSrv = httptest.NewTLSServer(opts.AuthMW(NewServer(fs)))
+	} else {
+		parentSrv = httptest.NewServer(opts.AuthMW(NewServer(fs)))
+	}
+	return parentSrv, submoduleSrv
+}
+
 // WriteFile writes a file to the filesystem.
 func WriteFile(t *testing.T, fs billy.Filesystem, path, content string) {
 	t.Helper()
