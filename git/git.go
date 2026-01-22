@@ -434,8 +434,8 @@ func ProgressWriter(write func(line string, args ...any)) io.WriteCloser {
 }
 
 // resolveSubmoduleURL resolves a potentially relative submodule URL against the parent repository URL
-// ResolveSubmoduleURLForTest is exported for testing resolveSubmoduleURL logic
-func ResolveSubmoduleURLForTest(parentURL, submoduleURL string) (string, error) {
+// ResolveSubmoduleURL resolves a potentially relative submodule URL against a parent repository URL.
+func ResolveSubmoduleURL(parentURL, submoduleURL string) (string, error) {
 	// If the submodule URL is absolute (contains ://) or doesn't start with ./ or ../, return it as-is
 	if strings.Contains(submoduleURL, "://") || (!strings.HasPrefix(submoduleURL, "../") && !strings.HasPrefix(submoduleURL, "./")) {
 		return submoduleURL, nil
@@ -531,7 +531,7 @@ func initSubmodules(ctx context.Context, logf func(string, ...any), repo *git.Re
 		logf("  Expected commit: %s", subStatus.Expected)
 
 		// Resolve the submodule URL
-		resolvedURL, err := ResolveSubmoduleURLForTest(parentURL, subConfig.URL)
+		resolvedURL, err := ResolveSubmoduleURL(parentURL, subConfig.URL)
 		if err != nil {
 			return fmt.Errorf("resolve submodule URL for %q: %w", subConfig.Name, err)
 		}

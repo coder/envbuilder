@@ -532,7 +532,7 @@ func TestResolveSubmoduleURL(t *testing.T) {
 		c := tc
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := git.ResolveSubmoduleURLForTest(c.parentURL, c.subURL)
+			got, err := git.ResolveSubmoduleURL(c.parentURL, c.subURL)
 			if c.expectErr != "" {
 				require.ErrorContains(t, err, c.expectErr)
 				return
