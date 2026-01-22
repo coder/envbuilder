@@ -21,6 +21,7 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
+	gittransport "github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"github.com/stretchr/testify/require"
@@ -140,9 +141,9 @@ func TestCloneRepo(t *testing.T) {
 				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
 
-				authURL, err := url.Parse(srv.URL)
+				authURL, err := gittransport.NewEndpoint(srv.URL)
 				require.NoError(t, err)
-				authURL.User = url.UserPassword(tc.username, tc.password)
+				authURL.User = url.UserPassword(tc.username, tc.password).String()
 				clientFS := memfs.New()
 
 				cloned, err := git.CloneRepo(context.Background(), t.Logf, git.CloneRepoOptions{
@@ -404,7 +405,7 @@ func TestSetupRepoAuth(t *testing.T) {
 		}
 		auth := git.SetupRepoAuth(t.Logf, opts)
 		_, ok := auth.(*gitssh.PublicKeys)
-		require.True(t, ok)
+		require.True(t, ok, "expected SSH auth for git:// URL")
 	})
 
 	t.Run("SSH/GitUsername", func(t *testing.T) {
