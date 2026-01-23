@@ -86,10 +86,22 @@ func TestEnvOptionParsing(t *testing.T) {
 			require.Equal(t, o.BinaryPath, val)
 		})
 
-		t.Run("git clone submodules", func(t *testing.T) {
+		t.Run("git clone submodules true", func(t *testing.T) {
 			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SUBMODULES"), "true")
 			o := runCLI()
 			require.Equal(t, 10, o.GitCloneSubmodules) // "true" defaults to depth 10
+		})
+
+		t.Run("git clone submodules depth", func(t *testing.T) {
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SUBMODULES"), "3")
+			o := runCLI()
+			require.Equal(t, 3, o.GitCloneSubmodules)
+		})
+
+		t.Run("git clone submodules false", func(t *testing.T) {
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SUBMODULES"), "false")
+			o := runCLI()
+			require.Equal(t, 0, o.GitCloneSubmodules)
 		})
 	})
 }
