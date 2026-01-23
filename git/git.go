@@ -35,15 +35,15 @@ type CloneRepoOptions struct {
 	Path    string
 	Storage billy.Filesystem
 
-	RepoURL      string
-	RepoAuth     transport.AuthMethod
-	Progress     sideband.Progress
-	Insecure     bool
-	SingleBranch bool
-	ThinPack     bool
-	Depth        int
-	CABundle     []byte
-	ProxyOptions transport.ProxyOptions
+	RepoURL        string
+	RepoAuth       transport.AuthMethod
+	Progress       sideband.Progress
+	Insecure       bool
+	SingleBranch   bool
+	ThinPack       bool
+	Depth          int
+	CABundle       []byte
+	ProxyOptions   transport.ProxyOptions
 	SubmoduleDepth int // 0 = disabled, >0 = max recursion depth
 }
 
@@ -366,14 +366,14 @@ func CloneOptionsFromOptions(logf func(string, ...any), options options.Options)
 	}
 
 	cloneOpts := CloneRepoOptions{
-		RepoURL:      options.GitURL,
-		Path:         options.WorkspaceFolder,
-		Storage:      options.Filesystem,
-		Insecure:     options.Insecure,
-		SingleBranch: options.GitCloneSingleBranch,
-		ThinPack:     options.GitCloneThinPack,
-		Depth:        int(options.GitCloneDepth),
-		CABundle:     caBundle,
+		RepoURL:        options.GitURL,
+		Path:           options.WorkspaceFolder,
+		Storage:        options.Filesystem,
+		Insecure:       options.Insecure,
+		SingleBranch:   options.GitCloneSingleBranch,
+		ThinPack:       options.GitCloneThinPack,
+		Depth:          int(options.GitCloneDepth),
+		CABundle:       caBundle,
 		SubmoduleDepth: options.GitCloneSubmodules,
 	}
 

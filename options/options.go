@@ -431,9 +431,9 @@ func (o *Options) CLI() serpent.OptionSet {
 				"it will not be turned on for the domain dev.azure.com.",
 		},
 		{
-			Flag:        "git-clone-submodules",
-			Env:         WithEnvPrefix("GIT_CLONE_SUBMODULES"),
-			Value:       SubmoduleDepthOf(&o.GitCloneSubmodules),
+			Flag:  "git-clone-submodules",
+			Env:   WithEnvPrefix("GIT_CLONE_SUBMODULES"),
+			Value: SubmoduleDepthOf(&o.GitCloneSubmodules),
 			Description: "Clone Git submodules after cloning the repository. " +
 				"Accepts 'true' (max depth 10), 'false' (disabled), or a positive integer for max recursion depth.",
 		},
