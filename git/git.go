@@ -241,6 +241,11 @@ func LogHostKeyCallback(logger func(string, ...any)) gossh.HostKeyCallback {
 // If SSH_KNOWN_HOSTS is not set, the SSH auth method will be configured
 // to accept and log all host keys. Otherwise, host key checking will be
 // performed as usual.
+//
+// Git URL formats may only consist of the following:
+//  1. A valid URL with a scheme
+//  2. An SCP-like URL (e.g. git@host.tld:path/to/repo.git)
+//  3. Local filesystem paths (require `git` executable)
 func SetupRepoAuth(logf func(string, ...any), options *options.Options) transport.AuthMethod {
 	if options.GitURL == "" {
 		logf("❔ No Git URL supplied!")

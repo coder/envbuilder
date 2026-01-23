@@ -397,7 +397,7 @@ func TestSetupRepoAuth(t *testing.T) {
 		// Anything that is not https:// or http:// is treated as SSH.
 		kPath := writeTestPrivateKey(t)
 		opts := &options.Options{
-			GitURL:               "git://git@host.tld:repo/path",
+			GitURL:               "git://git@host.tld:12345/path",
 			GitSSHPrivateKeyPath: kPath,
 		}
 		auth := git.SetupRepoAuth(t.Logf, opts)
@@ -420,7 +420,7 @@ func TestSetupRepoAuth(t *testing.T) {
 	t.Run("SSH/PrivateKey", func(t *testing.T) {
 		kPath := writeTestPrivateKey(t)
 		opts := &options.Options{
-			GitURL:               "ssh://git@host.tld:repo/path",
+			GitURL:               "ssh://git@host.tld/repo/path",
 			GitSSHPrivateKeyPath: kPath,
 		}
 		auth := git.SetupRepoAuth(t.Logf, opts)
@@ -434,7 +434,7 @@ func TestSetupRepoAuth(t *testing.T) {
 
 	t.Run("SSH/Base64PrivateKey", func(t *testing.T) {
 		opts := &options.Options{
-			GitURL:                 "ssh://git@host.tld:repo/path",
+			GitURL:                 "ssh://git@host.tld/repo/path",
 			GitSSHPrivateKeyBase64: base64EncodeTestPrivateKey(),
 		}
 		auth := git.SetupRepoAuth(t.Logf, opts)
@@ -450,7 +450,7 @@ func TestSetupRepoAuth(t *testing.T) {
 
 	t.Run("SSH/NoAuthMethods", func(t *testing.T) {
 		opts := &options.Options{
-			GitURL: "ssh://git@host.tld:repo/path",
+			GitURL: "git@host.tld:repo/path",
 		}
 		auth := git.SetupRepoAuth(t.Logf, opts)
 		require.Nil(t, auth) // TODO: actually test SSH_AUTH_SOCK
