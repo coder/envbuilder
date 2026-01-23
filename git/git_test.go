@@ -551,13 +551,13 @@ func TestCloneOptionsFromOptions_Submodules(t *testing.T) {
 		Filesystem:         fs,
 		WorkspaceFolder:    "/workspace",
 		GitURL:             "https://example.com/example/repo.git",
-		GitCloneSubmodules: true,
+		GitCloneSubmodules: 10,
 		GitCloneThinPack:   true,
 	}
 
 	cloneOpts, err := git.CloneOptionsFromOptions(t.Logf, opts)
 	require.NoError(t, err)
-	require.True(t, cloneOpts.Submodules)
+	require.Equal(t, 10, cloneOpts.SubmoduleDepth)
 }
 
 // generates a random ed25519 private key
