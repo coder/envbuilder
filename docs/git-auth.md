@@ -1,4 +1,24 @@
-# Git Authentication
+# Supported URL Formats
+
+Envbuilder supports three distinct types of Git URLs:
+
+1) Valid URLs with scheme (e.g. `https://user:password@host.tld:12345/path/to/repo`)
+2) SCP-like URLs (e.g. `git@host.tld:path/to/repo.git`)
+3) Filesystem URLs (require the `git` executable to be available)
+
+Based on the type of URL, one of two authentication methods will be used:
+
+| Git URL format          | GIT_USERNAME | GIT_PASSWORD | Auth Method |
+| ------------------------|--------------|--------------|-------------|
+| https?://host.tld/repo  | Not Set      | Not Set      | None        |
+| https?://host.tld/repo  | Not Set      | Set          | HTTP Basic  |
+| https?://host.tld/repo  | Set          | Not Set      | HTTP Basic  |
+| https?://host.tld/repo  | Set          | Set          | HTTP Basic  |
+| file://path/to/repo     | -            | -            | None        |
+| path/to/repo            | -            | -            | None        |
+| All other formats       | -            | -            | SSH         |
+
+# Authentication Methods
 
 Two methods of authentication are supported:
 
