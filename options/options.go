@@ -428,7 +428,7 @@ func (o *Options) CLI() serpent.OptionSet {
 			Default: "true",
 			Description: "Git clone with thin pack compatibility enabled, " +
 				"ensuring that even when thin pack compatibility is activated," +
-				"it will not be turned on for the domain dev.zaure.com.",
+				"it will not be turned on for the domain dev.azure.com.",
 		},
 		{
 			Flag:        "git-clone-submodules",

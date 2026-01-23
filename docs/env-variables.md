@@ -27,7 +27,7 @@
 | `--git-url` | `ENVBUILDER_GIT_URL` |  | The URL of a Git repository containing a Devcontainer or Docker image to clone. This is optional. |
 | `--git-clone-depth` | `ENVBUILDER_GIT_CLONE_DEPTH` |  | The depth to use when cloning the Git repository. |
 | `--git-clone-single-branch` | `ENVBUILDER_GIT_CLONE_SINGLE_BRANCH` |  | Clone only a single branch of the Git repository. |
-| `--git-clone-thinpack` | `ENVBUILDER_GIT_CLONE_THINPACK` | `true` | Git clone with thin pack compatibility enabled, ensuring that even when thin pack compatibility is activated,it will not be turned on for the domain dev.zaure.com. |
+| `--git-clone-thinpack` | `ENVBUILDER_GIT_CLONE_THINPACK` | `true` | Git clone with thin pack compatibility enabled, ensuring that even when thin pack compatibility is activated,it will not be turned on for the domain dev.azure.com. |
 | `--git-clone-submodules` | `ENVBUILDER_GIT_CLONE_SUBMODULES` |  | Clone Git submodules after cloning the repository. Accepts 'true' (max depth 10), 'false' (disabled), or a positive integer for max recursion depth. |
 | `--git-username` | `ENVBUILDER_GIT_USERNAME` |  | The username to use for Git authentication. This is optional. |
 | `--git-password` | `ENVBUILDER_GIT_PASSWORD` |  | The password to use for Git authentication. This is optional. |
