@@ -89,7 +89,7 @@ func TestEnvOptionParsing(t *testing.T) {
 		t.Run("git clone submodules", func(t *testing.T) {
 			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SUBMODULES"), "true")
 			o := runCLI()
-			require.True(t, o.GitCloneSubmodules)
+			require.Equal(t, 10, o.GitCloneSubmodules) // "true" defaults to depth 10
 		})
 	})
 }

@@ -44,7 +44,7 @@ type CloneRepoOptions struct {
 	Depth        int
 	CABundle     []byte
 	ProxyOptions transport.ProxyOptions
-	Submodules   bool
+	SubmoduleDepth int // 0 = disabled, >0 = max recursion depth
 }
 
 // CloneRepo will clone the repository at the given URL into the given path.
@@ -142,8 +142,8 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 	}
 
 	// Initialize submodules if requested
-	if opts.Submodules {
-		err = initSubmodules(ctx, logf, repo, opts)
+	if opts.SubmoduleDepth > 0 {
+		err = initSubmodules(ctx, logf, repo, opts, 1)
 		if err != nil {
 			return true, fmt.Errorf("init submodules: %w", err)
 		}
@@ -374,7 +374,7 @@ func CloneOptionsFromOptions(logf func(string, ...any), options options.Options)
 		ThinPack:     options.GitCloneThinPack,
 		Depth:        int(options.GitCloneDepth),
 		CABundle:     caBundle,
-		Submodules:   options.GitCloneSubmodules,
+		SubmoduleDepth: options.GitCloneSubmodules,
 	}
 
 	cloneOpts.RepoAuth = SetupRepoAuth(logf, &options)
@@ -485,8 +485,13 @@ func ResolveSubmoduleURL(parentURL, submoduleURL string) (string, error) {
 }
 
 // initSubmodules recursively initializes and updates all submodules in the repository.
-func initSubmodules(ctx context.Context, logf func(string, ...any), repo *git.Repository, opts CloneRepoOptions) error {
-	logf("🔗 Initializing git submodules...")
+// currentDepth tracks the current recursion level (starts at 1).
+func initSubmodules(ctx context.Context, logf func(string, ...any), repo *git.Repository, opts CloneRepoOptions, currentDepth int) error {
+	if currentDepth > opts.SubmoduleDepth {
+		logf("⚠ Skipping nested submodules: max depth %d reached", opts.SubmoduleDepth)
+		return nil
+	}
+	logf("🔗 Initializing git submodules (depth %d/%d)...", currentDepth, opts.SubmoduleDepth)
 
 	w, err := repo.Worktree()
 	if err != nil {
@@ -561,7 +566,7 @@ func initSubmodules(ctx context.Context, logf func(string, ...any), repo *git.Re
 				// Create new opts with the submodule's URL as the parent
 				nestedOpts := opts
 				nestedOpts.RepoURL = resolvedURL
-				err = initSubmodules(ctx, logf, subRepo, nestedOpts)
+				err = initSubmodules(ctx, logf, subRepo, nestedOpts, currentDepth+1)
 				if err != nil {
 					return fmt.Errorf("init nested submodules in %q: %w", subConfig.Name, err)
 				}
