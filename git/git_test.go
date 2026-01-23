@@ -4,13 +4,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/coder/envbuilder/git"
@@ -76,6 +75,18 @@ func TestCloneRepo(t *testing.T) {
 			password:    "",
 			expectClone: true,
 		},
+		{
+			name: "whitespace in URL",
+			mungeURL: func(u *string) {
+				if u == nil {
+					t.Errorf("expected non-nil URL")
+					return
+				}
+				*u = "  " + *u + "  "
+				t.Logf("munged URL: %q", *u)
+			},
+			expectClone: true,
+		},
 	} {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
@@ -87,6 +98,9 @@ func TestCloneRepo(t *testing.T) {
 				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
+				if tc.mungeURL != nil {
+					tc.mungeURL(&srv.URL)
+				}
 				clientFS := memfs.New()
 				// A repo already exists!
 				_ = gittest.NewRepo(t, clientFS)
@@ -106,6 +120,9 @@ func TestCloneRepo(t *testing.T) {
 				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
+				if tc.mungeURL != nil {
+					tc.mungeURL(&srv.URL)
+				}
 				clientFS := memfs.New()
 
 				cloned, err := git.CloneRepo(context.Background(), t.Logf, git.CloneRepoOptions{
@@ -129,7 +146,7 @@ func TestCloneRepo(t *testing.T) {
 				require.Equal(t, "Hello, world!", readme)
 				gitConfig := mustRead(t, clientFS, "/workspace/.git/config")
 				// Ensure we do not modify the git URL that folks pass in.
-				require.Regexp(t, fmt.Sprintf(`(?m)^\s+url\s+=\s+%s\s*$`, regexp.QuoteMeta(srv.URL)), gitConfig)
+				require.Contains(t, gitConfig, strings.TrimSpace(srv.URL))
 			})
 
 			// In-URL-style auth e.g. http://user:password@host:port
@@ -139,15 +156,19 @@ func TestCloneRepo(t *testing.T) {
 				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
 				srv := httptest.NewServer(authMW(gittest.NewServer(srvFS)))
-
 				authURL, err := url.Parse(srv.URL)
 				require.NoError(t, err)
 				authURL.User = url.UserPassword(tc.username, tc.password)
+				cloneURL := authURL.String()
+				if tc.mungeURL != nil {
+					tc.mungeURL(&cloneURL)
+				}
+
 				clientFS := memfs.New()
 
 				cloned, err := git.CloneRepo(context.Background(), t.Logf, git.CloneRepoOptions{
 					Path:    "/workspace",
-					RepoURL: authURL.String(),
+					RepoURL: cloneURL,
 					Storage: clientFS,
 				})
 				require.Equal(t, tc.expectClone, cloned)
@@ -162,7 +183,7 @@ func TestCloneRepo(t *testing.T) {
 				require.Equal(t, "Hello, world!", readme)
 				gitConfig := mustRead(t, clientFS, "/workspace/.git/config")
 				// Ensure we do not modify the git URL that folks pass in.
-				require.Regexp(t, fmt.Sprintf(`(?m)^\s+url\s+=\s+%s\s*$`, regexp.QuoteMeta(authURL.String())), gitConfig)
+				require.Contains(t, gitConfig, strings.TrimSpace(cloneURL))
 			})
 		})
 	}
@@ -478,6 +499,28 @@ func TestSetupRepoAuth(t *testing.T) {
 		}
 		auth := git.SetupRepoAuth(t.Logf, opts)
 		require.Nil(t, auth)
+	})
+
+	t.Run("Whitespace", func(t *testing.T) {
+		kPath := writeTestPrivateKey(t)
+		opts := &options.Options{
+			GitURL:               "ssh://git@host.tld/repo path",
+			GitSSHPrivateKeyPath: kPath,
+		}
+		auth := git.SetupRepoAuth(t.Logf, opts)
+		_, ok := auth.(*gitssh.PublicKeys)
+		require.True(t, ok)
+	})
+
+	t.Run("LeadingTrailingWhitespace", func(t *testing.T) {
+		kPath := writeTestPrivateKey(t)
+		opts := &options.Options{
+			GitURL:               " ssh://git@host.tld/repo/path ",
+			GitSSHPrivateKeyPath: kPath,
+		}
+		auth := git.SetupRepoAuth(t.Logf, opts)
+		_, ok := auth.(*gitssh.PublicKeys)
+		require.True(t, ok)
 	})
 }
 

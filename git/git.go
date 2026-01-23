@@ -116,7 +116,7 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 	}
 
 	_, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
-		URL:             opts.RepoURL, // Use the EXACT URL provided.
+		URL:             parsed.Cleaned,
 		Auth:            opts.RepoAuth,
 		Progress:        opts.Progress,
 		ReferenceName:   plumbing.ReferenceName(parsed.Reference),

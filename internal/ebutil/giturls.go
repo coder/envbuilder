@@ -24,6 +24,7 @@ type ParsedURL struct {
 	Port      int
 	Path      string
 	Reference string
+	Cleaned   string
 }
 
 // ParseRepoURL parses the given repository URL into its components.
@@ -31,6 +32,8 @@ type ParsedURL struct {
 // diverges from the go-git URL parser. To ensure consistency, we now
 // use go-git directly.
 func ParseRepoURL(repoURL string) (*ParsedURL, error) {
+	// Trim leading and trailing whitespace
+	repoURL = strings.TrimSpace(repoURL)
 	// Trim #reference from path
 	var reference string
 	if idx := strings.Index(repoURL, "#"); idx > -1 {
@@ -49,5 +52,6 @@ func ParseRepoURL(repoURL string) (*ParsedURL, error) {
 		Port:      parsed.Port,
 		Path:      parsed.Path,
 		Reference: reference,
+		Cleaned:   repoURL,
 	}, nil
 }
