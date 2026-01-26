@@ -14,6 +14,8 @@ Based on the type of URL, one of two authentication methods will be used:
 | https?://host.tld/repo  | Not Set      | Set          | HTTP Basic  |
 | https?://host.tld/repo  | Set          | Not Set      | HTTP Basic  |
 | https?://host.tld/repo  | Set          | Set          | HTTP Basic  |
+| ssh://host.tld/repo     | -            | -            | SSH         |
+| git://host.tld/repo     | -            | -            | SSH         |
 | file://path/to/repo     | -            | -            | None        |
 | path/to/repo            | -            | -            | None        |
 | All other formats       | -            | -            | SSH         |
