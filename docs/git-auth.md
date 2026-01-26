@@ -18,6 +18,7 @@ Based on the type of URL, one of two authentication methods will be used:
 | git://host.tld/repo     | -            | -            | SSH         |
 | file://path/to/repo     | -            | -            | None        |
 | path/to/repo            | -            | -            | None        |
+| user@host.tld:path/repo | -            | -            | SSH         |
 | All other formats       | -            | -            | SSH         |
 
 # Authentication Methods
