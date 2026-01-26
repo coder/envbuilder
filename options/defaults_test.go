@@ -34,6 +34,24 @@ func TestDefaultWorkspaceFolder(t *testing.T) {
 			expected: "/workspaces/envbuilder",
 		},
 		{
+			name:     "SSH with scheme",
+			baseDir:  "/workspaces",
+			gitURL:   "ssh://git@github.com/coder/envbuilder.git",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "Git protocol is SSH",
+			baseDir:  "/workspaces",
+			gitURL:   "git://github.com/coder/envbuilder.git",
+			expected: "/workspaces/envbuilder",
+		},
+		{
+			name:     "Git+SSH",
+			baseDir:  "/workspaces",
+			gitURL:   "git+ssh://github.com/coder/envbuilder.git",
+			expected: "/workspaces/envbuilder",
+		},
+		{
 			name:     "username and password",
 			baseDir:  "/workspaces",
 			gitURL:   "https://username:password@github.com/coder/envbuilder.git",
