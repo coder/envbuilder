@@ -12,9 +12,9 @@ import (
 	"path"
 	"strings"
 
+	"github.com/coder/envbuilder/internal/ebutil"
 	"github.com/coder/envbuilder/options"
 
-	giturls "github.com/chainguard-dev/git-urls"
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -53,18 +53,17 @@ type CloneRepoOptions struct {
 //
 // The bool returned states whether the repository was cloned or not.
 func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOptions) (bool, error) {
-	parsed, err := giturls.Parse(opts.RepoURL)
+	parsed, err := ebutil.ParseRepoURL(opts.RepoURL)
 	if err != nil {
 		return false, fmt.Errorf("parse url %q: %w", opts.RepoURL, err)
 	}
-	logf("Parsed Git URL as %q", parsed.Redacted())
 
 	thinPack := true
 
 	if !opts.ThinPack {
 		thinPack = false
 		logf("ThinPack options is false, Marking thin-pack as unsupported")
-	} else if parsed.Hostname() == "dev.azure.com" {
+	} else if parsed.Host == "dev.azure.com" {
 		// Azure DevOps requires capabilities multi_ack / multi_ack_detailed,
 		// which are not fully implemented and by default are included in
 		// transport.UnsupportedCapabilities.
@@ -96,12 +95,9 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 	if err != nil {
 		return false, fmt.Errorf("mkdir %q: %w", opts.Path, err)
 	}
-	reference := parsed.Fragment
-	if reference == "" && opts.SingleBranch {
-		reference = "refs/heads/main"
+	if parsed.Reference == "" && opts.SingleBranch {
+		parsed.Reference = "refs/heads/main"
 	}
-	parsed.RawFragment = ""
-	parsed.Fragment = ""
 	fs, err := opts.Storage.Chroot(opts.Path)
 	if err != nil {
 		return false, fmt.Errorf("chroot %q: %w", opts.Path, err)
@@ -123,11 +119,11 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 		return false, nil
 	}
 
-	repo, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
-		URL:             parsed.String(),
+	_, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
+		URL:             parsed.Cleaned,
 		Auth:            opts.RepoAuth,
 		Progress:        opts.Progress,
-		ReferenceName:   plumbing.ReferenceName(reference),
+		ReferenceName:   plumbing.ReferenceName(parsed.Reference),
 		InsecureSkipTLS: opts.Insecure,
 		Depth:           opts.Depth,
 		SingleBranch:    opts.SingleBranch,
@@ -258,18 +254,23 @@ func LogHostKeyCallback(logger func(string, ...any)) gossh.HostKeyCallback {
 // If SSH_KNOWN_HOSTS is not set, the SSH auth method will be configured
 // to accept and log all host keys. Otherwise, host key checking will be
 // performed as usual.
+//
+// Git URL formats may only consist of the following:
+//  1. A valid URL with a scheme
+//  2. An SCP-like URL (e.g. git@host.tld:path/to/repo.git)
+//  3. Local filesystem paths (require `git` executable)
 func SetupRepoAuth(logf func(string, ...any), options *options.Options) transport.AuthMethod {
 	if options.GitURL == "" {
 		logf("❔ No Git URL supplied!")
 		return nil
 	}
-	parsedURL, err := giturls.Parse(options.GitURL)
+	parsedURL, err := ebutil.ParseRepoURL(options.GitURL)
 	if err != nil {
 		logf("❌ Failed to parse Git URL: %s", err.Error())
 		return nil
 	}
 
-	if parsedURL.Scheme == "http" || parsedURL.Scheme == "https" {
+	if parsedURL.Protocol == "http" || parsedURL.Protocol == "https" {
 		// Special case: no auth
 		if options.GitUsername == "" && options.GitPassword == "" {
 			logf("👤 Using no authentication!")
@@ -285,7 +286,7 @@ func SetupRepoAuth(logf func(string, ...any), options *options.Options) transpor
 		}
 	}
 
-	if parsedURL.Scheme == "file" {
+	if parsedURL.Protocol == "file" {
 		// go-git will try to fallback to using the `git` command for local
 		// filesystem clones. However, it's more likely than not that the
 		// `git` command is not present in the container image. Log a warning

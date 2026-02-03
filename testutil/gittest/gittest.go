@@ -165,8 +165,9 @@ func NewServerSSH(t *testing.T, fs billy.Filesystem, pubkeys ...gossh.PublicKey)
 
 	addr, ok := l.Addr().(*net.TCPAddr)
 	require.True(t, ok)
-	tr, err := transport.NewEndpoint(fmt.Sprintf("ssh://git@%s:%d/", addr.IP, addr.Port))
+	tr, err := transport.NewEndpoint(fmt.Sprintf("ssh://git@%s:%d%s", addr.IP, addr.Port, fs.Root()))
 	require.NoError(t, err)
+	t.Logf("git-ssh url: %s", tr.String())
 	return tr
 }
 
