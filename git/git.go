@@ -119,7 +119,7 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 		return false, nil
 	}
 
-	_, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
+	repo, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
 		URL:             parsed.Cleaned,
 		Auth:            opts.RepoAuth,
 		Progress:        opts.Progress,
