@@ -306,6 +306,55 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 	return strings.Join(lines, "\n"), featureContexts, err
 }
 
+// buildArgsWithDefaults merges external build args with ARG defaults from a Dockerfile.
+// External args take precedence over Dockerfile defaults.
+func buildArgsWithDefaults(dockerfileContent string, externalArgs []string) ([]string, error) {
+	lexer := shell.NewLex('\\')
+
+	// Start with external args (these have highest precedence)
+	result := make([]string, len(externalArgs))
+	copy(result, externalArgs)
+
+	// Build a set of externally-provided arg names for quick lookup
+	externalArgNames := make(map[string]struct{})
+	for _, arg := range externalArgs {
+		if parts := strings.SplitN(arg, "=", 2); len(parts) == 2 {
+			externalArgNames[parts[0]] = struct{}{}
+		}
+	}
+
+	// Process ARG instructions to add default values if not overridden
+	for _, line := range strings.Split(dockerfileContent, "\n") {
+		arg, ok := strings.CutPrefix(line, "ARG ")
+		if !ok {
+			continue
+		}
+		arg = strings.TrimSpace(arg)
+		if !strings.Contains(arg, "=") {
+			continue
+		}
+
+		parts := strings.SplitN(arg, "=", 2)
+		key, _, err := lexer.ProcessWord(parts[0], shell.EnvsFromSlice(result))
+		if err != nil {
+			return nil, fmt.Errorf("processing %q: %w", line, err)
+		}
+
+		// Only use the default value if no external arg was provided
+		if _, exists := externalArgNames[key]; exists {
+			continue
+		}
+
+		val, _, err := lexer.ProcessWord(parts[1], shell.EnvsFromSlice(result))
+		if err != nil {
+			return nil, fmt.Errorf("processing %q: %w", line, err)
+		}
+		result = append(result, key+"="+val)
+	}
+
+	return result, nil
+}
+
 // UserFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the user that will be used to run the container.
 // Optionally accepts build args that may override default values in the Dockerfile.
@@ -320,44 +369,11 @@ func UserFromDockerfile(dockerfileContent string, buildArgs ...[]string) (user s
 		return "", fmt.Errorf("parse dockerfile: %w", err)
 	}
 
-	// Parse build args and ARG instructions to build the substitution context
+	resolvedArgs, err := buildArgsWithDefaults(dockerfileContent, args)
+	if err != nil {
+		return "", err
+	}
 	lexer := shell.NewLex('\\')
-
-	// Start with build args provided externally (e.g., from devcontainer.json)
-	argsCopy := make([]string, len(args))
-	copy(argsCopy, args)
-
-	// Parse build args into a map for easy lookup
-	buildArgsMap := make(map[string]string)
-	for _, arg := range args {
-		if parts := strings.SplitN(arg, "=", 2); len(parts) == 2 {
-			buildArgsMap[parts[0]] = parts[1]
-		}
-	}
-
-	// Process ARG instructions to add default values if not overridden
-	lines := strings.Split(dockerfileContent, "\n")
-	for _, line := range lines {
-		if arg, ok := strings.CutPrefix(line, "ARG "); ok {
-			arg = strings.TrimSpace(arg)
-			if strings.Contains(arg, "=") {
-				parts := strings.SplitN(arg, "=", 2)
-				key, _, err := lexer.ProcessWord(parts[0], shell.EnvsFromSlice(argsCopy))
-				if err != nil {
-					return "", fmt.Errorf("processing %q: %w", line, err)
-				}
-
-				// Only use the default value if no build arg was provided
-				if _, exists := buildArgsMap[key]; !exists {
-					val, _, err := lexer.ProcessWord(parts[1], shell.EnvsFromSlice(argsCopy))
-					if err != nil {
-						return "", fmt.Errorf("processing %q: %w", line, err)
-					}
-					argsCopy = append(argsCopy, key+"="+val)
-				}
-			}
-		}
-	}
 
 	// Parse stages and user commands to determine the relevant user
 	// from the final stage.
@@ -418,7 +434,7 @@ func UserFromDockerfile(dockerfileContent string, buildArgs ...[]string) (user s
 		// If we can't find a user command, try to find the user from
 		// the image. First, substitute any ARG variables in the image name.
 		imageRef := stage.BaseName
-		imageRef, _, err := lexer.ProcessWord(imageRef, shell.EnvsFromSlice(argsCopy))
+		imageRef, _, err := lexer.ProcessWord(imageRef, shell.EnvsFromSlice(resolvedArgs))
 		if err != nil {
 			return "", fmt.Errorf("processing image ref %q: %w", stage.BaseName, err)
 		}
@@ -446,56 +462,25 @@ func ImageFromDockerfile(dockerfileContent string, buildArgs ...[]string) (name.
 		args = buildArgs[0]
 	}
 
-	lexer := shell.NewLex('\\')
-
-	// Start with build args provided externally (e.g., from devcontainer.json)
-	// These have higher precedence than default values in ARG instructions
-	argsCopy := make([]string, len(args))
-	copy(argsCopy, args)
-
-	// Parse build args into a map for easy lookup
-	buildArgsMap := make(map[string]string)
-	for _, arg := range args {
-		if parts := strings.SplitN(arg, "=", 2); len(parts) == 2 {
-			buildArgsMap[parts[0]] = parts[1]
-		}
+	resolvedArgs, err := buildArgsWithDefaults(dockerfileContent, args)
+	if err != nil {
+		return nil, err
 	}
 
+	// Find the FROM instruction
 	var imageRef string
-	lines := strings.Split(dockerfileContent, "\n")
-	// Iterate over lines in reverse to find ARG declarations and FROM instruction
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := lines[i]
-		if arg, ok := strings.CutPrefix(line, "ARG "); ok {
-			arg = strings.TrimSpace(arg)
-			if strings.Contains(arg, "=") {
-				parts := strings.SplitN(arg, "=", 2)
-				key, _, err := lexer.ProcessWord(parts[0], shell.EnvsFromSlice(argsCopy))
-				if err != nil {
-					return nil, fmt.Errorf("processing %q: %w", line, err)
-				}
-
-				// Only use the default value if no build arg was provided
-				if _, exists := buildArgsMap[key]; !exists {
-					val, _, err := lexer.ProcessWord(parts[1], shell.EnvsFromSlice(argsCopy))
-					if err != nil {
-						return nil, fmt.Errorf("processing %q: %w", line, err)
-					}
-					argsCopy = append(argsCopy, key+"="+val)
-				}
-			}
-			continue
-		}
-		if imageRef == "" {
-			if fromArgs, ok := strings.CutPrefix(line, "FROM "); ok {
-				imageRef = fromArgs
-			}
+	for _, line := range strings.Split(dockerfileContent, "\n") {
+		if fromArgs, ok := strings.CutPrefix(line, "FROM "); ok {
+			imageRef = fromArgs
+			break
 		}
 	}
 	if imageRef == "" {
 		return nil, fmt.Errorf("no FROM directive found")
 	}
-	imageRef, _, err := lexer.ProcessWord(imageRef, shell.EnvsFromSlice(argsCopy))
+
+	lexer := shell.NewLex('\\')
+	imageRef, _, err = lexer.ProcessWord(imageRef, shell.EnvsFromSlice(resolvedArgs))
 	if err != nil {
 		return nil, fmt.Errorf("processing %q: %w", imageRef, err)
 	}

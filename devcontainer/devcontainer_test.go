@@ -269,7 +269,6 @@ func TestImageFromDockerfileWithArgs(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.image, ref.Name())
 			// Test without args (using defaults)
-			fmt.Println("Testing ImageFromDockerfile without args...")
 			ref1, err := devcontainer.ImageFromDockerfile(tc.content)
 			require.NoError(t, err)
 			require.Equal(t, tc.default_image, ref1.Name())
@@ -322,12 +321,10 @@ func TestUserFromDockerfileWithArgs(t *testing.T) {
 			require.Equal(t, "VARIANT=3.11-bookworm", params.BuildArgs[0])
 			require.Equal(t, params.DockerfileContent, tc.content)
 			// Test UserFromDockerfile without args
-			fmt.Println("\nTesting UserFromDockerfile without args...")
 			user1, err := devcontainer.UserFromDockerfile(tc.content)
 			require.NoError(t, err)
 			require.Equal(t, tc.user, user1)
 			// Test UserFromDockerfile with args
-			fmt.Println("\nTesting UserFromDockerfile with args...")
 			user2, err := devcontainer.UserFromDockerfile(tc.content, params.BuildArgs)
 			require.NoError(t, err)
 			require.Equal(t, tc.user, user2)
@@ -427,7 +424,6 @@ func TestUserFrom(t *testing.T) {
 			require.NoError(t, err)
 			parsed.Path = "coder/test:" + tag
 			ref, err := name.ParseReference(strings.TrimPrefix(parsed.String(), "http://"))
-			fmt.Println(ref)
 			require.NoError(t, err)
 			err = remote.Write(ref, image)
 			require.NoError(t, err)
