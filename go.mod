@@ -13,7 +13,6 @@ require (
 	cdr.dev/slog v1.6.2-0.20240126064726-20367d4aede6
 	github.com/GoogleContainerTools/kaniko v1.9.2
 	github.com/breml/rootcerts v0.2.10
-	github.com/chainguard-dev/git-urls v1.0.2
 	github.com/coder/coder/v2 v2.10.1-0.20240704130443-c2d44d16a352
 	github.com/coder/retry v1.5.1
 	github.com/coder/serpent v0.8.0
