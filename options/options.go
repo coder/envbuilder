@@ -110,6 +110,8 @@ type Options struct {
 	GitCloneDepth int64
 	// GitCloneSingleBranch clone only a single branch of the Git repository.
 	GitCloneSingleBranch bool
+	// GitCloneThinPack clone with thin pack compabilities. This is optional.
+	GitCloneThinPack bool
 	// GitUsername is the username to use for Git authentication. This is
 	// optional.
 	GitUsername string
@@ -386,6 +388,15 @@ func (o *Options) CLI() serpent.OptionSet {
 			Env:         WithEnvPrefix("GIT_CLONE_SINGLE_BRANCH"),
 			Value:       serpent.BoolOf(&o.GitCloneSingleBranch),
 			Description: "Clone only a single branch of the Git repository.",
+		},
+		{
+			Flag:    "git-clone-thinpack",
+			Env:     WithEnvPrefix("GIT_CLONE_THINPACK"),
+			Value:   serpent.BoolOf(&o.GitCloneThinPack),
+			Default: "true",
+			Description: "Git clone with thin pack compatibility enabled, " +
+				"ensuring that even when thin pack compatibility is activated," +
+				"it will not be turned on for the domain dev.zaure.com.",
 		},
 		{
 			Flag:        "git-username",

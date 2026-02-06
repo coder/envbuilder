@@ -1,4 +1,27 @@
-# Git Authentication
+# Supported URL Formats
+
+Envbuilder supports three distinct types of Git URLs:
+
+1) Valid URLs with scheme (e.g. `https://user:password@host.tld:12345/path/to/repo`)
+2) SCP-like URLs (e.g. `git@host.tld:path/to/repo.git`)
+3) Filesystem URLs (require the `git` executable to be available)
+
+Based on the type of URL, one of two authentication methods will be used:
+
+| Git URL format          | GIT_USERNAME | GIT_PASSWORD | Auth Method |
+| ------------------------|--------------|--------------|-------------|
+| https?://host.tld/repo  | Not Set      | Not Set      | None        |
+| https?://host.tld/repo  | Not Set      | Set          | HTTP Basic  |
+| https?://host.tld/repo  | Set          | Not Set      | HTTP Basic  |
+| https?://host.tld/repo  | Set          | Set          | HTTP Basic  |
+| ssh://host.tld/repo     | -            | -            | SSH         |
+| git://host.tld/repo     | -            | -            | SSH         |
+| file://path/to/repo     | -            | -            | None        |
+| path/to/repo            | -            | -            | None        |
+| user@host.tld:path/repo | -            | -            | SSH         |
+| All other formats       | -            | -            | SSH         |
+
+# Authentication Methods
 
 Two methods of authentication are supported:
 
@@ -48,6 +71,18 @@ envbuilder will assume SSH authentication. You have the following options:
       -v /home/user/id_rsa:/.ssh/id_rsa \
       ghcr.io/coder/envbuilder
    ```
+
+    Alternatively, you can set `ENVBUILDER_GIT_SSH_PRIVATE_KEY_BASE64` to the
+    base64-encoded content of your private key. Example:
+
+    ```bash
+    docker run -it --rm \
+        -v /tmp/envbuilder:/workspaces \
+        -e ENVBUILDER_GIT_URL=git@example.com:path/to/private/repo.git \
+        -e ENVBUILDER_INIT_SCRIPT=bash \
+        -e ENVBUILDER_GIT_SSH_PRIVATE_KEY_BASE64=$(base64 < ~/.ssh/id_ed25519) \
+        ghcr.io/coder/envbuilder
+    ```
 
 1. Agent-based authentication: set `SSH_AUTH_SOCK` and mount in your agent socket, for example:
 
