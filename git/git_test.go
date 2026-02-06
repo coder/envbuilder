@@ -533,6 +533,74 @@ func mustRead(t *testing.T, fs billy.Filesystem, path string) string {
 	return string(content)
 }
 
+func TestResolveSubmoduleURL(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		parentURL string
+		subURL    string
+		expect    string
+		expectErr string
+	}{
+		{
+			name:      "absolute",
+			parentURL: "https://example.com/org/main.git",
+			subURL:    "https://github.com/other/repo.git",
+			expect:    "https://github.com/other/repo.git",
+		},
+		{
+			name:      "relativeSibling",
+			parentURL: "https://example.com/org/main.git",
+			subURL:    "../deps/lib.git",
+			expect:    "https://example.com/org/deps/lib.git",
+		},
+		{
+			name:      "relativeChild",
+			parentURL: "https://example.com/org/main.git",
+			subURL:    "./extras/tool.git",
+			expect:    "https://example.com/org/main.git/extras/tool.git",
+		},
+		{
+			name:      "badParent",
+			parentURL: "://bad",
+			subURL:    "./child",
+			expectErr: "parse parent URL",
+		},
+	}
+
+	for _, tc := range cases {
+		c := tc
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := git.ResolveSubmoduleURL(c.parentURL, c.subURL)
+			if c.expectErr != "" {
+				require.ErrorContains(t, err, c.expectErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, c.expect, got)
+		})
+	}
+}
+
+func TestCloneOptionsFromOptions_Submodules(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	opts := options.Options{
+		Filesystem:         fs,
+		WorkspaceFolder:    "/workspace",
+		GitURL:             "https://example.com/example/repo.git",
+		GitCloneSubmodules: 10,
+		GitCloneThinPack:   true,
+	}
+
+	cloneOpts, err := git.CloneOptionsFromOptions(t.Logf, opts)
+	require.NoError(t, err)
+	require.Equal(t, 10, cloneOpts.SubmoduleDepth)
+}
+
 // generates a random ed25519 private key
 func randKeygen(t *testing.T) gossh.Signer {
 	t.Helper()
