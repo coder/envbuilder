@@ -24,6 +24,8 @@ import (
 
 const workingDir = "/.envbuilder"
 
+var emptyRemoteOpts []remote.Option
+
 func stubLookupEnv(string) (string, bool) {
 	return "", false
 }
@@ -46,7 +48,7 @@ func TestParse(t *testing.T) {
 func TestCompileWithFeatures(t *testing.T) {
 	t.Parallel()
 	registry := registrytest.New(t)
-	featureOne := registrytest.WriteContainer(t, registry, "coder/one:tomato", features.TarLayerMediaType, map[string]any{
+	featureOne := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/one:tomato", features.TarLayerMediaType, map[string]any{
 		"install.sh": "hey",
 		"devcontainer-feature.json": features.Spec{
 			ID:          "rust",
@@ -58,7 +60,7 @@ func TestCompileWithFeatures(t *testing.T) {
 			},
 		},
 	})
-	featureTwo := registrytest.WriteContainer(t, registry, "coder/two:potato", features.TarLayerMediaType, map[string]any{
+	featureTwo := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/two:potato", features.TarLayerMediaType, map[string]any{
 		"install.sh": "hey",
 		"devcontainer-feature.json": features.Spec{
 			ID:          "go",

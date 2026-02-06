@@ -47,7 +47,7 @@ func New(t testing.TB, mws ...func(http.Handler) http.Handler) string {
 
 // WriteContainer uploads a container to the registry server.
 // It returns the reference to the uploaded container.
-func WriteContainer(t *testing.T, serverURL, containerRef, mediaType string, files map[string]any) string {
+func WriteContainer(t *testing.T, serverURL string, remoteOpt []remote.Option, containerRef, mediaType string, files map[string]any) string {
 	var buf bytes.Buffer
 	hasher := crypto.SHA256.New()
 	mw := io.MultiWriter(&buf, hasher)
@@ -110,7 +110,7 @@ func WriteContainer(t *testing.T, serverURL, containerRef, mediaType string, fil
 	ref, err := name.ParseReference(strings.TrimPrefix(parsedStr, "http://"))
 	require.NoError(t, err)
 
-	err = remote.Write(ref, image)
+	err = remote.Write(ref, image, remoteOpt...)
 	require.NoError(t, err)
 
 	return ref.String()
