@@ -204,7 +204,7 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, 
 		// We should make a best-effort attempt to find the user.
 		// Features must be executed as root, so we need to swap back
 		// to the running user afterwards.
-		params.User, err = UserFromDockerfile(params.DockerfileContent)
+		params.User, err = UserFromDockerfile(params.DockerfileContent, buildArgs)
 		if err != nil {
 			return nil, fmt.Errorf("user from dockerfile: %w", err)
 		}
@@ -306,13 +306,74 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 	return strings.Join(lines, "\n"), featureContexts, err
 }
 
+// buildArgsWithDefaults merges external build args with ARG defaults from a Dockerfile.
+// External args take precedence over Dockerfile defaults.
+func buildArgsWithDefaults(dockerfileContent string, externalArgs []string) ([]string, error) {
+	lexer := shell.NewLex('\\')
+
+	// Start with external args (these have highest precedence)
+	result := make([]string, len(externalArgs))
+	copy(result, externalArgs)
+
+	// Build a set of externally-provided arg names for quick lookup
+	externalArgNames := make(map[string]struct{})
+	for _, arg := range externalArgs {
+		if parts := strings.SplitN(arg, "=", 2); len(parts) == 2 {
+			externalArgNames[parts[0]] = struct{}{}
+		}
+	}
+
+	// Process ARG instructions to add default values if not overridden
+	for _, line := range strings.Split(dockerfileContent, "\n") {
+		arg, ok := strings.CutPrefix(line, "ARG ")
+		if !ok {
+			continue
+		}
+		arg = strings.TrimSpace(arg)
+		if !strings.Contains(arg, "=") {
+			continue
+		}
+
+		parts := strings.SplitN(arg, "=", 2)
+		key, _, err := lexer.ProcessWord(parts[0], shell.EnvsFromSlice(result))
+		if err != nil {
+			return nil, fmt.Errorf("processing %q: %w", line, err)
+		}
+
+		// Only use the default value if no external arg was provided
+		if _, exists := externalArgNames[key]; exists {
+			continue
+		}
+
+		val, _, err := lexer.ProcessWord(parts[1], shell.EnvsFromSlice(result))
+		if err != nil {
+			return nil, fmt.Errorf("processing %q: %w", line, err)
+		}
+		result = append(result, key+"="+val)
+	}
+
+	return result, nil
+}
+
 // UserFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the user that will be used to run the container.
-func UserFromDockerfile(dockerfileContent string) (user string, err error) {
+// Optionally accepts build args that may override default values in the Dockerfile.
+func UserFromDockerfile(dockerfileContent string, buildArgs ...[]string) (user string, err error) {
+	var args []string
+	if len(buildArgs) > 0 {
+		args = buildArgs[0]
+	}
+
 	res, err := parser.Parse(strings.NewReader(dockerfileContent))
 	if err != nil {
 		return "", fmt.Errorf("parse dockerfile: %w", err)
 	}
+
+	resolvedArgs, err := buildArgsWithDefaults(dockerfileContent, args)
+	if err != nil {
+		return "", err
+	}
+	lexer := shell.NewLex('\\')
 
 	// Parse stages and user commands to determine the relevant user
 	// from the final stage.
@@ -371,10 +432,16 @@ func UserFromDockerfile(dockerfileContent string) (user string, err error) {
 		}
 
 		// If we can't find a user command, try to find the user from
-		// the image.
-		ref, err := name.ParseReference(strings.TrimSpace(stage.BaseName))
+		// the image. First, substitute any ARG variables in the image name.
+		imageRef := stage.BaseName
+		imageRef, _, err := lexer.ProcessWord(imageRef, shell.EnvsFromSlice(resolvedArgs))
 		if err != nil {
-			return "", fmt.Errorf("parse image ref %q: %w", stage.BaseName, err)
+			return "", fmt.Errorf("processing image ref %q: %w", stage.BaseName, err)
+		}
+
+		ref, err := name.ParseReference(strings.TrimSpace(imageRef))
+		if err != nil {
+			return "", fmt.Errorf("parse image ref %q: %w", imageRef, err)
 		}
 		user, err := UserFromImage(ref)
 		if err != nil {
@@ -388,40 +455,32 @@ func UserFromDockerfile(dockerfileContent string) (user string, err error) {
 
 // ImageFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the image that will be used to run the container.
-func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
-	lexer := shell.NewLex('\\')
+// Optionally accepts build args that may override default values in the Dockerfile.
+func ImageFromDockerfile(dockerfileContent string, buildArgs ...[]string) (name.Reference, error) {
 	var args []string
+	if len(buildArgs) > 0 {
+		args = buildArgs[0]
+	}
+
+	resolvedArgs, err := buildArgsWithDefaults(dockerfileContent, args)
+	if err != nil {
+		return nil, err
+	}
+
+	// Find the FROM instruction
 	var imageRef string
-	lines := strings.Split(dockerfileContent, "\n")
-	// Iterate over lines in reverse
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := lines[i]
-		if arg, ok := strings.CutPrefix(line, "ARG "); ok {
-			arg = strings.TrimSpace(arg)
-			if strings.Contains(arg, "=") {
-				parts := strings.SplitN(arg, "=", 2)
-				key, _, err := lexer.ProcessWord(parts[0], shell.EnvsFromSlice(args))
-				if err != nil {
-					return nil, fmt.Errorf("processing %q: %w", line, err)
-				}
-				val, _, err := lexer.ProcessWord(parts[1], shell.EnvsFromSlice(args))
-				if err != nil {
-					return nil, fmt.Errorf("processing %q: %w", line, err)
-				}
-				args = append(args, key+"="+val)
-			}
-			continue
-		}
-		if imageRef == "" {
-			if fromArgs, ok := strings.CutPrefix(line, "FROM "); ok {
-				imageRef = fromArgs
-			}
+	for _, line := range strings.Split(dockerfileContent, "\n") {
+		if fromArgs, ok := strings.CutPrefix(line, "FROM "); ok {
+			imageRef = fromArgs
+			break
 		}
 	}
 	if imageRef == "" {
 		return nil, fmt.Errorf("no FROM directive found")
 	}
-	imageRef, _, err := lexer.ProcessWord(imageRef, shell.EnvsFromSlice(args))
+
+	lexer := shell.NewLex('\\')
+	imageRef, _, err = lexer.ProcessWord(imageRef, shell.EnvsFromSlice(resolvedArgs))
 	if err != nil {
 		return nil, fmt.Errorf("processing %q: %w", imageRef, err)
 	}
