@@ -436,14 +436,16 @@ func TestGitSSHAuth(t *testing.T) {
 		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "Initial commit"))
 		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
 
-		_, err = runEnvbuilder(t, runOpts{env: []string{
+		ctr, err := runEnvbuilder(t, runOpts{env: []string{
 			envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
-			envbuilderEnv("GIT_URL", tr.String()+"."),
+			envbuilderEnv("GIT_URL", tr.String()),
 			envbuilderEnv("GIT_SSH_PRIVATE_KEY_BASE64", base64Key),
 		}})
-		// TODO: Ensure it actually clones but this does mean we have
-		// successfully authenticated.
-		require.ErrorContains(t, err, "repository not found")
+		require.NoError(t, err)
+		dockerFilePath := execContainer(t, ctr, "find /workspaces -name Dockerfile")
+		require.NotEmpty(t, dockerFilePath)
+		dockerFile := execContainer(t, ctr, "cat "+dockerFilePath)
+		require.Contains(t, dockerFile, testImageAlpine)
 	})
 
 	t.Run("Base64/Failure", func(t *testing.T) {
