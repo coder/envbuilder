@@ -539,6 +539,8 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				CustomPlatform:     platforms.Format(platforms.Normalize(platforms.DefaultSpec())),
 				SnapshotMode:       "redo",
 				RunV2:              true,
+				SkipUnusedStages:   opts.SkipUnusedStages,
+				Target:             buildParams.Target,
 				RunStdout:          stdoutWriter,
 				RunStderr:          stderrWriter,
 				Destinations:       destinations,
