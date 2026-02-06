@@ -24,10 +24,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coder/coder/v2/codersdk"
-	"github.com/coder/coder/v2/codersdk/agentsdk"
 	"github.com/coder/envbuilder"
 	"github.com/coder/envbuilder/devcontainer/features"
+	"github.com/coder/envbuilder/internal/codervendor/agentsdk"
+	"github.com/coder/envbuilder/internal/codervendor/codersdk"
 	"github.com/coder/envbuilder/internal/workingdir"
 	"github.com/coder/envbuilder/options"
 	"github.com/coder/envbuilder/testutil/gittest"

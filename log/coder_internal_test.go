@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"cdr.dev/slog/sloggers/slogtest"
-	"github.com/coder/coder/v2/agent/proto"
-	"github.com/coder/coder/v2/codersdk"
-	"github.com/coder/coder/v2/codersdk/agentsdk"
+	"github.com/coder/envbuilder/internal/codervendor/agent/proto"
+	"github.com/coder/envbuilder/internal/codervendor/agentsdk"
+	"github.com/coder/envbuilder/internal/codervendor/codersdk"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

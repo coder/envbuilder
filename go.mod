@@ -6,9 +6,6 @@ go 1.24.10
 // See: https://github.com/GoogleContainerTools/kaniko/compare/main...coder:kaniko:main
 replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20251107135632-b20ff58093d8
 
-// Required to import codersdk due to gvisor dependency.
-replace tailscale.com => github.com/coder/tailscale v1.1.1-0.20250829055706-6eafe0f9199e
-
 require (
 	cdr.dev/slog v1.6.2-0.20250703074222-9df5e0a6c145
 	github.com/GoogleContainerTools/kaniko v1.9.2

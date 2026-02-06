@@ -12,8 +12,8 @@ import (
 	"cdr.dev/slog"
 	"cdr.dev/slog/sloggers/sloghuman"
 	"github.com/coder/coder/v2/agent/proto"
-	"github.com/coder/coder/v2/codersdk"
-	"github.com/coder/coder/v2/codersdk/agentsdk"
+	"github.com/coder/envbuilder/internal/codervendor/agentsdk"
+	"github.com/coder/envbuilder/internal/codervendor/codersdk"
 	"github.com/coder/retry"
 	"github.com/google/uuid"
 	"golang.org/x/mod/semver"
@@ -142,7 +142,7 @@ func sendLogsV1(ctx context.Context, client *agentsdk.Client, l slog.Logger) (lo
 		}
 }
 
-// sendLogsV2 uses the v2 agent API to send logs. Only compatibile with coder versions >= 2.9.
+// sendLogsV2 uses the v2 agent API to send logs. Only compatible with coder versions >= 2.9.
 func sendLogsV2(ctx context.Context, dest agentsdk.LogDest, ls coderLogSender, l slog.Logger) (logger Func, closer func()) {
 	sendCtx, sendCancel := context.WithCancel(ctx)
 	done := make(chan struct{})
