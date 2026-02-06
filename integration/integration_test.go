@@ -72,6 +72,8 @@ QFBgc=
 -----END OPENSSH PRIVATE KEY-----`
 )
 
+var emptyRemoteOpts []remote.Option
+
 func TestLogs(t *testing.T) {
 	t.Parallel()
 
@@ -523,7 +525,7 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 	t.Parallel()
 
 	registry := registrytest.New(t)
-	feature1Ref := registrytest.WriteContainer(t, registry, "coder/test1:latest", features.TarLayerMediaType, map[string]any{
+	feature1Ref := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/test1:latest", features.TarLayerMediaType, map[string]any{
 		"devcontainer-feature.json": &features.Spec{
 			ID:      "test1",
 			Name:    "test1",
@@ -537,7 +539,7 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 		"install.sh": "echo $BANANAS > /test1output",
 	})
 
-	feature2Ref := registrytest.WriteContainer(t, registry, "coder/test2:latest", features.TarLayerMediaType, map[string]any{
+	feature2Ref := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/test2:latest", features.TarLayerMediaType, map[string]any{
 		"devcontainer-feature.json": &features.Spec{
 			ID:      "test2",
 			Name:    "test2",
@@ -601,6 +603,90 @@ func TestBuildFromDevcontainerWithFeatures(t *testing.T) {
 
 	test3Output := execContainer(t, ctr, "cat /test3output")
 	require.Equal(t, "hello from test 3!", strings.TrimSpace(test3Output))
+}
+
+func TestBuildFromDevcontainerWithFeaturesInAuthRepo(t *testing.T) {
+	t.Parallel()
+
+	// Given: an empty registry with auth enabled
+	authOpts := setupInMemoryRegistryOpts{
+		Username: "testing",
+		Password: "testing",
+	}
+	remoteAuthOpt := append(emptyRemoteOpts, remote.WithAuth(&authn.Basic{Username: authOpts.Username, Password: authOpts.Password}))
+	testReg := setupInMemoryRegistry(t, authOpts)
+	regAuthJSON, err := json.Marshal(envbuilder.DockerConfig{
+		AuthConfigs: map[string]clitypes.AuthConfig{
+			testReg: {
+				Username: authOpts.Username,
+				Password: authOpts.Password,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	// push a feature to the registry
+	featureRef := registrytest.WriteContainer(t, testReg, remoteAuthOpt, "features/test-feature:latest", features.TarLayerMediaType, map[string]any{
+		"devcontainer-feature.json": &features.Spec{
+			ID:      "test1",
+			Name:    "test1",
+			Version: "1.0.0",
+			Options: map[string]features.Option{
+				"bananas": {
+					Type: "string",
+				},
+			},
+		},
+		"install.sh": "echo $BANANAS > /test1output",
+	})
+
+	// Create a git repo with a devcontainer.json that uses the feature
+	srv := gittest.CreateGitServer(t, gittest.Options{
+		Files: map[string]string{
+			".devcontainer/devcontainer.json": `{
+				"name": "Test",
+				"build": {
+					"dockerfile": "Dockerfile"
+				},
+				"features": {
+					"` + featureRef + `": {
+						"bananas": "hello from test 1!"
+					}
+				}
+			}`,
+			".devcontainer/Dockerfile": "FROM " + testImageUbuntu,
+		},
+	})
+	opts := []string{
+		envbuilderEnv("GIT_URL", srv.URL),
+	}
+
+	// Test that things fail when no auth is provided
+	t.Run("NoAuth", func(t *testing.T) {
+		t.Parallel()
+
+		// run the envbuilder with the auth config
+		_, err := runEnvbuilder(t, runOpts{env: opts})
+		require.ErrorContains(t, err, "Unauthorized")
+	})
+
+	// test that things work when auth is provided
+	t.Run("WithAuth", func(t *testing.T) {
+		t.Parallel()
+
+		optsWithAuth := append(
+			opts,
+			envbuilderEnv("DOCKER_CONFIG_BASE64", base64.StdEncoding.EncodeToString(regAuthJSON)),
+		)
+
+		// run the envbuilder with the auth config
+		ctr, err := runEnvbuilder(t, runOpts{env: optsWithAuth})
+		require.NoError(t, err)
+
+		// check that the feature was installed correctly
+		testOutput := execContainer(t, ctr, "cat /test1output")
+		require.Equal(t, "hello from test 1!", strings.TrimSpace(testOutput))
+	})
 }
 
 func TestBuildFromDockerfileAndConfig(t *testing.T) {
@@ -1574,7 +1660,7 @@ func TestPushImage(t *testing.T) {
 	t.Parallel()
 
 	// Write a test feature to an in-memory registry.
-	testFeature := registrytest.WriteContainer(t, registrytest.New(t), "features/test-feature:latest", features.TarLayerMediaType, map[string]any{
+	testFeature := registrytest.WriteContainer(t, registrytest.New(t), emptyRemoteOpts, "features/test-feature:latest", features.TarLayerMediaType, map[string]any{
 		"install.sh": `#!/bin/sh
 			echo "${MESSAGE}" > /root/message.txt`,
 		"devcontainer-feature.json": features.Spec{
