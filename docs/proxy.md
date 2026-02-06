@@ -13,8 +13,8 @@ To configure Envbuilder to route HTTP traffic for git and the container registry
 
 Once traffic is routed to the proxy, you will need to install the proxy's CA certificate into Envbuilder. To do this, you can do one of the following:
 * Set `ENVBUILDER_SSL_CERT_BASE64=...` to the base64 encoded value of your proxy's CA certificate. This will only apply to Envbuilder. Other TLS connections within your container will not be aware of this certificate.
-* Mount the certificate file into the Envbuilder container and then set `ENVBUILDER_SSL_CERT_FILE=/path/to/cert.pem`.
-* Mount a directory containing all relevant CA certificates into the Envbuilder container and then set `ENVBUILDER_SSL_CERT_DIR=/path/to/certs/`.
+* Mount the certificate file into the Envbuilder container and then set `SSL_CERT_FILE=/path/to/cert.pem`.
+* Mount a directory containing all relevant CA certificates into the Envbuilder container and then set `SSL_CERT_DIR=/path/to/certs/`.
 
 ## Demonstration
 Envbuilder clones a repository that contains your `devcontainer.json` and optional `Dockerfile` so that it can build your container. If the clone is done using HTTPS, then TLS verification must succeed or be disabled. If a transparent HTTPS proxy is present, TLS verification will fail unless Envbuilder trusts the proxy’s certificate. Therefore, we need to configure Envbuilder to trust your proxy. 

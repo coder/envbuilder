@@ -194,8 +194,8 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 	var cloned bool
 	if opts.GitURL != "" {
 		endStage := startStage("📦 Cloning %s to %s...",
-			newColor(color.FgCyan).Sprintf(opts.GitURL),
-			newColor(color.FgCyan).Sprintf(opts.WorkspaceFolder),
+			newColor(color.FgCyan).Sprint(opts.GitURL),
+			newColor(color.FgCyan).Sprint(opts.WorkspaceFolder),
 		)
 		stageNum := stageNumber
 		logStage := func(format string, args ...any) {
@@ -237,8 +237,8 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			cloneOpts.Path = workingDir.Join("repo")
 
 			endStage := startStage("📦 Remote repo build mode enabled, cloning %s to %s for build context...",
-				newColor(color.FgCyan).Sprintf(opts.GitURL),
-				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
+				newColor(color.FgCyan).Sprint(opts.GitURL),
+				newColor(color.FgCyan).Sprint(cloneOpts.Path),
 			)
 
 			w := git.ProgressWriter(logStage)
@@ -1004,8 +1004,8 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	var cloned bool
 	if opts.GitURL != "" {
 		endStage := startStage("📦 Cloning %s to %s...",
-			newColor(color.FgCyan).Sprintf(opts.GitURL),
-			newColor(color.FgCyan).Sprintf(opts.WorkspaceFolder),
+			newColor(color.FgCyan).Sprint(opts.GitURL),
+			newColor(color.FgCyan).Sprint(opts.WorkspaceFolder),
 		)
 		stageNum := stageNumber
 		logStage := func(format string, args ...any) {
@@ -1045,8 +1045,8 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 			cloneOpts.Path = workingDir.Join("repo")
 
 			endStage := startStage("📦 Remote repo build mode enabled, cloning %s to %s for build context...",
-				newColor(color.FgCyan).Sprintf(opts.GitURL),
-				newColor(color.FgCyan).Sprintf(cloneOpts.Path),
+				newColor(color.FgCyan).Sprint(opts.GitURL),
+				newColor(color.FgCyan).Sprint(cloneOpts.Path),
 			)
 
 			w := git.ProgressWriter(logStage)

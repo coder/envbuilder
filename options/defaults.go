@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-git/go-billy/v5/osfs"
 
-	giturls "github.com/chainguard-dev/git-urls"
 	"github.com/coder/envbuilder/internal/chmodfs"
+	"github.com/coder/envbuilder/internal/ebutil"
 	"github.com/coder/envbuilder/internal/workingdir"
 )
 
@@ -22,7 +22,7 @@ func DefaultWorkspaceFolder(workspacesFolder, repoURL string) string {
 	if repoURL == "" {
 		return emptyWorkspaceDir
 	}
-	parsed, err := giturls.Parse(repoURL)
+	parsed, err := ebutil.ParseRepoURL(repoURL)
 	if err != nil {
 		return emptyWorkspaceDir
 	}
