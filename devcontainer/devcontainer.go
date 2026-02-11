@@ -204,7 +204,7 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, 
 		// We should make a best-effort attempt to find the user.
 		// Features must be executed as root, so we need to swap back
 		// to the running user afterwards.
-		params.User, err = UserFromDockerfile(params.DockerfileContent)
+		params.User, err = UserFromDockerfile(params.DockerfileContent, params.BuildArgs)
 		if err != nil {
 			return nil, fmt.Errorf("user from dockerfile: %w", err)
 		}
@@ -308,10 +308,40 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 
 // UserFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the user that will be used to run the container.
-func UserFromDockerfile(dockerfileContent string) (user string, err error) {
+func UserFromDockerfile(dockerfileContent string, buildArgs []string) (user string, err error) {
 	res, err := parser.Parse(strings.NewReader(dockerfileContent))
 	if err != nil {
 		return "", fmt.Errorf("parse dockerfile: %w", err)
+	}
+
+	// Collect ARG values (defaults + overrides from buildArgs) for
+	// substitution into FROM image refs.
+	lexer := shell.NewLex('\\')
+	var argEnvs []string
+	for _, child := range res.AST.Children {
+		if strings.EqualFold(child.Value, "arg") {
+			arg := strings.TrimSpace(child.Original[len("ARG "):])
+			if strings.Contains(arg, "=") {
+				parts := strings.SplitN(arg, "=", 2)
+				key := parts[0]
+				val := parts[1]
+				// Allow buildArgs to override.
+				for _, ba := range buildArgs {
+					if k, v, ok := strings.Cut(ba, "="); ok && k == key {
+						val = v
+						break
+					}
+				}
+				argEnvs = append(argEnvs, key+"="+val)
+			} else {
+				for _, ba := range buildArgs {
+					if k, v, ok := strings.Cut(ba, "="); ok && k == arg {
+						argEnvs = append(argEnvs, k+"="+v)
+						break
+					}
+				}
+			}
+		}
 	}
 
 	// Parse stages and user commands to determine the relevant user
@@ -330,6 +360,11 @@ func UserFromDockerfile(dockerfileContent string) (user string, err error) {
 
 		switch i := inst.(type) {
 		case *instructions.Stage:
+			// Substitute ARG values in the base image name.
+			baseName, _, err := lexer.ProcessWord(i.BaseName, shell.EnvsFromSlice(argEnvs))
+			if err == nil {
+				i.BaseName = baseName
+			}
 			stages = append(stages, i)
 			if i.Name != "" {
 				stageNames[i.Name] = i
@@ -388,7 +423,7 @@ func UserFromDockerfile(dockerfileContent string) (user string, err error) {
 
 // ImageFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the image that will be used to run the container.
-func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
+func ImageFromDockerfile(dockerfileContent string, buildArgs []string) (name.Reference, error) {
 	lexer := shell.NewLex('\\')
 	var args []string
 	var imageRef string
@@ -408,7 +443,22 @@ func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
 				if err != nil {
 					return nil, fmt.Errorf("processing %q: %w", line, err)
 				}
+				// Allow buildArgs to override Dockerfile ARG defaults.
+				for _, ba := range buildArgs {
+					if k, v, ok := strings.Cut(ba, "="); ok && k == key {
+						val = v
+						break
+					}
+				}
 				args = append(args, key+"="+val)
+			} else {
+				// ARG without a default — look up in buildArgs.
+				for _, ba := range buildArgs {
+					if k, v, ok := strings.Cut(ba, "="); ok && k == arg {
+						args = append(args, k+"="+v)
+						break
+					}
+				}
 			}
 			continue
 		}
