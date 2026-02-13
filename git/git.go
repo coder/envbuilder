@@ -14,6 +14,7 @@ import (
 	"github.com/coder/envbuilder/options"
 
 	"github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
@@ -112,7 +113,30 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 		return false, fmt.Errorf("open %q: %w", opts.RepoURL, err)
 	}
 	if repo != nil {
-		return false, nil
+		// Repo directory exists, but verify it actually has valid content.
+		// Check if HEAD exists and the working tree has files.
+		hasContent := repoHasContent(repo, fs, logf)
+		if hasContent {
+			return false, nil
+		}
+		// Directory exists but is empty or corrupted — remove and re-clone.
+		logf("Repo directory %q exists but has no valid content, removing and re-cloning", opts.Path)
+		if removeErr := util.RemoveAll(opts.Storage, opts.Path); removeErr != nil {
+			return false, fmt.Errorf("remove empty/corrupt repo dir %q: %w", opts.Path, removeErr)
+		}
+		// Re-create the directory and filesystem references after removal.
+		if err = opts.Storage.MkdirAll(opts.Path, 0o755); err != nil {
+			return false, fmt.Errorf("mkdir %q after cleanup: %w", opts.Path, err)
+		}
+		fs, err = opts.Storage.Chroot(opts.Path)
+		if err != nil {
+			return false, fmt.Errorf("chroot %q after cleanup: %w", opts.Path, err)
+		}
+		gitDir, err = fs.Chroot(".git")
+		if err != nil {
+			return false, fmt.Errorf("chroot .git after cleanup: %w", err)
+		}
+		gitStorage = filesystem.NewStorage(gitDir, cache.NewObjectLRU(cache.DefaultMaxSize*10))
 	}
 
 	_, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
@@ -130,9 +154,54 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 		return false, nil
 	}
 	if err != nil {
+		// Clone failed — clean up the partially created directory so the next
+		// attempt doesn't think a valid repo already exists.
+		logf("Clone failed, cleaning up partial repo directory %q", opts.Path)
+		if removeErr := util.RemoveAll(opts.Storage, opts.Path); removeErr != nil {
+			logf("Warning: failed to clean up %q after failed clone: %v", opts.Path, removeErr)
+		}
 		return false, fmt.Errorf("clone %q: %w", opts.RepoURL, err)
 	}
 	return true, nil
+}
+
+// repoHasContent checks whether an existing repository has valid content
+// by verifying that HEAD resolves and that the working tree is not empty.
+func repoHasContent(repo *git.Repository, fs billy.Filesystem, logf func(string, ...any)) bool {
+	// Check if HEAD can be resolved to a valid reference.
+	head, err := repo.Head()
+	if err != nil {
+		logf("Repo has no valid HEAD: %v", err)
+		return false
+	}
+	if head == nil {
+		logf("Repo HEAD is nil")
+		return false
+	}
+
+	// Verify the commit that HEAD points to actually exists.
+	_, err = repo.CommitObject(head.Hash())
+	if err != nil {
+		logf("Repo HEAD points to invalid commit %s: %v", head.Hash(), err)
+		return false
+	}
+
+	// Check if the working tree has any files/directories (beyond .git).
+	entries, err := fs.ReadDir("/")
+	if err != nil {
+		logf("Failed to read repo root dir: %v", err)
+		return false
+	}
+	for _, entry := range entries {
+		if entry.Name() == ".git" {
+			continue
+		}
+		// Found at least one non-.git entry — repo has content.
+		return true
+	}
+
+	logf("Repo has valid commits but working tree is empty")
+	return false
 }
 
 // ShallowCloneRepo will clone the repository at the given URL into the given path
