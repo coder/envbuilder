@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 
 	"github.com/coder/envbuilder/internal/ebutil"
@@ -434,7 +435,43 @@ func ProgressWriter(write func(line string, args ...any)) io.WriteCloser {
 	}
 }
 
-// resolveSubmoduleURL resolves a potentially relative submodule URL against the parent repository URL
+// scpLikeURLRegex matches SCP-like URLs: user@host:path (where host is not empty and path doesn't start with /)
+// This handles: git@github.com:org/repo, deploy@host:repo, user@10.0.0.5:project
+var scpLikeURLRegex = regexp.MustCompile(`^([^@]+)@([^:]+):(.+)$`)
+
+// RedactURL redacts credentials from a URL for safe logging.
+// Handles:
+//   - Standard URLs with userinfo: https://user:pass@host, https://token@host
+//   - URL-encoded credentials: https://user:p%40ss@host
+//   - SCP-like URLs: git@host:path, deploy@host:path, user@10.0.0.5:path
+//   - Various schemes: http, https, ssh, git, ftp, sftp
+//   - IPv6 hosts: https://user@[2001:db8::1]/path
+func RedactURL(u string) string {
+	// First, try to parse as a standard URL (handles most schemes)
+	parsed, err := url.Parse(u)
+	if err == nil && parsed.Scheme != "" {
+		// Successfully parsed as a URL with a scheme
+		// Redact userinfo if present (handles user, user:pass, token, URL-encoded creds)
+		if parsed.User != nil {
+			parsed.User = url.User("***")
+		}
+		return parsed.String()
+	}
+
+	// Handle SCP-like URLs: user@host:path (no scheme)
+	// This catches: git@github.com:org/repo, deploy@host:repo, user@10.0.0.5:project
+	if matches := scpLikeURLRegex.FindStringSubmatch(u); matches != nil {
+		// matches[1] = user part (could be git, deploy, token, etc.)
+		// matches[2] = host
+		// matches[3] = path
+		return "***@" + matches[2] + ":" + matches[3]
+	}
+
+	// If we can't parse it and it's not SCP-like, return as-is
+	// (probably not a URL with credentials)
+	return u
+}
+
 // ResolveSubmoduleURL resolves a potentially relative submodule URL against a parent repository URL.
 func ResolveSubmoduleURL(parentURL, submoduleURL string) (string, error) {
 	// If the submodule URL is absolute (contains ://) or doesn't start with ./ or ../, return it as-is
@@ -521,13 +558,13 @@ func initSubmodules(ctx context.Context, logf func(string, ...any), repo *git.Re
 	if origin, hasOrigin := cfg.Remotes["origin"]; hasOrigin && len(origin.URLs) > 0 {
 		parentURL = origin.URLs[0]
 	}
-	logf("Parent repository URL: %s", parentURL)
+	logf("Parent repository URL: %s", RedactURL(parentURL))
 
 	for _, sub := range subs {
 		subConfig := sub.Config()
 		logf("📦 Initializing submodule: %s", subConfig.Name)
 		logf("  Submodule path: %s", subConfig.Path)
-		logf("  Submodule URL (from .gitmodules): %s", subConfig.URL)
+		logf("  Submodule URL (from .gitmodules): %s", RedactURL(subConfig.URL))
 
 		// Get the expected commit hash
 		subStatus, err := sub.Status()
@@ -541,7 +578,7 @@ func initSubmodules(ctx context.Context, logf func(string, ...any), repo *git.Re
 		if err != nil {
 			return fmt.Errorf("resolve submodule URL for %q: %w", subConfig.Name, err)
 		}
-		logf("  Resolved URL: %s", resolvedURL)
+		logf("  Resolved URL: %s", RedactURL(resolvedURL))
 
 		// Clone the submodule manually
 		err = cloneSubmodule(ctx, logf, w, subConfig, subStatus.Expected, resolvedURL, opts)
@@ -619,7 +656,7 @@ func cloneSubmodule(ctx context.Context, logf func(string, ...any), parentWorktr
 	}
 
 	// Clone the submodule
-	logf("  Cloning submodule from: %s", resolvedURL)
+	logf("  Cloning submodule from: %s", RedactURL(resolvedURL))
 
 	// Create .git directory for the submodule
 	err = subFS.MkdirAll(".git", 0o755)

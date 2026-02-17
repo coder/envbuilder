@@ -533,6 +533,153 @@ func mustRead(t *testing.T, fs billy.Filesystem, path string) string {
 	return string(content)
 }
 
+func TestRedactURL(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		input  string
+		expect string
+	}{
+		// Standard URLs without credentials
+		{
+			name:   "https no creds",
+			input:  "https://github.com/org/repo.git",
+			expect: "https://github.com/org/repo.git",
+		},
+		{
+			name:   "git protocol no creds",
+			input:  "git://github.com/org/repo.git",
+			expect: "git://github.com/org/repo.git",
+		},
+
+		// HTTPS with various credential formats
+		{
+			name:   "https with user and password",
+			input:  "https://user:password@github.com/org/repo.git",
+			expect: "https://***@github.com/org/repo.git",
+		},
+		{
+			name:   "https with token only (no password)",
+			input:  "https://ghp_xxxxxxxxxxxx@github.com/org/repo.git",
+			expect: "https://***@github.com/org/repo.git",
+		},
+		{
+			name:   "https with user only (no password)",
+			input:  "https://user@github.com/org/repo.git",
+			expect: "https://***@github.com/org/repo.git",
+		},
+		{
+			name:   "https with x-access-token",
+			input:  "https://x-access-token:ghp_secret123@github.com/org/repo.git",
+			expect: "https://***@github.com/org/repo.git",
+		},
+
+		// URL-encoded credentials
+		{
+			name:   "https with URL-encoded password",
+			input:  "https://user:p%40ss%3Aw0rd@github.com/org/repo.git",
+			expect: "https://***@github.com/org/repo.git",
+		},
+		{
+			name:   "https with URL-encoded username",
+			input:  "https://user%40domain:pass@github.com/org/repo.git",
+			expect: "https://***@github.com/org/repo.git",
+		},
+
+		// HTTP
+		{
+			name:   "http with creds",
+			input:  "http://user:pass@example.com/repo.git",
+			expect: "http://***@example.com/repo.git",
+		},
+
+		// SSH URLs (with scheme)
+		{
+			name:   "ssh with user",
+			input:  "ssh://git@github.com/org/repo.git",
+			expect: "ssh://***@github.com/org/repo.git",
+		},
+		{
+			name:   "ssh with different user",
+			input:  "ssh://deploy@github.com/org/repo.git",
+			expect: "ssh://***@github.com/org/repo.git",
+		},
+
+		// SCP-like URLs (no scheme)
+		{
+			name:   "scp-like git user",
+			input:  "git@github.com:org/repo.git",
+			expect: "***@github.com:org/repo.git",
+		},
+		{
+			name:   "scp-like deploy user",
+			input:  "deploy@host:repo.git",
+			expect: "***@host:repo.git",
+		},
+		{
+			name:   "scp-like with IP address",
+			input:  "user@10.0.0.5:project.git",
+			expect: "***@10.0.0.5:project.git",
+		},
+		{
+			name:   "scp-like with token as user",
+			input:  "oauth2:ghp_secret@gitlab.com:org/repo.git",
+			expect: "***@gitlab.com:org/repo.git",
+		},
+
+		// IPv6 hosts
+		{
+			name:   "https with IPv6 and creds",
+			input:  "https://user:pass@[2001:db8::1]/path/repo.git",
+			expect: "https://***@[2001:db8::1]/path/repo.git",
+		},
+		{
+			name:   "https with IPv6 no creds",
+			input:  "https://[2001:db8::1]/path/repo.git",
+			expect: "https://[2001:db8::1]/path/repo.git",
+		},
+
+		// Other schemes
+		{
+			name:   "ftp with creds",
+			input:  "ftp://user:pass@host/path",
+			expect: "ftp://***@host/path",
+		},
+		{
+			name:   "sftp with user only",
+			input:  "sftp://user@host/path",
+			expect: "sftp://***@host/path",
+		},
+
+		// Edge cases
+		{
+			name:   "plain path (not a URL)",
+			input:  "/local/path/to/repo",
+			expect: "/local/path/to/repo",
+		},
+		{
+			name:   "relative path",
+			input:  "../sibling/repo.git",
+			expect: "../sibling/repo.git",
+		},
+		{
+			name:   "file URL",
+			input:  "file:///local/repo.git",
+			expect: "file:///local/repo.git",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := git.RedactURL(tc.input)
+			require.Equal(t, tc.expect, got)
+		})
+	}
+}
+
 func TestResolveSubmoduleURL(t *testing.T) {
 	t.Parallel()
 
