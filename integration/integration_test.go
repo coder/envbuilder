@@ -422,7 +422,7 @@ func TestGitSubmodules(t *testing.T) {
 	t.Parallel()
 
 	// Create parent repo with a submodule
-	parentSrv, submoduleSrv := gittest.CreateGitServerWithSubmodule(t, gittest.Options{
+	parentSrv, _ := gittest.CreateGitServerWithSubmodule(t, gittest.Options{
 		Files: map[string]string{
 			"Dockerfile": "FROM " + testImageAlpine,
 		},
@@ -442,7 +442,10 @@ func TestGitSubmodules(t *testing.T) {
 	// Verify the .gitmodules file exists
 	gitmodules := execContainer(t, ctr, "cat /workspaces/empty/.gitmodules")
 	require.Contains(t, gitmodules, "[submodule")
-	require.Contains(t, gitmodules, submoduleSrv.URL)
+
+	// Verify the submodule was actually cloned by checking for the file inside it
+	subfileContent := execContainer(t, ctr, "cat /workspaces/empty/submod/subfile.txt")
+	require.Contains(t, subfileContent, "submodule content")
 }
 
 func TestGitSSHAuth(t *testing.T) {
