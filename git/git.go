@@ -439,6 +439,32 @@ func ProgressWriter(write func(line string, args ...any)) io.WriteCloser {
 // This handles: git@github.com:org/repo, deploy@host:repo, user@10.0.0.5:project
 var scpLikeURLRegex = regexp.MustCompile(`^([^@]+)@([^:]+):(.+)$`)
 
+// extractHost extracts the host from a URL, handling both standard URLs and SCP-like URLs.
+// Returns empty string if host cannot be determined.
+func extractHost(u string) string {
+	// Try standard URL parsing first
+	if parsed, err := url.Parse(u); err == nil && parsed.Host != "" {
+		// Remove port if present
+		host := parsed.Hostname()
+		return strings.ToLower(host)
+	}
+
+	// Handle SCP-like URLs: user@host:path
+	if matches := scpLikeURLRegex.FindStringSubmatch(u); matches != nil {
+		return strings.ToLower(matches[2])
+	}
+
+	return ""
+}
+
+// SameHost checks if two URLs point to the same host.
+// Used to determine if credentials should be forwarded to submodules.
+func SameHost(url1, url2 string) bool {
+	host1 := extractHost(url1)
+	host2 := extractHost(url2)
+	return host1 != "" && host2 != "" && host1 == host2
+}
+
 // RedactURL redacts credentials from a URL for safe logging.
 // Handles:
 //   - Standard URLs with userinfo: https://user:pass@host, https://token@host
@@ -627,6 +653,16 @@ func cloneSubmodule(ctx context.Context, logf func(string, ...any), parentWorktr
 		return fmt.Errorf("chroot to submodule path: %w", err)
 	}
 
+	// Security: Only forward parent repo auth if submodule is on the same host.
+	// This prevents credential exfiltration if a malicious .gitmodules points
+	// to an attacker-controlled server.
+	var submoduleAuth transport.AuthMethod
+	if SameHost(opts.RepoURL, resolvedURL) {
+		submoduleAuth = opts.RepoAuth
+	} else if opts.RepoAuth != nil {
+		logf("  ⚠ Not forwarding auth to submodule (different host: %s)", extractHost(resolvedURL))
+	}
+
 	// Check if already cloned
 	_, err = subFS.Stat(".git")
 	if err == nil {
@@ -675,7 +711,7 @@ func cloneSubmodule(ctx context.Context, logf func(string, ...any), parentWorktr
 	// Use SingleBranch=false to fetch all branches so we can find the commit
 	subRepo, err := git.CloneContext(ctx, gitStorage, subFS, &git.CloneOptions{
 		URL:             resolvedURL,
-		Auth:            opts.RepoAuth,
+		Auth:            submoduleAuth,
 		Progress:        opts.Progress,
 		InsecureSkipTLS: opts.Insecure,
 		CABundle:        opts.CABundle,
@@ -698,7 +734,7 @@ func cloneSubmodule(ctx context.Context, logf func(string, ...any), parentWorktr
 			RefSpecs: []config.RefSpec{
 				config.RefSpec("+" + expectedHash.String() + ":" + expectedHash.String()),
 			},
-			Auth:            opts.RepoAuth,
+			Auth:            submoduleAuth,
 			Progress:        opts.Progress,
 			InsecureSkipTLS: opts.Insecure,
 			CABundle:        opts.CABundle,
@@ -709,7 +745,7 @@ func cloneSubmodule(ctx context.Context, logf func(string, ...any), parentWorktr
 			logf("  Direct fetch failed, fetching all refs...")
 			err = subRepo.FetchContext(ctx, &git.FetchOptions{
 				RemoteName:      "origin",
-				Auth:            opts.RepoAuth,
+				Auth:            submoduleAuth,
 				Progress:        opts.Progress,
 				InsecureSkipTLS: opts.Insecure,
 				CABundle:        opts.CABundle,

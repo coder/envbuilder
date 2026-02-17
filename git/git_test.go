@@ -680,6 +680,104 @@ func TestRedactURL(t *testing.T) {
 	}
 }
 
+func TestSameHost(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		url1   string
+		url2   string
+		expect bool
+	}{
+		// Same host cases
+		{
+			name:   "https same host",
+			url1:   "https://github.com/org/repo.git",
+			url2:   "https://github.com/other/submodule.git",
+			expect: true,
+		},
+		{
+			name:   "https and scp same host",
+			url1:   "https://github.com/org/repo.git",
+			url2:   "git@github.com:other/submodule.git",
+			expect: true,
+		},
+		{
+			name:   "scp same host",
+			url1:   "git@github.com:org/repo.git",
+			url2:   "git@github.com:other/submodule.git",
+			expect: true,
+		},
+		{
+			name:   "case insensitive",
+			url1:   "https://GitHub.com/org/repo.git",
+			url2:   "https://github.com/other/submodule.git",
+			expect: true,
+		},
+		{
+			name:   "with port same host",
+			url1:   "https://github.com:443/org/repo.git",
+			url2:   "https://github.com/other/submodule.git",
+			expect: true,
+		},
+		{
+			name:   "ssh scheme same host",
+			url1:   "ssh://git@github.com/org/repo.git",
+			url2:   "https://github.com/other/submodule.git",
+			expect: true,
+		},
+
+		// Different host cases
+		{
+			name:   "different hosts",
+			url1:   "https://github.com/org/repo.git",
+			url2:   "https://gitlab.com/other/submodule.git",
+			expect: false,
+		},
+		{
+			name:   "scp different hosts",
+			url1:   "git@github.com:org/repo.git",
+			url2:   "git@evil.com:exfiltrate/creds.git",
+			expect: false,
+		},
+		{
+			name:   "subdomain is different",
+			url1:   "https://github.com/org/repo.git",
+			url2:   "https://api.github.com/other/submodule.git",
+			expect: false,
+		},
+
+		// Edge cases
+		{
+			name:   "empty url1",
+			url1:   "",
+			url2:   "https://github.com/other/submodule.git",
+			expect: false,
+		},
+		{
+			name:   "relative url",
+			url1:   "https://github.com/org/repo.git",
+			url2:   "../other/submodule.git",
+			expect: false,
+		},
+		{
+			name:   "file path",
+			url1:   "https://github.com/org/repo.git",
+			url2:   "/local/path/to/repo",
+			expect: false,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := git.SameHost(tc.url1, tc.url2)
+			require.Equal(t, tc.expect, got)
+		})
+	}
+}
+
 func TestResolveSubmoduleURL(t *testing.T) {
 	t.Parallel()
 
