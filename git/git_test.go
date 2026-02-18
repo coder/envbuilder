@@ -812,6 +812,18 @@ func TestResolveSubmoduleURL(t *testing.T) {
 			subURL:    "./child",
 			expectErr: "parse parent URL",
 		},
+		{
+			name:      "scpParentWithRelativeSubmodule",
+			parentURL: "git@github.com:org/main.git",
+			subURL:    "../other/submodule.git",
+			expectErr: "SCP-like syntax which is not supported",
+		},
+		{
+			name:      "scpParentWithAbsoluteSubmodule",
+			parentURL: "git@github.com:org/main.git",
+			subURL:    "https://github.com/other/submodule.git",
+			expect:    "https://github.com/other/submodule.git",
+		},
 	}
 
 	for _, tc := range cases {
