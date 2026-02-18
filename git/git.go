@@ -473,18 +473,7 @@ func SameHost(url1, url2 string) bool {
 //   - Various schemes: http, https, ssh, git, ftp, sftp
 //   - IPv6 hosts: https://user@[2001:db8::1]/path
 func RedactURL(u string) string {
-	// Handle SCP-like URLs first: user@host:path (no scheme)
-	// Must check this BEFORE url.Parse because urls like "oauth2:token@host:path"
-	// get misinterpreted as having scheme "oauth2".
-	// This catches: git@github.com:org/repo, deploy@host:repo, oauth2:token@gitlab.com:org/repo
-	if matches := scpLikeURLRegex.FindStringSubmatch(u); matches != nil {
-		// matches[1] = user part (could be git, deploy, oauth2:token, etc.)
-		// matches[2] = host
-		// matches[3] = path
-		return "***@" + matches[2] + ":" + matches[3]
-	}
-
-	// Try to parse as a standard URL (handles most schemes)
+	// Try to parse as a standard URL first (handles schemes like https://, ssh://, etc.)
 	parsed, err := url.Parse(u)
 	if err == nil && parsed.Scheme != "" && parsed.Host != "" {
 		// Successfully parsed as a URL with a scheme and host
@@ -501,6 +490,17 @@ func RedactURL(u string) string {
 			return result
 		}
 		return parsed.String()
+	}
+
+	// Handle SCP-like URLs: user@host:path (no scheme)
+	// Only check this if url.Parse didn't find a valid scheme+host
+	// (to avoid matching URLs like https://user@[ipv6]:path)
+	// This catches: git@github.com:org/repo, deploy@host:repo, oauth2:token@gitlab.com:org/repo
+	if matches := scpLikeURLRegex.FindStringSubmatch(u); matches != nil {
+		// matches[1] = user part (could be git, deploy, oauth2:token, etc.)
+		// matches[2] = host
+		// matches[3] = path
+		return "***@" + matches[2] + ":" + matches[3]
 	}
 
 	// If we can't parse it and it's not SCP-like, return as-is
