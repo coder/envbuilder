@@ -502,7 +502,7 @@ func RedactURL(u string) string {
 //
 // Limitation: SCP-like URLs (e.g., git@github.com:org/repo.git) are not supported as parent URLs
 // when the submodule uses a relative path. This is a known limitation.
-// See: https://github.com/coder/envbuilder/issues/487
+// See: https://github.com/coder/envbuilder/issues/492
 func ResolveSubmoduleURL(parentURL, submoduleURL string) (string, error) {
 	// If the submodule URL is absolute (contains ://) or doesn't start with ./ or ../, return it as-is
 	if strings.Contains(submoduleURL, "://") || (!strings.HasPrefix(submoduleURL, "../") && !strings.HasPrefix(submoduleURL, "./")) {
@@ -512,7 +512,7 @@ func ResolveSubmoduleURL(parentURL, submoduleURL string) (string, error) {
 	// Check if parent URL is SCP-like (e.g., git@github.com:org/repo.git)
 	// These cannot be properly parsed by net/url and relative submodule resolution is not supported.
 	if scpLikeURLRegex.MatchString(parentURL) {
-		return "", fmt.Errorf("relative submodule URL %q cannot be resolved: parent URL %q uses SCP-like syntax which is not supported for relative submodule resolution (see https://github.com/coder/envbuilder/issues/487)", submoduleURL, RedactURL(parentURL))
+		return "", fmt.Errorf("relative submodule URL %q cannot be resolved: parent URL %q uses SCP-like syntax which is not supported for relative submodule resolution (see https://github.com/coder/envbuilder/issues/492)", submoduleURL, RedactURL(parentURL))
 	}
 
 	// Parse the parent URL
