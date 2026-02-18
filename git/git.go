@@ -479,7 +479,15 @@ func RedactURL(u string) string {
 		// Successfully parsed as a URL with a scheme
 		// Redact userinfo if present (handles user, user:pass, token, URL-encoded creds)
 		if parsed.User != nil {
-			parsed.User = url.User("***")
+			// Build URL manually to avoid url.User encoding *** as %2A%2A%2A
+			result := parsed.Scheme + "://***@" + parsed.Host + parsed.Path
+			if parsed.RawQuery != "" {
+				result += "?" + parsed.RawQuery
+			}
+			if parsed.Fragment != "" {
+				result += "#" + parsed.Fragment
+			}
+			return result
 		}
 		return parsed.String()
 	}
