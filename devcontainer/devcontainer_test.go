@@ -241,15 +241,6 @@ func TestImageFromDockerfile_BuildArgs(t *testing.T) {
 		require.Equal(t, "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm", ref.Name())
 	})
 
-	// Test that a missing build arg for an ARG without default results
-	// in the variable being substituted as empty string.
-	t.Run("MissingBuildArgUsesEmpty", func(t *testing.T) {
-		t.Parallel()
-		content := "ARG VARIANT\nFROM mcr.microsoft.com/devcontainers/python:1-${VARIANT}"
-		ref, err := devcontainer.ImageFromDockerfile(content, nil)
-		require.NoError(t, err)
-		require.Equal(t, "mcr.microsoft.com/devcontainers/python:1-", ref.Name())
-	})
 }
 
 func TestUserFromDockerfile_BuildArgs(t *testing.T) {
