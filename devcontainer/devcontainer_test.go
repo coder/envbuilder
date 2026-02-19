@@ -240,7 +240,6 @@ func TestImageFromDockerfile_BuildArgs(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm", ref.Name())
 	})
-
 }
 
 func TestUserFromDockerfile_BuildArgs(t *testing.T) {
