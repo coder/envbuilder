@@ -204,7 +204,7 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, 
 		// We should make a best-effort attempt to find the user.
 		// Features must be executed as root, so we need to swap back
 		// to the running user afterwards.
-		params.User, err = UserFromDockerfile(params.DockerfileContent)
+		params.User, err = UserFromDockerfile(params.DockerfileContent, BuildArgsMap(params.BuildArgs))
 		if err != nil {
 			return nil, fmt.Errorf("user from dockerfile: %w", err)
 		}
@@ -306,12 +306,44 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 	return strings.Join(lines, "\n"), featureContexts, err
 }
 
+// BuildArgsMap converts a slice of "KEY=VALUE" strings to a map.
+func BuildArgsMap(buildArgs []string) map[string]string {
+	m := make(map[string]string, len(buildArgs))
+	for _, arg := range buildArgs {
+		if key, val, ok := strings.Cut(arg, "="); ok {
+			m[key] = val
+		}
+	}
+	return m
+}
+
 // UserFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the user that will be used to run the container.
-func UserFromDockerfile(dockerfileContent string) (user string, err error) {
+func UserFromDockerfile(dockerfileContent string, buildArgs map[string]string) (user string, err error) {
 	res, err := parser.Parse(strings.NewReader(dockerfileContent))
 	if err != nil {
 		return "", fmt.Errorf("parse dockerfile: %w", err)
+	}
+
+	// Collect ARG values (defaults + overrides from buildArgs) for
+	// substitution into FROM image refs.
+	lexer := shell.NewLex('\\')
+	var argEnvs []string
+	for _, child := range res.AST.Children {
+		if !strings.EqualFold(child.Value, "arg") || child.Next == nil {
+			continue
+		}
+		if key, val, ok := strings.Cut(child.Next.Value, "="); ok {
+			if override, has := buildArgs[key]; has {
+				val = override
+			}
+			argEnvs = append(argEnvs, key+"="+val)
+		} else {
+			arg := child.Next.Value
+			if val, has := buildArgs[arg]; has {
+				argEnvs = append(argEnvs, arg+"="+val)
+			}
+		}
 	}
 
 	// Parse stages and user commands to determine the relevant user
@@ -330,6 +362,12 @@ func UserFromDockerfile(dockerfileContent string) (user string, err error) {
 
 		switch i := inst.(type) {
 		case *instructions.Stage:
+			// Substitute ARG values in the base image name.
+			baseName, _, err := lexer.ProcessWord(i.BaseName, shell.EnvsFromSlice(argEnvs))
+			if err != nil {
+				return "", fmt.Errorf("processing ARG substitution in FROM %q: %w", i.BaseName, err)
+			}
+			i.BaseName = baseName
 			stages = append(stages, i)
 			if i.Name != "" {
 				stageNames[i.Name] = i
@@ -388,7 +426,7 @@ func UserFromDockerfile(dockerfileContent string) (user string, err error) {
 
 // ImageFromDockerfile inspects the contents of a provided Dockerfile
 // and returns the image that will be used to run the container.
-func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
+func ImageFromDockerfile(dockerfileContent string, buildArgs map[string]string) (name.Reference, error) {
 	lexer := shell.NewLex('\\')
 	var args []string
 	var imageRef string
@@ -398,17 +436,25 @@ func ImageFromDockerfile(dockerfileContent string) (name.Reference, error) {
 		line := lines[i]
 		if arg, ok := strings.CutPrefix(line, "ARG "); ok {
 			arg = strings.TrimSpace(arg)
-			if strings.Contains(arg, "=") {
-				parts := strings.SplitN(arg, "=", 2)
-				key, _, err := lexer.ProcessWord(parts[0], shell.EnvsFromSlice(args))
+			if key, val, ok := strings.Cut(arg, "="); ok {
+				key, _, err := lexer.ProcessWord(key, shell.EnvsFromSlice(args))
 				if err != nil {
 					return nil, fmt.Errorf("processing %q: %w", line, err)
 				}
-				val, _, err := lexer.ProcessWord(parts[1], shell.EnvsFromSlice(args))
+				val, _, err := lexer.ProcessWord(val, shell.EnvsFromSlice(args))
 				if err != nil {
 					return nil, fmt.Errorf("processing %q: %w", line, err)
+				}
+				// Allow buildArgs to override Dockerfile ARG defaults.
+				if override, has := buildArgs[key]; has {
+					val = override
 				}
 				args = append(args, key+"="+val)
+			} else {
+				// ARG without a default — look up in buildArgs.
+				if val, has := buildArgs[arg]; has {
+					args = append(args, arg+"="+val)
+				}
 			}
 			continue
 		}
