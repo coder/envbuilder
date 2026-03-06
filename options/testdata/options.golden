@@ -179,6 +179,11 @@ OPTIONS:
           value can always be set to true - even if the container is being
           started for the first time.
 
+      --skip-unused-stages bool, $ENVBUILDER_SKIP_UNUSED_STAGES
+          Skip building all unused docker stages. Otherwise it builds by default
+          all stages, even the unnecessary ones until it reaches the target
+          stage / end of Dockerfile.
+
       --ssl-cert-base64 string, $ENVBUILDER_SSL_CERT_BASE64
           The content of an SSL cert file. This is useful for self-signed
           certificates.

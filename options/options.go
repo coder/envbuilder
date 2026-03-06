@@ -100,6 +100,10 @@ type Options struct {
 	// This value can always be set to true - even if the container is being
 	// started for the first time.
 	SkipRebuild bool
+	// SkipUnusedStages builds only used stages if defined to true. Otherwise,
+	// it builds by default all stages, even the unnecessary ones until it
+	// reaches the target stage / end of Dockerfile
+	SkipUnusedStages bool
 	// GitURL is the URL of the Git repository to clone. This is optional.
 	GitURL string
 	// GitCloneDepth is the depth to use when cloning the Git repository.
@@ -358,6 +362,14 @@ func (o *Options) CLI() serpent.OptionSet {
 				"to skip building when a container is restarting. e.g. docker stop -> " +
 				"docker start This value can always be set to true - even if the " +
 				"container is being started for the first time.",
+		},
+		{
+			Flag:  "skip-unused-stages",
+			Env:   WithEnvPrefix("SKIP_UNUSED_STAGES"),
+			Value: serpent.BoolOf(&o.SkipUnusedStages),
+			Description: "Skip building all unused docker stages. Otherwise it builds by " +
+				"default all stages, even the unnecessary ones until it reaches the " +
+				"target stage / end of Dockerfile.",
 		},
 		{
 			Flag:        "git-url",
