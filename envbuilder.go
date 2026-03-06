@@ -812,10 +812,16 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 		// We need to change the ownership of the files to the user that will
 		// be running the init script.
 		if chownErr := filepath.Walk(opts.WorkspaceFolder, func(path string, _ os.FileInfo, err error) error {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			if err != nil {
 				return err
 			}
-			return os.Lchown(path, execArgs.UserInfo.uid, execArgs.UserInfo.gid)
+			if err := os.Lchown(path, execArgs.UserInfo.uid, execArgs.UserInfo.gid); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
+			return nil
 		}); chownErr != nil {
 			opts.Logger(log.LevelError, "chown %q: %s", execArgs.UserInfo.user.HomeDir, chownErr.Error())
 			endStage("⚠️ Failed to the ownership of the workspace, you may need to fix this manually!")
@@ -829,10 +835,16 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 	if execArgs.UserInfo.uid != 0 {
 		endStage := startStage("🔄 Updating ownership of %s...", execArgs.UserInfo.user.HomeDir)
 		if chownErr := filepath.Walk(execArgs.UserInfo.user.HomeDir, func(path string, _ fs.FileInfo, err error) error {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
 			if err != nil {
 				return err
 			}
-			return os.Lchown(path, execArgs.UserInfo.uid, execArgs.UserInfo.gid)
+			if err := os.Lchown(path, execArgs.UserInfo.uid, execArgs.UserInfo.gid); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
+			return nil
 		}); chownErr != nil {
 			opts.Logger(log.LevelError, "chown %q: %s", execArgs.UserInfo.user.HomeDir, chownErr.Error())
 			endStage("⚠️ Failed to update ownership of %s, you may need to fix this manually!", execArgs.UserInfo.user.HomeDir)
