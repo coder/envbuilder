@@ -7,7 +7,7 @@ go 1.24.10
 replace github.com/GoogleContainerTools/kaniko => github.com/coder/kaniko v0.0.0-20251107135632-b20ff58093d8
 
 // Required to import codersdk due to gvisor dependency.
-replace tailscale.com => github.com/coder/tailscale v1.1.1-0.20240702054557-aa558fbe5374
+replace tailscale.com => github.com/coder/tailscale v1.1.1-0.20250829055706-6eafe0f9199e
 
 require (
 	cdr.dev/slog v1.6.2-0.20250703074222-9df5e0a6c145
@@ -42,6 +42,12 @@ require (
 	golang.org/x/mod v0.29.0
 	golang.org/x/sync v0.18.0
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
+)
+
+require (
+	github.com/creack/pty v1.1.24 // indirect
+	github.com/moby/moby v28.3.0+incompatible // indirect
+	github.com/tailscale/peercred v0.0.0-20250107143737-35a0c7bd7edc // indirect
 )
 
 require (
@@ -143,7 +149,7 @@ require (
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.3 // indirect
-	github.com/docker/go-connections v0.5.0 // indirect
+	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
@@ -224,9 +230,8 @@ require (
 	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/moby/go-archive v0.2.0 // indirect
+	github.com/moby/go-archive v0.1.0 // indirect
 	github.com/moby/locker v1.0.1 // indirect
-	github.com/moby/moby v28.3.0+incompatible // indirect
 	github.com/moby/patternmatcher v0.6.0 // indirect
 	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/moby/sys/mount v0.3.4 // indirect
@@ -291,7 +296,7 @@ require (
 	github.com/valyala/fasthttp v1.65.0 // indirect
 	github.com/vbatts/tar-split v0.12.1 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.28 // indirect
-	github.com/vishvananda/netlink v1.3.1-0.20250303224720-0e7078ed04c8 // indirect
+	github.com/vishvananda/netlink v1.2.1-beta.2 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	github.com/vmihailenco/msgpack v4.0.4+incompatible // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
@@ -347,9 +352,12 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gvisor.dev/gvisor v0.0.0-20240509041132-65b30f7869dc // indirect
-	inet.af/peercred v0.0.0-20210906144145-0893ea02156a // indirect
-	nhooyr.io/websocket v1.8.7 // indirect
 	sigs.k8s.io/yaml v1.5.0 // indirect
 	storj.io/drpc v0.0.33 // indirect
 	tailscale.com v1.80.3 // indirect
+)
+
+exclude (
+	github.com/vishvananda/netlink v1.3.0
+	github.com/vishvananda/netlink v1.3.1-0.20250303224720-0e7078ed04c8
 )
