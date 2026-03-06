@@ -5,12 +5,52 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/coder/envbuilder/log"
 	"github.com/coder/serpent"
 	"github.com/go-git/go-billy/v5"
 )
+
+// SubmoduleDepth is a custom type for handling submodule depth that accepts
+// "true" (defaults to 10), "false" (0), or a positive integer.
+type SubmoduleDepth int
+
+const DefaultSubmoduleDepth = 10
+
+func (s *SubmoduleDepth) Set(val string) error {
+	lower := strings.ToLower(strings.TrimSpace(val))
+	switch lower {
+	case "true", "yes":
+		*s = DefaultSubmoduleDepth
+		return nil
+	case "false", "no", "":
+		*s = 0
+		return nil
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return fmt.Errorf("invalid submodule depth %q: must be true, false, or a positive integer", val)
+	}
+	if n < 0 {
+		return fmt.Errorf("submodule depth must be non-negative, got %d", n)
+	}
+	*s = SubmoduleDepth(n)
+	return nil
+}
+
+func (s *SubmoduleDepth) String() string {
+	return strconv.Itoa(int(*s))
+}
+
+func (s *SubmoduleDepth) Type() string {
+	return "submodule-depth"
+}
+
+func SubmoduleDepthOf(s *int) *SubmoduleDepth {
+	return (*SubmoduleDepth)(s)
+}
 
 // Options contains the configuration for the envbuilder.
 type Options struct {
@@ -108,6 +148,10 @@ type Options struct {
 	GitCloneSingleBranch bool
 	// GitCloneThinPack clone with thin pack compabilities. This is optional.
 	GitCloneThinPack bool
+	// GitCloneSubmodules controls submodule initialization after cloning.
+	// 0 = disabled (default), positive integer = max recursion depth.
+	// Accepts "true" (defaults to 10), "false" (0), or a positive integer.
+	GitCloneSubmodules int
 	// GitUsername is the username to use for Git authentication. This is
 	// optional.
 	GitUsername string
@@ -384,7 +428,14 @@ func (o *Options) CLI() serpent.OptionSet {
 			Default: "true",
 			Description: "Git clone with thin pack compatibility enabled, " +
 				"ensuring that even when thin pack compatibility is activated," +
-				"it will not be turned on for the domain dev.zaure.com.",
+				"it will not be turned on for the domain dev.azure.com.",
+		},
+		{
+			Flag:  "git-clone-submodules",
+			Env:   WithEnvPrefix("GIT_CLONE_SUBMODULES"),
+			Value: SubmoduleDepthOf(&o.GitCloneSubmodules),
+			Description: "Clone Git submodules after cloning the repository. " +
+				"Accepts 'true' (max depth 10), 'false' (disabled), or a positive integer for max recursion depth.",
 		},
 		{
 			Flag:        "git-username",

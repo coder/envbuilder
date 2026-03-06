@@ -418,6 +418,36 @@ func TestSucceedsGitAuth(t *testing.T) {
 	require.Contains(t, gitConfig, srv.URL)
 }
 
+func TestGitSubmodules(t *testing.T) {
+	t.Parallel()
+
+	// Create parent repo with a submodule
+	parentSrv, _ := gittest.CreateGitServerWithSubmodule(t, gittest.Options{
+		Files: map[string]string{
+			"Dockerfile": "FROM " + testImageAlpine,
+		},
+	}, gittest.Options{
+		Files: map[string]string{
+			"subfile.txt": "submodule content",
+		},
+	})
+
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
+		envbuilderEnv("GIT_URL", parentSrv.URL),
+		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		envbuilderEnv("GIT_CLONE_SUBMODULES", "true"),
+	}})
+	require.NoError(t, err)
+
+	// Verify the .gitmodules file exists
+	gitmodules := execContainer(t, ctr, "cat /workspaces/empty/.gitmodules")
+	require.Contains(t, gitmodules, "[submodule")
+
+	// Verify the submodule was actually cloned by checking for the file inside it
+	subfileContent := execContainer(t, ctr, "cat /workspaces/empty/submod/subfile.txt")
+	require.Contains(t, subfileContent, "submodule content")
+}
+
 func TestGitSSHAuth(t *testing.T) {
 	t.Parallel()
 

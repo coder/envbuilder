@@ -20,8 +20,11 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
@@ -268,6 +271,109 @@ func NewRepo(t *testing.T, fs billy.Filesystem, commits ...CommitFunc) *git.Repo
 		commit(fs, repo)
 	}
 	return repo
+}
+
+// CreateGitServerWithSubmodule creates a parent git repo with a submodule pointing to another repo.
+// Returns the parent server and the submodule server.
+// The submodule is properly registered with a gitlink entry in the tree.
+func CreateGitServerWithSubmodule(t *testing.T, opts Options, submoduleOpts Options) (parentSrv *httptest.Server, submoduleSrv *httptest.Server) {
+	t.Helper()
+
+	// Create the submodule repo first and get its HEAD commit
+	submoduleFS := memfs.New()
+	submoduleCommits := make([]CommitFunc, 0)
+	for path, content := range submoduleOpts.Files {
+		submoduleCommits = append(submoduleCommits, Commit(t, path, content, "submodule commit"))
+	}
+	submoduleRepo := NewRepo(t, submoduleFS, submoduleCommits...)
+
+	// Get the submodule's HEAD commit hash
+	submoduleHead, err := submoduleRepo.Head()
+	require.NoError(t, err)
+	submoduleHash := submoduleHead.Hash()
+
+	// Start the submodule server
+	if submoduleOpts.AuthMW == nil {
+		submoduleOpts.AuthMW = mwtest.BasicAuthMW(submoduleOpts.Username, submoduleOpts.Password)
+	}
+	if submoduleOpts.TLS {
+		submoduleSrv = httptest.NewTLSServer(submoduleOpts.AuthMW(NewServer(submoduleFS)))
+	} else {
+		submoduleSrv = httptest.NewServer(submoduleOpts.AuthMW(NewServer(submoduleFS)))
+	}
+
+	// Create the parent repo with .gitmodules and gitlink entry
+	if opts.AuthMW == nil {
+		opts.AuthMW = mwtest.BasicAuthMW(opts.Username, opts.Password)
+	}
+
+	parentFS := memfs.New()
+	commits := make([]CommitFunc, 0)
+	for path, content := range opts.Files {
+		commits = append(commits, Commit(t, path, content, "my test commit"))
+	}
+
+	// Add .gitmodules file and gitlink entry for the submodule
+	commits = append(commits, CommitSubmodule(t, "submod", submoduleSrv.URL, submoduleHash))
+
+	_ = NewRepo(t, parentFS, commits...)
+
+	if opts.TLS {
+		parentSrv = httptest.NewTLSServer(opts.AuthMW(NewServer(parentFS)))
+	} else {
+		parentSrv = httptest.NewServer(opts.AuthMW(NewServer(parentFS)))
+	}
+	return parentSrv, submoduleSrv
+}
+
+// CommitSubmodule creates a commit that adds a submodule with proper .gitmodules and gitlink entry.
+func CommitSubmodule(t *testing.T, path, url string, hash plumbing.Hash) CommitFunc {
+	return func(fs billy.Filesystem, repo *git.Repository) {
+		t.Helper()
+		tree, err := repo.Worktree()
+		require.NoError(t, err)
+
+		// Create .gitmodules file
+		gitmodulesContent := fmt.Sprintf("[submodule %q]\n\tpath = %s\n\turl = %s\n", path, path, url)
+		WriteFile(t, fs, ".gitmodules", gitmodulesContent)
+		_, err = tree.Add(".gitmodules")
+		require.NoError(t, err)
+
+		// Add submodule config to .git/config
+		cfg, err := repo.Config()
+		require.NoError(t, err)
+		cfg.Submodules[path] = &config.Submodule{
+			Name: path,
+			Path: path,
+			URL:  url,
+		}
+		err = repo.SetConfig(cfg)
+		require.NoError(t, err)
+
+		// Create the gitlink entry (mode 160000 commit reference)
+		// We need to add it directly to the index
+		idx, err := repo.Storer.Index()
+		require.NoError(t, err)
+
+		// Add a gitlink entry - this is a special index entry with mode 160000
+		idx.Entries = append(idx.Entries, &index.Entry{
+			Mode: filemode.Submodule,
+			Hash: hash,
+			Name: path,
+		})
+		err = repo.Storer.SetIndex(idx)
+		require.NoError(t, err)
+
+		// Commit the changes
+		_, err = tree.Commit("add submodule", &git.CommitOptions{
+			Author: &object.Signature{
+				Name:  "Example",
+				Email: "test@example.com",
+				When:  time.Now(),
+			},
+		})
+		require.NoError(t, err)
+	}
 }
 
 // WriteFile writes a file to the filesystem.

@@ -533,6 +533,331 @@ func mustRead(t *testing.T, fs billy.Filesystem, path string) string {
 	return string(content)
 }
 
+func TestRedactURL(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		input  string
+		expect string
+	}{
+		// Standard URLs without credentials
+		{
+			name:   "https no creds",
+			input:  "https://github.com/org/repo.git",
+			expect: "https://github.com/org/repo.git",
+		},
+		{
+			name:   "git protocol no creds",
+			input:  "git://github.com/org/repo.git",
+			expect: "git://github.com/org/repo.git",
+		},
+
+		// HTTPS with various credential formats
+		{
+			name:   "https with user and password",
+			input:  "https://user:password@github.com/org/repo.git",
+			expect: "https://***@github.com/org/repo.git",
+		},
+		{
+			name:   "https with token only (no password)",
+			input:  "https://ghp_xxxxxxxxxxxx@github.com/org/repo.git",
+			expect: "https://***@github.com/org/repo.git",
+		},
+		{
+			name:   "https with user only (no password)",
+			input:  "https://user@github.com/org/repo.git",
+			expect: "https://***@github.com/org/repo.git",
+		},
+		{
+			name:   "https with x-access-token",
+			input:  "https://x-access-token:ghp_secret123@github.com/org/repo.git",
+			expect: "https://***@github.com/org/repo.git",
+		},
+
+		// URL-encoded credentials
+		{
+			name:   "https with URL-encoded password",
+			input:  "https://user:p%40ss%3Aw0rd@github.com/org/repo.git",
+			expect: "https://***@github.com/org/repo.git",
+		},
+		{
+			name:   "https with URL-encoded username",
+			input:  "https://user%40domain:pass@github.com/org/repo.git",
+			expect: "https://***@github.com/org/repo.git",
+		},
+
+		// HTTP
+		{
+			name:   "http with creds",
+			input:  "http://user:pass@example.com/repo.git",
+			expect: "http://***@example.com/repo.git",
+		},
+
+		// SSH URLs (with scheme)
+		{
+			name:   "ssh with user",
+			input:  "ssh://git@github.com/org/repo.git",
+			expect: "ssh://***@github.com/org/repo.git",
+		},
+		{
+			name:   "ssh with different user",
+			input:  "ssh://deploy@github.com/org/repo.git",
+			expect: "ssh://***@github.com/org/repo.git",
+		},
+
+		// SCP-like URLs (no scheme)
+		{
+			name:   "scp-like git user",
+			input:  "git@github.com:org/repo.git",
+			expect: "***@github.com:org/repo.git",
+		},
+		{
+			name:   "scp-like deploy user",
+			input:  "deploy@host:repo.git",
+			expect: "***@host:repo.git",
+		},
+		{
+			name:   "scp-like with IP address",
+			input:  "user@10.0.0.5:project.git",
+			expect: "***@10.0.0.5:project.git",
+		},
+		{
+			name:   "scp-like with token as user",
+			input:  "oauth2:ghp_secret@gitlab.com:org/repo.git",
+			expect: "***@gitlab.com:org/repo.git",
+		},
+
+		// IPv6 hosts
+		{
+			name:   "https with IPv6 and creds",
+			input:  "https://user:pass@[2001:db8::1]/path/repo.git",
+			expect: "https://***@[2001:db8::1]/path/repo.git",
+		},
+		{
+			name:   "https with IPv6 no creds",
+			input:  "https://[2001:db8::1]/path/repo.git",
+			expect: "https://[2001:db8::1]/path/repo.git",
+		},
+
+		// Other schemes
+		{
+			name:   "ftp with creds",
+			input:  "ftp://user:pass@host/path",
+			expect: "ftp://***@host/path",
+		},
+		{
+			name:   "sftp with user only",
+			input:  "sftp://user@host/path",
+			expect: "sftp://***@host/path",
+		},
+
+		// Edge cases
+		{
+			name:   "plain path (not a URL)",
+			input:  "/local/path/to/repo",
+			expect: "/local/path/to/repo",
+		},
+		{
+			name:   "relative path",
+			input:  "../sibling/repo.git",
+			expect: "../sibling/repo.git",
+		},
+		{
+			name:   "file URL",
+			input:  "file:///local/repo.git",
+			expect: "file:///local/repo.git",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := git.RedactURL(tc.input)
+			require.Equal(t, tc.expect, got)
+		})
+	}
+}
+
+func TestSameHost(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		url1   string
+		url2   string
+		expect bool
+	}{
+		// Same host cases
+		{
+			name:   "https same host",
+			url1:   "https://github.com/org/repo.git",
+			url2:   "https://github.com/other/submodule.git",
+			expect: true,
+		},
+		{
+			name:   "https and scp same host",
+			url1:   "https://github.com/org/repo.git",
+			url2:   "git@github.com:other/submodule.git",
+			expect: true,
+		},
+		{
+			name:   "scp same host",
+			url1:   "git@github.com:org/repo.git",
+			url2:   "git@github.com:other/submodule.git",
+			expect: true,
+		},
+		{
+			name:   "case insensitive",
+			url1:   "https://GitHub.com/org/repo.git",
+			url2:   "https://github.com/other/submodule.git",
+			expect: true,
+		},
+		{
+			name:   "with port same host",
+			url1:   "https://github.com:443/org/repo.git",
+			url2:   "https://github.com/other/submodule.git",
+			expect: true,
+		},
+		{
+			name:   "ssh scheme same host",
+			url1:   "ssh://git@github.com/org/repo.git",
+			url2:   "https://github.com/other/submodule.git",
+			expect: true,
+		},
+
+		// Different host cases
+		{
+			name:   "different hosts",
+			url1:   "https://github.com/org/repo.git",
+			url2:   "https://gitlab.com/other/submodule.git",
+			expect: false,
+		},
+		{
+			name:   "scp different hosts",
+			url1:   "git@github.com:org/repo.git",
+			url2:   "git@evil.com:exfiltrate/creds.git",
+			expect: false,
+		},
+		{
+			name:   "subdomain is different",
+			url1:   "https://github.com/org/repo.git",
+			url2:   "https://api.github.com/other/submodule.git",
+			expect: false,
+		},
+
+		// Edge cases
+		{
+			name:   "empty url1",
+			url1:   "",
+			url2:   "https://github.com/other/submodule.git",
+			expect: false,
+		},
+		{
+			name:   "relative url",
+			url1:   "https://github.com/org/repo.git",
+			url2:   "../other/submodule.git",
+			expect: false,
+		},
+		{
+			name:   "file path",
+			url1:   "https://github.com/org/repo.git",
+			url2:   "/local/path/to/repo",
+			expect: false,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := git.SameHost(tc.url1, tc.url2)
+			require.Equal(t, tc.expect, got)
+		})
+	}
+}
+
+func TestResolveSubmoduleURL(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		parentURL string
+		subURL    string
+		expect    string
+		expectErr string
+	}{
+		{
+			name:      "absolute",
+			parentURL: "https://example.com/org/main.git",
+			subURL:    "https://github.com/other/repo.git",
+			expect:    "https://github.com/other/repo.git",
+		},
+		{
+			name:      "relativeSibling",
+			parentURL: "https://example.com/org/main.git",
+			subURL:    "../deps/lib.git",
+			expect:    "https://example.com/org/deps/lib.git",
+		},
+		{
+			name:      "relativeChild",
+			parentURL: "https://example.com/org/main.git",
+			subURL:    "./extras/tool.git",
+			expect:    "https://example.com/org/main.git/extras/tool.git",
+		},
+		{
+			name:      "badParent",
+			parentURL: "://bad",
+			subURL:    "./child",
+			expectErr: "parse parent URL",
+		},
+		{
+			name:      "scpParentWithRelativeSubmodule",
+			parentURL: "git@github.com:org/main.git",
+			subURL:    "../other/submodule.git",
+			expectErr: "SCP-like syntax which is not supported",
+		},
+		{
+			name:      "scpParentWithAbsoluteSubmodule",
+			parentURL: "git@github.com:org/main.git",
+			subURL:    "https://github.com/other/submodule.git",
+			expect:    "https://github.com/other/submodule.git",
+		},
+	}
+
+	for _, tc := range cases {
+		c := tc
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := git.ResolveSubmoduleURL(c.parentURL, c.subURL)
+			if c.expectErr != "" {
+				require.ErrorContains(t, err, c.expectErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, c.expect, got)
+		})
+	}
+}
+
+func TestCloneOptionsFromOptions_Submodules(t *testing.T) {
+	t.Parallel()
+
+	fs := memfs.New()
+	opts := options.Options{
+		Filesystem:         fs,
+		WorkspaceFolder:    "/workspace",
+		GitURL:             "https://example.com/example/repo.git",
+		GitCloneSubmodules: 10,
+		GitCloneThinPack:   true,
+	}
+
+	cloneOpts, err := git.CloneOptionsFromOptions(t.Logf, opts)
+	require.NoError(t, err)
+	require.Equal(t, 10, cloneOpts.SubmoduleDepth)
+}
+
 // generates a random ed25519 private key
 func randKeygen(t *testing.T) gossh.Signer {
 	t.Helper()
