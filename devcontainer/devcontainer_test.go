@@ -149,6 +149,97 @@ USER 1000`, params.DockerfileContent)
 	})
 }
 
+func TestCompileWithFeaturesOverrideInstallOrder(t *testing.T) {
+	t.Parallel()
+	registry := registrytest.New(t)
+	featureOne := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/one:tomato", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:      "one",
+			Version: "tomato",
+			Name:    "One",
+		},
+	})
+	featureTwo := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/two:potato", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:      "two",
+			Version: "potato",
+			Name:    "Two",
+		},
+	})
+	featureThree := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/three:apple", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:      "three",
+			Version: "apple",
+			Name:    "Three",
+		},
+	})
+
+	featureOneMD5 := md5.Sum([]byte(featureOne))
+	featureOneDir := fmt.Sprintf("/.envbuilder/features/one-%x", featureOneMD5[:4])
+	featureTwoMD5 := md5.Sum([]byte(featureTwo))
+	featureTwoDir := fmt.Sprintf("/.envbuilder/features/two-%x", featureTwoMD5[:4])
+	featureThreeMD5 := md5.Sum([]byte(featureThree))
+	featureThreeDir := fmt.Sprintf("/.envbuilder/features/three-%x", featureThreeMD5[:4])
+
+	t.Run("OverrideReverseOrder", func(t *testing.T) {
+		// featureThree then featureTwo are explicitly ordered first; featureOne
+		// is unconstrained and falls to the alphabetical remainder.
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureOne + `": {},
+    "` + featureTwo + `": {},
+    "` + featureThree + `": {}
+  },
+  "overrideFeatureInstallOrder": ["` + featureThree + `", "` + featureTwo + `"]
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+
+		// featureThree and featureTwo come first (in override order),
+		// then featureOne last (alphabetical remainder).
+		require.Contains(t, params.DockerfileContent, "WORKDIR "+featureThreeDir+"\n")
+		require.Contains(t, params.DockerfileContent, "WORKDIR "+featureTwoDir+"\n")
+		require.Contains(t, params.DockerfileContent, "WORKDIR "+featureOneDir+"\n")
+
+		threeIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureThreeDir)
+		twoIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureTwoDir)
+		oneIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureOneDir)
+		require.Less(t, threeIdx, twoIdx, "three should be installed before two")
+		require.Less(t, twoIdx, oneIdx, "two should be installed before one")
+	})
+
+	t.Run("UnknownOverrideEntryIgnored", func(t *testing.T) {
+		// An entry in overrideFeatureInstallOrder that doesn't match any
+		// feature key should be silently ignored.
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureOne + `": {},
+    "` + featureTwo + `": {}
+  },
+  "overrideFeatureInstallOrder": ["does-not-exist", "` + featureTwo + `"]
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+
+		twoIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureTwoDir)
+		oneIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureOneDir)
+		require.Less(t, twoIdx, oneIdx, "two should be installed before one")
+	})
+}
+
 func TestCompileDevContainer(t *testing.T) {
 	t.Parallel()
 	t.Run("WithImage", func(t *testing.T) {

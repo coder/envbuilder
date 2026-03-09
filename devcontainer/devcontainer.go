@@ -40,6 +40,10 @@ type Spec struct {
 	RemoteEnv     map[string]string `json:"remoteEnv"`
 	// Features is a map of feature names to feature configurations.
 	Features map[string]any `json:"features"`
+	// OverrideFeatureInstallOrder overrides the order in which features are
+	// installed. Feature references not present in this list are installed
+	// after the listed ones, in alphabetical order.
+	OverrideFeatureInstallOrder []string `json:"overrideFeatureInstallOrder"`
 	LifecycleScripts
 
 	// Deprecated but still frequently used...
@@ -234,15 +238,15 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 	featureDirectives := []string{}
 	featureContexts := make(map[string]string)
 
-	// TODO: Respect the installation order outlined by the spec:
-	// https://containers.dev/implementors/features/#installation-order
-	featureOrder := []string{}
+	featureOrder := make([]string, 0, len(s.Features))
 	for featureRef := range s.Features {
 		featureOrder = append(featureOrder, featureRef)
 	}
-	// It's critical we sort features prior to compilation so the Dockerfile
-	// is deterministic which allows for caching.
-	sort.Strings(featureOrder)
+	// applyInstallOrder places explicitly ordered features first (in declared
+	// order), then appends remaining features alphabetically. Alphabetical
+	// ordering for unconstrained features is critical for Dockerfile
+	// determinism, which allows for layer caching.
+	featureOrder = applyInstallOrder(featureOrder, s.OverrideFeatureInstallOrder)
 
 	var lines []string
 	for _, featureRefRaw := range featureOrder {
@@ -304,6 +308,34 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		lines = append(lines, fmt.Sprintf("USER %s", remoteUser))
 	}
 	return strings.Join(lines, "\n"), featureContexts, err
+}
+
+// applyInstallOrder returns features in the order specified by overrideOrder
+// first, then any remaining features in alphabetical order. Entries in
+// overrideOrder that don't match any feature are silently ignored.
+func applyInstallOrder(features []string, overrideOrder []string) []string {
+	set := make(map[string]bool, len(features))
+	for _, f := range features {
+		set[f] = true
+	}
+
+	ordered := make([]string, 0, len(features))
+	for _, f := range overrideOrder {
+		if set[f] {
+			ordered = append(ordered, f)
+			delete(set, f)
+		}
+	}
+
+	// Collect and sort the remainder for determinism.
+	remaining := make([]string, 0, len(set))
+	for _, f := range features {
+		if set[f] {
+			remaining = append(remaining, f)
+		}
+	}
+	sort.Strings(remaining)
+	return append(ordered, remaining...)
 }
 
 // BuildArgsMap converts a slice of "KEY=VALUE" strings to a map.
