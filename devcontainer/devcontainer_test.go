@@ -240,6 +240,193 @@ func TestCompileWithFeaturesOverrideInstallOrder(t *testing.T) {
 	})
 }
 
+func TestCompileWithFeaturesInstallsAfter(t *testing.T) {
+	t.Parallel()
+	registry := registrytest.New(t)
+
+	// featureBase has no deps.
+	featureBase := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/base:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:      "base",
+			Version: "1.0.0",
+			Name:    "Base",
+		},
+	})
+	// featureTop declares installsAfter: ["base"], so it must come after featureBase.
+	featureTop := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/top:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:            "top",
+			Version:       "1.0.0",
+			Name:          "Top",
+			InstallsAfter: []string{"base"},
+		},
+	})
+
+	featureBaseMD5 := md5.Sum([]byte(featureBase))
+	featureBaseDir := fmt.Sprintf("/.envbuilder/features/base-%x", featureBaseMD5[:4])
+	featureTopMD5 := md5.Sum([]byte(featureTop))
+	featureTopDir := fmt.Sprintf("/.envbuilder/features/top-%x", featureTopMD5[:4])
+
+	t.Run("InstallsAfterRespected", func(t *testing.T) {
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureTop + `": {},
+    "` + featureBase + `": {}
+  }
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+
+		baseIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureBaseDir)
+		topIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureTopDir)
+		require.Greater(t, baseIdx, -1, "base feature should be present")
+		require.Greater(t, topIdx, -1, "top feature should be present")
+		require.Less(t, baseIdx, topIdx, "base should be installed before top (installsAfter)")
+	})
+
+	t.Run("InstallsAfterAbsentDepIgnored", func(t *testing.T) {
+		// featureTop declares installsAfter: ["base"], but base is not in features.
+		// This is a soft dep — should succeed with just featureTop.
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureTop + `": {}
+  }
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		_, err = dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err, "absent installsAfter dep should not cause an error")
+	})
+
+	t.Run("OverrideWinsOverInstallsAfter", func(t *testing.T) {
+		// overrideFeatureInstallOrder forces top before base, contradicting
+		// top's installsAfter declaration. Override takes precedence.
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureTop + `": {},
+    "` + featureBase + `": {}
+  },
+  "overrideFeatureInstallOrder": ["` + featureTop + `", "` + featureBase + `"]
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+
+		topIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureTopDir)
+		baseIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureBaseDir)
+		require.Less(t, topIdx, baseIdx, "override should force top before base")
+	})
+}
+
+func TestCompileWithFeaturesDependsOn(t *testing.T) {
+	t.Parallel()
+	registry := registrytest.New(t)
+
+	featureA := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/a:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:      "a",
+			Version: "1.0.0",
+			Name:    "A",
+		},
+	})
+	// featureB hard-depends on featureA.
+	featureB := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/b:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:        "b",
+			Version:   "1.0.0",
+			Name:      "B",
+			DependsOn: []string{"a"},
+		},
+	})
+
+	t.Run("DependsOnSatisfied", func(t *testing.T) {
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureA + `": {},
+    "` + featureB + `": {}
+  }
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		_, err = dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+	})
+
+	t.Run("DependsOnMissingErrors", func(t *testing.T) {
+		// featureB requires featureA, but featureA is not included.
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureB + `": {}
+  }
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		_, err = dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.ErrorContains(t, err, `requires feature "a"`)
+	})
+}
+
+func TestResolveInstallOrderCycleDetection(t *testing.T) {
+	t.Parallel()
+	registry := registrytest.New(t)
+
+	// featureX installsAfter featureY, featureY installsAfter featureX — a cycle.
+	featureX := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/x:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:            "x",
+			Version:       "1.0.0",
+			Name:          "X",
+			InstallsAfter: []string{"y"},
+		},
+	})
+	featureY := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/y:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:            "y",
+			Version:       "1.0.0",
+			Name:          "Y",
+			InstallsAfter: []string{"x"},
+		},
+	})
+
+	raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureX + `": {},
+    "` + featureY + `": {}
+  }
+}`
+	dc, err := devcontainer.Parse([]byte(raw))
+	require.NoError(t, err)
+	fs := memfs.New()
+
+	_, err = dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+	require.ErrorContains(t, err, "cycle detected")
+}
+
 func TestCompileDevContainer(t *testing.T) {
 	t.Parallel()
 	t.Run("WithImage", func(t *testing.T) {

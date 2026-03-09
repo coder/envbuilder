@@ -116,8 +116,8 @@ Feel free to [create a new issue](https://github.com/coder/envbuilder/issues/new
 | 🔴     | `securityOpt`            | Security options to add when the feature is used             | -            |
 | 🔴     | `entrypoint`             | Override entrypoint when the feature is used                 | -            |
 | 🔴     | `customizations`         | Product-specific properties to add when the feature is used  | -            |
-| 🔴     | `dependsOn`              | Define a hard dependency on other features                   | -            |
-| 🔴     | `installsAfter`          | Define a soft dependency on other features                   | -            |
+| �     | `dependsOn`              | Define a hard dependency on other features                   | -            |
+| �     | `installsAfter`          | Define a soft dependency on other features                   | -            |
 | 🔴     | `legacyIds`              | Used when renaming a feature                                 | -            |
 | 🔴     | `deprecated`             | Whether the feature is deprecated                            | -            |
 | 🔴     | `mounts`                 | Cross-orchestrator mounts to add to the container            | -            |

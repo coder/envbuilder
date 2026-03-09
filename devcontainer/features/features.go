@@ -188,6 +188,15 @@ type Spec struct {
 	Keywords         []string          `json:"keywords"`
 	Options          map[string]Option `json:"options"`
 	ContainerEnv     map[string]string `json:"containerEnv"`
+	// InstallsAfter is a soft ordering hint: this feature prefers to be
+	// installed after the listed feature IDs or references, but will not
+	// fail if they are absent.
+	// See https://containers.dev/implementors/features/#installation-order
+	InstallsAfter []string `json:"installsAfter"`
+	// DependsOn is a hard dependency: this feature requires the listed
+	// feature IDs or references to also be present in the feature set.
+	// See https://containers.dev/implementors/features/#installation-order
+	DependsOn []string `json:"dependsOn"`
 }
 
 // Extract unpacks the feature from the image and returns a set of lines

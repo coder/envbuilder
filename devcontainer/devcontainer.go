@@ -231,25 +231,23 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 	}
 
 	featuresDir := filepath.Join(scratchDir, "features")
-	err := fs.MkdirAll(featuresDir, 0o644)
-	if err != nil {
+	if err := fs.MkdirAll(featuresDir, 0o644); err != nil {
 		return "", nil, fmt.Errorf("create features directory: %w", err)
 	}
-	featureDirectives := []string{}
-	featureContexts := make(map[string]string)
 
-	featureOrder := make([]string, 0, len(s.Features))
-	for featureRef := range s.Features {
-		featureOrder = append(featureOrder, featureRef)
+	// Pass 1: resolve each raw ref to its canonical featureRef and extract
+	// the feature spec. We need all specs before we can resolve ordering
+	// since installsAfter/dependsOn live inside devcontainer-feature.json.
+	type extractedFeature struct {
+		featureRef  string
+		featureName string
+		featureDir  string
+		spec        *features.Spec
+		opts        map[string]any
 	}
-	// applyInstallOrder places explicitly ordered features first (in declared
-	// order), then appends remaining features alphabetically. Alphabetical
-	// ordering for unconstrained features is critical for Dockerfile
-	// determinism, which allows for layer caching.
-	featureOrder = applyInstallOrder(featureOrder, s.OverrideFeatureInstallOrder)
-
-	var lines []string
-	for _, featureRefRaw := range featureOrder {
+	extracted := make(map[string]*extractedFeature, len(s.Features))
+	idToRef := make(map[string]string, len(s.Features)) // feature ID → refRaw
+	for featureRefRaw := range s.Features {
 		var (
 			featureRef string
 			ok         bool
@@ -265,7 +263,7 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		featureOpts := map[string]any{}
 		switch t := s.Features[featureRefRaw].(type) {
 		case string:
-			// As a shorthand, the value of the `features`` property can be provided as a
+			// As a shorthand, the value of the `features` property can be provided as a
 			// single string. This string is mapped to an option called version.
 			// https://containers.dev/implementors/features/#devcontainer-json-properties
 			featureOpts["version"] = t
@@ -288,13 +286,46 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		if err != nil {
 			return "", nil, fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
 		}
-		fromDirective, directive, err := spec.Compile(featureRef, featureName, featureDir, containerUser, remoteUser, useBuildContexts, featureOpts)
+		extracted[featureRefRaw] = &extractedFeature{
+			featureRef:  featureRef,
+			featureName: featureName,
+			featureDir:  featureDir,
+			spec:        spec,
+			opts:        featureOpts,
+		}
+		idToRef[spec.ID] = featureRefRaw
+	}
+
+	// Resolve installation order, then validate hard dependencies.
+	refRaws := make([]string, 0, len(extracted))
+	for refRaw := range extracted {
+		refRaws = append(refRaws, refRaw)
+	}
+	specsByRef := make(map[string]*features.Spec, len(extracted))
+	for refRaw, ef := range extracted {
+		specsByRef[refRaw] = ef.spec
+	}
+	featureOrder, err := resolveInstallOrder(refRaws, specsByRef, idToRef, s.OverrideFeatureInstallOrder)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := validateDependencies(specsByRef, idToRef); err != nil {
+		return "", nil, err
+	}
+
+	// Pass 2: compile Dockerfile directives in the resolved order.
+	featureDirectives := make([]string, 0, len(featureOrder))
+	featureContexts := make(map[string]string)
+	var lines []string
+	for _, featureRefRaw := range featureOrder {
+		ef := extracted[featureRefRaw]
+		fromDirective, directive, err := ef.spec.Compile(ef.featureRef, ef.featureName, ef.featureDir, containerUser, remoteUser, useBuildContexts, ef.opts)
 		if err != nil {
 			return "", nil, fmt.Errorf("compile feature %s: %w", featureRefRaw, err)
 		}
 		featureDirectives = append(featureDirectives, directive)
 		if useBuildContexts {
-			featureContexts[featureRef] = featureDir
+			featureContexts[ef.featureRef] = ef.featureDir
 			lines = append(lines, fromDirective)
 		}
 	}
@@ -307,35 +338,132 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		// we're going to run as root.
 		lines = append(lines, fmt.Sprintf("USER %s", remoteUser))
 	}
-	return strings.Join(lines, "\n"), featureContexts, err
+	return strings.Join(lines, "\n"), featureContexts, nil
 }
 
-// applyInstallOrder returns features in the order specified by overrideOrder
-// first, then any remaining features in alphabetical order. Entries in
-// overrideOrder that don't match any feature are silently ignored.
-func applyInstallOrder(features []string, overrideOrder []string) []string {
-	set := make(map[string]bool, len(features))
-	for _, f := range features {
-		set[f] = true
+// resolveInstallOrder determines the final feature installation order.
+//
+// Priority (highest to lowest):
+//  1. overrideOrder entries (in declared order) — user override wins unconditionally
+//  2. installsAfter edges from devcontainer-feature.json — soft ordering via
+//     Kahn's topological sort on the unconstrained remainder
+//  3. Alphabetical — tie-breaking for determinism and layer cache stability
+//
+// IDs in installsAfter that don't map to a feature present in the set are
+// silently ignored (soft-dep semantics). Returns an error if a cycle is
+// detected among the installsAfter edges.
+//
+// See https://containers.dev/implementors/features/#installation-order
+func resolveInstallOrder(refRaws []string, specs map[string]*features.Spec, idToRef map[string]string, overrideOrder []string) ([]string, error) {
+	// Step 1: lock in override entries (in declared order), removing them
+	// from the free set so they are not subject to topo sorting.
+	free := make(map[string]bool, len(refRaws))
+	for _, r := range refRaws {
+		free[r] = true
 	}
-
-	ordered := make([]string, 0, len(features))
-	for _, f := range overrideOrder {
-		if set[f] {
-			ordered = append(ordered, f)
-			delete(set, f)
+	pinned := make([]string, 0, len(overrideOrder))
+	for _, r := range overrideOrder {
+		if free[r] {
+			pinned = append(pinned, r)
+			delete(free, r)
 		}
 	}
 
-	// Collect and sort the remainder for determinism.
-	remaining := make([]string, 0, len(set))
-	for _, f := range features {
-		if set[f] {
-			remaining = append(remaining, f)
+	// Step 2: topological sort (Kahn's algorithm) on the free remainder,
+	// driven by installsAfter edges. An edge A→B means "B must come before A".
+	// Edges pointing outside the free set are ignored.
+	inDegree := make(map[string]int, len(free))
+	deps := make(map[string][]string, len(free)) // refRaw → refRaws it must follow
+	for r := range free {
+		inDegree[r] = 0
+	}
+	for r := range free {
+		for _, depID := range specs[r].InstallsAfter {
+			// Resolve the ID or ref to a refRaw present in the free set.
+			predRef, ok := idToRef[depID]
+			if !ok {
+				// depID might itself be a raw ref rather than a short ID.
+				if free[depID] {
+					predRef = depID
+					ok = true
+				}
+			}
+			if !ok || !free[predRef] {
+				// Predecessor absent or overridden — soft dep, skip.
+				continue
+			}
+			deps[r] = append(deps[r], predRef)
+			inDegree[r]++
 		}
 	}
-	sort.Strings(remaining)
-	return append(ordered, remaining...)
+
+	// Seed the ready queue with all zero-in-degree nodes, sorted alphabetically
+	// so tie-breaking is deterministic.
+	ready := make([]string, 0, len(free))
+	for r := range free {
+		if inDegree[r] == 0 {
+			ready = append(ready, r)
+		}
+	}
+	sort.Strings(ready)
+
+	sorted := make([]string, 0, len(free))
+	// successors maps predecessor → features that depend on it.
+	successors := make(map[string][]string, len(free))
+	for r, preds := range deps {
+		for _, pred := range preds {
+			successors[pred] = append(successors[pred], r)
+		}
+	}
+	for len(ready) > 0 {
+		// Pop the first (alphabetically smallest) ready node.
+		r := ready[0]
+		ready = ready[1:]
+		sorted = append(sorted, r)
+		// Reduce in-degree for all features that installsAfter r.
+		newReady := []string{}
+		for _, succ := range successors[r] {
+			inDegree[succ]--
+			if inDegree[succ] == 0 {
+				newReady = append(newReady, succ)
+			}
+		}
+		// Insert new ready nodes in sorted position to preserve alphabetical
+		// tie-breaking across the entire queue.
+		sort.Strings(newReady)
+		ready = append(ready, newReady...)
+		sort.Strings(ready)
+	}
+
+	if len(sorted) != len(free) {
+		// Cycle detected — identify the offending features.
+		cycled := make([]string, 0)
+		for r := range free {
+			if inDegree[r] > 0 {
+				cycled = append(cycled, r)
+			}
+		}
+		sort.Strings(cycled)
+		return nil, fmt.Errorf("cycle detected in feature installsAfter dependencies: %s", strings.Join(cycled, ", "))
+	}
+
+	return append(pinned, sorted...), nil
+}
+
+// validateDependencies checks that every hard dependency declared via
+// dependsOn in a feature's devcontainer-feature.json is satisfied by the
+// set of installed features.
+func validateDependencies(specs map[string]*features.Spec, idToRef map[string]string) error {
+	for refRaw, spec := range specs {
+		for _, depID := range spec.DependsOn {
+			_, byID := idToRef[depID]
+			_, byRef := specs[depID]
+			if !byID && !byRef {
+				return fmt.Errorf("feature %q (%s) requires feature %q which is not included", spec.ID, refRaw, depID)
+			}
+		}
+	}
+	return nil
 }
 
 // BuildArgsMap converts a slice of "KEY=VALUE" strings to a map.
