@@ -195,8 +195,10 @@ type Spec struct {
 	InstallsAfter []string `json:"installsAfter"`
 	// DependsOn is a hard dependency: this feature requires the listed
 	// feature IDs or references to also be present in the feature set.
+	// Each key is a feature reference and the value is the options object
+	// for that feature (same semantics as the features object in devcontainer.json).
 	// See https://containers.dev/implementors/features/#installation-order
-	DependsOn []string `json:"dependsOn"`
+	DependsOn map[string]map[string]any `json:"dependsOn"`
 }
 
 // Extract unpacks the feature from the image and returns a set of lines

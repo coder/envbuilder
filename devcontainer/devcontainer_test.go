@@ -95,9 +95,11 @@ func TestCompileWithFeatures(t *testing.T) {
 	fs := memfs.New()
 
 	featureOneMD5 := md5.Sum([]byte(featureOne))
-	featureOneDir := fmt.Sprintf("/.envbuilder/features/one-%x", featureOneMD5[:4])
+	featureOneName := fmt.Sprintf("one-%x", featureOneMD5[:4])
+	featureOneDir := "/.envbuilder/features/" + featureOneName
 	featureTwoMD5 := md5.Sum([]byte(featureTwo))
-	featureTwoDir := fmt.Sprintf("/.envbuilder/features/two-%x", featureTwoMD5[:4])
+	featureTwoName := fmt.Sprintf("two-%x", featureTwoMD5[:4])
+	featureTwoDir := "/.envbuilder/features/" + featureTwoName
 
 	t.Run("WithoutBuildContexts", func(t *testing.T) {
 		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
@@ -123,23 +125,23 @@ USER 1000`, params.DockerfileContent)
 
 		registryHost := strings.TrimPrefix(registry, "http://")
 
-		require.Equal(t, `FROM scratch AS envbuilder_feature_one
+		require.Equal(t, `FROM scratch AS envbuilder_feature_`+featureOneName+`
 COPY --from=`+registryHost+`/coder/one / /
 
-FROM scratch AS envbuilder_feature_two
+FROM scratch AS envbuilder_feature_`+featureTwoName+`
 COPY --from=`+registryHost+`/coder/two / /
 
 FROM localhost:5000/envbuilder-test-codercom-code-server:latest
 
 USER root
 # Rust tomato - Example description!
-WORKDIR /.envbuilder/features/one
+WORKDIR /.envbuilder/features/`+featureOneName+`
 ENV TOMATO=example
-RUN --mount=type=bind,from=envbuilder_feature_one,target=/.envbuilder/features/one,rw _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
+RUN --mount=type=bind,from=envbuilder_feature_`+featureOneName+`,target=/.envbuilder/features/`+featureOneName+`,rw _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 # Go potato - Example description!
-WORKDIR /.envbuilder/features/two
+WORKDIR /.envbuilder/features/`+featureTwoName+`
 ENV POTATO=example
-RUN --mount=type=bind,from=envbuilder_feature_two,target=/.envbuilder/features/two,rw VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
+RUN --mount=type=bind,from=envbuilder_feature_`+featureTwoName+`,target=/.envbuilder/features/`+featureTwoName+`,rw VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 USER 1000`, params.DockerfileContent)
 
 		require.Equal(t, map[string]string{
@@ -263,11 +265,25 @@ func TestCompileWithFeaturesInstallsAfter(t *testing.T) {
 			InstallsAfter: []string{"base"},
 		},
 	})
+	baseRef, err := name.ParseReference(featureBase)
+	require.NoError(t, err)
+	baseCanonical := baseRef.Context().Name()
+	featureTopByRef := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/top-by-ref:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:            "top-by-ref",
+			Version:       "1.0.0",
+			Name:          "TopByRef",
+			InstallsAfter: []string{baseCanonical},
+		},
+	})
 
 	featureBaseMD5 := md5.Sum([]byte(featureBase))
 	featureBaseDir := fmt.Sprintf("/.envbuilder/features/base-%x", featureBaseMD5[:4])
 	featureTopMD5 := md5.Sum([]byte(featureTop))
 	featureTopDir := fmt.Sprintf("/.envbuilder/features/top-%x", featureTopMD5[:4])
+	featureTopByRefMD5 := md5.Sum([]byte(featureTopByRef))
+	featureTopByRefDir := fmt.Sprintf("/.envbuilder/features/top-by-ref-%x", featureTopByRefMD5[:4])
 
 	t.Run("InstallsAfterRespected", func(t *testing.T) {
 		raw := `{
@@ -328,7 +344,31 @@ func TestCompileWithFeaturesInstallsAfter(t *testing.T) {
 
 		topIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureTopDir)
 		baseIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureBaseDir)
+		require.Greater(t, topIdx, -1, "top feature should be present")
+		require.Greater(t, baseIdx, -1, "base feature should be present")
 		require.Less(t, topIdx, baseIdx, "override should force top before base")
+	})
+
+	t.Run("InstallsAfterCanonicalRefRespected", func(t *testing.T) {
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureTopByRef + `": {},
+    "` + featureBase + `": {}
+  }
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+
+		baseIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureBaseDir)
+		topIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureTopByRefDir)
+		require.Greater(t, baseIdx, -1, "base feature should be present")
+		require.Greater(t, topIdx, -1, "top-by-ref feature should be present")
+		require.Less(t, baseIdx, topIdx, "base should be installed before top-by-ref (installsAfter by canonical ref)")
 	})
 }
 
@@ -344,16 +384,68 @@ func TestCompileWithFeaturesDependsOn(t *testing.T) {
 			Name:    "A",
 		},
 	})
-	// featureB hard-depends on featureA.
+	// featureB hard-depends on featureA. The dependsOn key uses the full OCI
+	// reference of featureA so that auto-add (DependsOnAutoAdded) can fetch it
+	// from the registry when it is not explicitly declared in features.
 	featureB := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/b:latest", features.TarLayerMediaType, map[string]any{
 		"install.sh": "hey",
 		"devcontainer-feature.json": features.Spec{
 			ID:        "b",
 			Version:   "1.0.0",
 			Name:      "B",
-			DependsOn: []string{"a"},
+			DependsOn: map[string]map[string]any{featureA: {}},
 		},
 	})
+	featureEarly := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/aaa-early:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:        "early",
+			Version:   "1.0.0",
+			Name:      "Early",
+			DependsOn: map[string]map[string]any{"late": {}},
+		},
+	})
+	featureLate := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/zzz-late:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:      "late",
+			Version: "1.0.0",
+			Name:    "Late",
+		},
+	})
+	lateRef, err := name.ParseReference(featureLate)
+	require.NoError(t, err)
+	lateCanonical := lateRef.Context().Name()
+	featureByRef := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/by-ref:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:        "by-ref",
+			Version:   "1.0.0",
+			Name:      "ByRef",
+			DependsOn: map[string]map[string]any{lateCanonical: {}},
+		},
+	})
+	featureLateV1 := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/zzz-late:1.0.0", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:      "late-v1",
+			Version: "1.0.0",
+			Name:    "LateV1",
+		},
+	})
+	featureLateV2 := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/zzz-late:2.0.0", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:      "late-v2",
+			Version: "2.0.0",
+			Name:    "LateV2",
+		},
+	})
+
+	featureEarlyMD5 := md5.Sum([]byte(featureEarly))
+	featureEarlyDir := fmt.Sprintf("/.envbuilder/features/aaa-early-%x", featureEarlyMD5[:4])
+	featureLateMD5 := md5.Sum([]byte(featureLate))
+	featureLateDir := fmt.Sprintf("/.envbuilder/features/zzz-late-%x", featureLateMD5[:4])
 
 	t.Run("DependsOnSatisfied", func(t *testing.T) {
 		raw := `{
@@ -371,8 +463,10 @@ func TestCompileWithFeaturesDependsOn(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("DependsOnMissingErrors", func(t *testing.T) {
-		// featureB requires featureA, but featureA is not included.
+	t.Run("DependsOnAutoAdded", func(t *testing.T) {
+		// featureB requires featureA, but featureA is not explicitly listed.
+		// Per spec, featureA should be automatically fetched and added to the
+		// install set.
 		raw := `{
   "image": "localhost:5000/envbuilder-test-ubuntu:latest",
   "features": {
@@ -383,8 +477,120 @@ func TestCompileWithFeaturesDependsOn(t *testing.T) {
 		require.NoError(t, err)
 		fs := memfs.New()
 
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+
+		// featureA (dep of featureB) must be present and installed before featureB.
+		featureAMD5 := md5.Sum([]byte(featureA))
+		featureADir := fmt.Sprintf("/.envbuilder/features/a-%x", featureAMD5[:4])
+		featureBMD5 := md5.Sum([]byte(featureB))
+		featureBDir := fmt.Sprintf("/.envbuilder/features/b-%x", featureBMD5[:4])
+		aIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureADir)
+		bIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureBDir)
+		require.Greater(t, aIdx, -1, "auto-added featureA should be present in Dockerfile")
+		require.Greater(t, bIdx, -1, "featureB should be present in Dockerfile")
+		require.Less(t, aIdx, bIdx, "featureA should be installed before featureB (dependsOn)")
+	})
+
+	t.Run("DependsOnEnforcesInstallOrder", func(t *testing.T) {
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureEarly + `": {},
+    "` + featureLate + `": {}
+  }
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+
+		earlyIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureEarlyDir)
+		lateIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureLateDir)
+		require.Greater(t, earlyIdx, -1, "early feature should be present")
+		require.Greater(t, lateIdx, -1, "late feature should be present")
+		require.Less(t, lateIdx, earlyIdx, "late should be installed before early due to dependsOn")
+	})
+
+	t.Run("OverridePinnedFreeDependsOnSucceeds", func(t *testing.T) {
+		// featureEarly is pinned via overrideFeatureInstallOrder; it depends on
+		// featureLate which is in the free (topo-sorted) set. Per spec, the
+		// free set is installed before pinned features, so this is valid.
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureEarly + `": {},
+    "` + featureLate + `": {}
+  },
+  "overrideFeatureInstallOrder": ["` + featureEarly + `"]
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+
+		// featureLate (free/topo) must appear before featureEarly (pinned).
+		earlyIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureEarlyDir)
+		lateIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureLateDir)
+		require.Greater(t, earlyIdx, -1, "early feature should be present")
+		require.Greater(t, lateIdx, -1, "late feature should be present")
+		require.Less(t, lateIdx, earlyIdx, "late (free) must be installed before early (pinned)")
+	})
+
+	t.Run("OverridePinnedBeforePinnedDepErrors", func(t *testing.T) {
+		// Both featureEarly and featureLate are pinned, but featureEarly
+		// (which depends on featureLate) is listed first — a true violation.
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureEarly + `": {},
+    "` + featureLate + `": {}
+  },
+  "overrideFeatureInstallOrder": ["` + featureEarly + `", "` + featureLate + `"]
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
 		_, err = dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
-		require.ErrorContains(t, err, `requires feature "a"`)
+		require.ErrorContains(t, err, "overrideFeatureInstallOrder violates dependsOn")
+	})
+
+	t.Run("DependsOnCanonicalRefResolved", func(t *testing.T) {
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureByRef + `": {},
+    "` + featureLate + `": {}
+  }
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		_, err = dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+	})
+
+	t.Run("DependsOnCanonicalRefAmbiguousErrors", func(t *testing.T) {
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureByRef + `": {},
+    "` + featureLateV1 + `": {},
+    "` + featureLateV2 + `": {}
+  }
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		_, err = dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.ErrorContains(t, err, "ambiguous canonical feature reference")
 	})
 }
 
