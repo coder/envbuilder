@@ -594,6 +594,163 @@ func TestCompileWithFeaturesDependsOn(t *testing.T) {
 	})
 }
 
+// TestCompileWithFeaturesEqualityDeduplication covers the spec requirement
+// that two features with the same ID and version are equal and must only be
+// installed once, regardless of how they are referenced.
+// See https://containers.dev/implementors/features/#definition-feature-equality
+func TestCompileWithFeaturesEqualityDeduplication(t *testing.T) {
+	t.Parallel()
+	registry := registrytest.New(t)
+
+	// Same feature content published at two different OCI tags.
+	// Both have ID="shared" and Version="1.0.0" → they are equal per spec.
+	featureSharedV1 := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/shared:1.0.0", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:      "shared",
+			Version: "1.0.0",
+			Name:    "Shared",
+		},
+	})
+	featureSharedLatest := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/shared:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:      "shared",
+			Version: "1.0.0",
+			Name:    "Shared",
+		},
+	})
+
+	// Two distinct features whose IDs collide at different versions.
+	featureDockerV1 := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/docker:1.0", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:      "docker",
+			Version: "1.0",
+			Name:    "Docker",
+		},
+	})
+	featureDockerV2 := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/docker:2.0", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:      "docker",
+			Version: "2.0",
+			Name:    "Docker",
+		},
+	})
+
+	// A third feature that depends on "shared" by ID, used to verify that
+	// deduplication does not break dependency satisfaction.
+	featureConsumer := registrytest.WriteContainer(t, registry, emptyRemoteOpts, "coder/consumer:latest", features.TarLayerMediaType, map[string]any{
+		"install.sh": "hey",
+		"devcontainer-feature.json": features.Spec{
+			ID:        "consumer",
+			Version:   "1.0.0",
+			Name:      "Consumer",
+			DependsOn: map[string]map[string]any{"shared": {}},
+		},
+	})
+
+	t.Run("SameIDSameVersionDeduplicates", func(t *testing.T) {
+		// Listing the same feature via two different OCI refs (same ID+version)
+		// must result in exactly one installation.
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureSharedV1 + `": {},
+    "` + featureSharedLatest + `": {}
+  }
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+
+		// Only one WORKDIR for "shared" must appear, regardless of which raw ref
+		// was extracted first.
+		count := strings.Count(params.DockerfileContent, "/.envbuilder/features/shared-")
+		require.Equal(t, 1, count, "equal features (same ID+version) must be installed exactly once")
+	})
+
+	t.Run("SameIDDifferentVersionErrors", func(t *testing.T) {
+		// Requesting two different versions of the same feature ID in the same
+		// install set is an error: the implementation cannot know which version
+		// to satisfy dependsOn edges against.
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureDockerV1 + `": {},
+    "` + featureDockerV2 + `": {}
+  }
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		_, err = dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.ErrorContains(t, err, "conflicting versions")
+		require.ErrorContains(t, err, "docker")
+	})
+
+	t.Run("DependsOnSatisfiedByDedupedRef", func(t *testing.T) {
+		// featureConsumer depends on "shared" (by ID). Both featureSharedV1 and
+		// featureSharedLatest are in the features list; they are equal and will be
+		// deduped. The dependsOn must still be satisfied by the surviving entry.
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureSharedV1 + `": {},
+    "` + featureSharedLatest + `": {},
+    "` + featureConsumer + `": {}
+  }
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err, "dependsOn must be satisfied even when the dep was deduped")
+
+		// Exactly one installation of "shared".
+		count := strings.Count(params.DockerfileContent, "/.envbuilder/features/shared-")
+		require.Equal(t, 1, count, "deduped equal feature must appear only once")
+
+		// "shared" must come before "consumer".
+		consumerMD5 := md5.Sum([]byte(featureConsumer))
+		consumerDir := fmt.Sprintf("/.envbuilder/features/consumer-%x", consumerMD5[:4])
+		sharedIdx := strings.Index(params.DockerfileContent, "/.envbuilder/features/shared-")
+		consumerIdx := strings.Index(params.DockerfileContent, "WORKDIR "+consumerDir)
+		require.Greater(t, sharedIdx, -1, "shared feature must be present")
+		require.Greater(t, consumerIdx, -1, "consumer feature must be present")
+		require.Less(t, sharedIdx, consumerIdx, "shared must be installed before consumer (dependsOn)")
+	})
+
+	t.Run("AutoAddedDepDeduplicates", func(t *testing.T) {
+		// featureConsumer depends on "shared". featureSharedLatest is explicitly
+		// listed. featureSharedV1 is the auto-added transitive dep that would be
+		// fetched to satisfy the dependsOn — but since "shared" is already
+		// covered (id already in idToRef), no second installation should occur.
+		raw := `{
+  "image": "localhost:5000/envbuilder-test-ubuntu:latest",
+  "features": {
+    "` + featureSharedLatest + `": {},
+    "` + featureConsumer + `": {}
+  }
+}`
+		dc, err := devcontainer.Parse([]byte(raw))
+		require.NoError(t, err)
+		fs := memfs.New()
+
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+
+		count := strings.Count(params.DockerfileContent, "/.envbuilder/features/shared-")
+		require.Equal(t, 1, count, "auto-add must not install a second copy of an already-present feature")
+	})
+}
+
 func TestResolveInstallOrderCycleDetection(t *testing.T) {
 	t.Parallel()
 	registry := registrytest.New(t)

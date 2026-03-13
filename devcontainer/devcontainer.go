@@ -285,6 +285,28 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		if err != nil {
 			return fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
 		}
+
+		// Enforce feature equality: per spec, two features with the same ID and
+		// version are equal and must only be installed once. If a different raw
+		// reference resolves to a feature whose ID is already registered:
+		//   - same version → equal features; deduplicate silently.
+		//   - different version → conflicting versions; error.
+		// See https://containers.dev/implementors/features/#definition-feature-equality
+		if existingRef, alreadyID := idToRef[spec.ID]; alreadyID {
+			existingEF := extracted[existingRef]
+			if existingEF.spec.Version == spec.Version {
+				// Equal features (same ID + version): register this ref's canonical
+				// so that any dependsOn lookup using this alternate ref still resolves
+				// to the already-extracted feature via canonicalToRefs / depCovered.
+				canonicalToRefs[featureRef] = append(canonicalToRefs[featureRef], featureRefRaw)
+				return nil
+			}
+			return fmt.Errorf(
+				"feature %q is required at conflicting versions: %s (from %s) and %s (from %s); only one version of a feature may be in the install set",
+				spec.ID, existingEF.spec.Version, existingRef, spec.Version, featureRefRaw,
+			)
+		}
+
 		extracted[featureRefRaw] = &extractedFeature{
 			featureRef:  featureRef,
 			featureName: featureName,
@@ -383,7 +405,11 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		if err := extractOne(item.ref, item.opts, item.fromDep); err != nil {
 			return "", nil, err
 		}
-		enqueueNewDeps(extracted[item.ref])
+		// extractOne may have deduplicated this ref (same ID+version as an
+		// already-extracted feature), in which case it is not in extracted.
+		if ef := extracted[item.ref]; ef != nil {
+			enqueueNewDeps(ef)
+		}
 	}
 
 	canonicalToRef, ambiguousCanonicals := buildCanonicalToRef(canonicalToRefs)
