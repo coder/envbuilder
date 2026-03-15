@@ -40,6 +40,10 @@ type Spec struct {
 	RemoteEnv     map[string]string `json:"remoteEnv"`
 	// Features is a map of feature names to feature configurations.
 	Features map[string]any `json:"features"`
+	// OverrideFeatureInstallOrder overrides the order in which features are
+	// installed. Feature references not present in this list are installed
+	// after the listed ones, in alphabetical order.
+	OverrideFeatureInstallOrder []string `json:"overrideFeatureInstallOrder"`
 	LifecycleScripts
 
 	// Deprecated but still frequently used...
@@ -227,25 +231,38 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 	}
 
 	featuresDir := filepath.Join(scratchDir, "features")
-	err := fs.MkdirAll(featuresDir, 0o644)
-	if err != nil {
+	if err := fs.MkdirAll(featuresDir, 0o644); err != nil {
 		return "", nil, fmt.Errorf("create features directory: %w", err)
 	}
-	featureDirectives := []string{}
-	featureContexts := make(map[string]string)
 
-	// TODO: Respect the installation order outlined by the spec:
-	// https://containers.dev/implementors/features/#installation-order
-	featureOrder := []string{}
-	for featureRef := range s.Features {
-		featureOrder = append(featureOrder, featureRef)
+	// Pass 1: resolve each raw ref to its canonical featureRef and extract
+	// the feature spec. We need all specs before we can resolve ordering
+	// since installsAfter/dependsOn live inside devcontainer-feature.json.
+	//
+	// A worklist is used to recursively resolve dependsOn hard dependencies:
+	// each extracted feature's dependsOn entries are added to the worklist so
+	// that transitive dependencies are automatically fetched and installed,
+	// matching the spec requirement that the install set is the union of
+	// user-declared features and all their transitive dependsOn dependencies.
+	type extractedFeature struct {
+		featureRef  string
+		featureName string
+		featureDir  string
+		spec        *features.Spec
+		opts        map[string]any
+		// fromDep is true when this feature was added automatically to satisfy
+		// a dependsOn hard dependency (not explicitly listed by the user).
+		fromDep bool
 	}
-	// It's critical we sort features prior to compilation so the Dockerfile
-	// is deterministic which allows for caching.
-	sort.Strings(featureOrder)
+	extracted := make(map[string]*extractedFeature, len(s.Features))
+	idToRef := make(map[string]string, len(s.Features)) // feature ID → refRaw
+	canonicalToRefs := make(map[string][]string, len(s.Features))
 
-	var lines []string
-	for _, featureRefRaw := range featureOrder {
+	// extractOne extracts a single feature and registers it in the tables.
+	extractOne := func(featureRefRaw string, opts map[string]any, fromDep bool) error {
+		if _, already := extracted[featureRefRaw]; already {
+			return nil
+		}
 		var (
 			featureRef string
 			ok         bool
@@ -253,44 +270,199 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		if _, featureRef, ok = strings.Cut(featureRefRaw, "./"); !ok {
 			featureRefParsed, err := name.ParseReference(featureRefRaw)
 			if err != nil {
-				return "", nil, fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
+				return fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
 			}
 			featureRef = featureRefParsed.Context().Name()
 		}
 
-		featureOpts := map[string]any{}
-		switch t := s.Features[featureRefRaw].(type) {
-		case string:
-			// As a shorthand, the value of the `features`` property can be provided as a
-			// single string. This string is mapped to an option called version.
-			// https://containers.dev/implementors/features/#devcontainer-json-properties
-			featureOpts["version"] = t
-		case map[string]any:
-			featureOpts = t
-		}
-
-		// It's important for caching that this directory is static.
-		// If it changes on each run then the container will not be cached.
-		//
-		// devcontainers/cli has a very complex method of computing the feature
-		// name from the feature reference. We're just going to hash it for simplicity.
 		featureSha := md5.Sum([]byte(featureRefRaw))
-		featureName := filepath.Base(featureRef)
-		featureDir := filepath.Join(featuresDir, fmt.Sprintf("%s-%x", featureName, featureSha[:4]))
+		featureName := fmt.Sprintf("%s-%x", filepath.Base(featureRef), featureSha[:4])
+		featureDir := filepath.Join(featuresDir, featureName)
 		if err := fs.MkdirAll(featureDir, 0o644); err != nil {
-			return "", nil, err
+			return err
 		}
 		spec, err := features.Extract(fs, devcontainerDir, featureDir, featureRefRaw)
 		if err != nil {
-			return "", nil, fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
+			return fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
 		}
-		fromDirective, directive, err := spec.Compile(featureRef, featureName, featureDir, containerUser, remoteUser, useBuildContexts, featureOpts)
+
+		// Enforce feature equality: per spec, two features with the same ID and
+		// version are equal and must only be installed once. If a different raw
+		// reference resolves to a feature whose ID is already registered:
+		//   - same version → equal features; deduplicate silently.
+		//   - different version → conflicting versions; error.
+		// See https://containers.dev/implementors/features/#definition-feature-equality
+		if existingRef, alreadyID := idToRef[spec.ID]; alreadyID {
+			existingEF := extracted[existingRef]
+			if existingEF.spec.Version == spec.Version {
+				// Equal features (same ID + version): register this ref's canonical
+				// so that any dependsOn lookup using this alternate ref still resolves
+				// to the already-extracted feature via canonicalToRefs / depCovered.
+				canonicalToRefs[featureRef] = append(canonicalToRefs[featureRef], featureRefRaw)
+				return nil
+			}
+			return fmt.Errorf(
+				"feature %q is required at conflicting versions: %s (from %s) and %s (from %s); only one version of a feature may be in the install set",
+				spec.ID, existingEF.spec.Version, existingRef, spec.Version, featureRefRaw,
+			)
+		}
+
+		extracted[featureRefRaw] = &extractedFeature{
+			featureRef:  featureRef,
+			featureName: featureName,
+			featureDir:  featureDir,
+			spec:        spec,
+			opts:        opts,
+			fromDep:     fromDep,
+		}
+		idToRef[spec.ID] = featureRefRaw
+		canonicalToRefs[featureRef] = append(canonicalToRefs[featureRef], featureRefRaw)
+		return nil
+	}
+
+	// Seed the worklist with user-declared features.
+	type workItem struct {
+		ref     string
+		opts    map[string]any
+		fromDep bool
+	}
+	worklist := make([]workItem, 0, len(s.Features))
+	for featureRefRaw := range s.Features {
+		opts := map[string]any{}
+		switch t := s.Features[featureRefRaw].(type) {
+		case string:
+			// As a shorthand, the value of the `features` property can be provided as a
+			// single string. This string is mapped to an option called version.
+			// https://containers.dev/implementors/features/#devcontainer-json-properties
+			opts["version"] = t
+		case map[string]any:
+			opts = t
+		}
+		worklist = append(worklist, workItem{ref: featureRefRaw, opts: opts, fromDep: false})
+	}
+
+	// Phase 1: extract all user-declared features. This populates idToRef and
+	// canonicalToRefs fully before we follow any dependsOn edges, so that dep
+	// refs expressed as feature IDs or canonical names can be resolved without
+	// trying to fetch them as bare OCI references.
+	for len(worklist) > 0 {
+		item := worklist[0]
+		worklist = worklist[1:]
+		if err := extractOne(item.ref, item.opts, item.fromDep); err != nil {
+			return "", nil, err
+		}
+	}
+
+	// Phase 2: follow dependsOn for every extracted feature and auto-add any
+	// transitive deps that are not yet in the install set.
+	//
+	// depCovered returns true when depRef already maps to an extracted feature,
+	// checked by exact key, by feature ID (via idToRef), or by canonical name
+	// (via canonicalToRefs — handles "host/repo" matching "host/repo:latest").
+	depCovered := func(depRef string) bool {
+		if _, ok := extracted[depRef]; ok {
+			return true
+		}
+		if ref, ok := idToRef[depRef]; ok {
+			if _, ok := extracted[ref]; ok {
+				return true
+			}
+		}
+		if refs, ok := canonicalToRefs[depRef]; ok && len(refs) > 0 {
+			return true
+		}
+		return false
+	}
+
+	// enqueueNewDeps adds any un-covered deps of ef to the worklist.
+	enqueueNewDeps := func(ef *extractedFeature) {
+		for depRef, depOpts := range ef.spec.DependsOn {
+			if depCovered(depRef) {
+				continue
+			}
+			// Use the full ref from idToRef if this is a bare feature ID.
+			resolvedRef := depRef
+			if ref, ok := idToRef[depRef]; ok {
+				resolvedRef = ref
+			}
+			depOptsCopy := make(map[string]any, len(depOpts))
+			for k, v := range depOpts {
+				depOptsCopy[k] = v
+			}
+			worklist = append(worklist, workItem{ref: resolvedRef, opts: depOptsCopy, fromDep: true})
+		}
+	}
+
+	for _, ef := range extracted {
+		enqueueNewDeps(ef)
+	}
+	for len(worklist) > 0 {
+		item := worklist[0]
+		worklist = worklist[1:]
+		if _, already := extracted[item.ref]; already {
+			continue
+		}
+		if err := extractOne(item.ref, item.opts, item.fromDep); err != nil {
+			return "", nil, err
+		}
+		// extractOne may have deduplicated this ref (same ID+version as an
+		// already-extracted feature), in which case it is not in extracted.
+		if ef := extracted[item.ref]; ef != nil {
+			enqueueNewDeps(ef)
+		}
+	}
+
+	canonicalToRef, ambiguousCanonicals := buildCanonicalToRef(canonicalToRefs)
+
+	// When build contexts are enabled, each canonical ref produces a Docker
+	// stage alias and context key. Duplicates would generate an invalid
+	// Dockerfile, so reject them early.
+	if useBuildContexts {
+		for canonical, refs := range ambiguousCanonicals {
+			return "", nil, fmt.Errorf("multiple configured features share canonical reference %q (%s); this produces duplicate build stages when build contexts are enabled", canonical, strings.Join(refs, ", "))
+		}
+	}
+
+	// Validate hard dependencies: every dependsOn entry must resolve to a
+	// feature in the extracted set. After the worklist above, all transitive
+	// dependencies that could be fetched as OCI refs are present; this catches
+	// the case where a dep ref is unresolvable (e.g. ambiguous canonical).
+	refRaws := make([]string, 0, len(extracted))
+	for refRaw := range extracted {
+		refRaws = append(refRaws, refRaw)
+	}
+	specsByRef := make(map[string]*features.Spec, len(extracted))
+	for refRaw, ef := range extracted {
+		specsByRef[refRaw] = ef.spec
+	}
+	featureOrder, err := resolveInstallOrder(refRaws, specsByRef, idToRef, canonicalToRef, ambiguousCanonicals, s.OverrideFeatureInstallOrder)
+	// log the feature install order for debugging, since an error here is often due to an
+	// unexpected install order (e.g. due to a missing dependency that causes a cycle in the resolved graph).
+	if err == nil {
+		fmt.Printf("Resolved feature installation order:\n")
+		for i, refRaw := range featureOrder {
+			ef := extracted[refRaw]
+			fmt.Printf("%d: %s (ref %q, ID %q, version %q)\n", i+1, ef.spec.Name, refRaw, ef.spec.ID, ef.spec.Version)
+		}
+	}
+
+	if err != nil {
+		return "", nil, err
+	}
+
+	// Pass 2: compile Dockerfile directives in the resolved order.
+	featureDirectives := make([]string, 0, len(featureOrder))
+	featureContexts := make(map[string]string)
+	var lines []string
+	for _, featureRefRaw := range featureOrder {
+		ef := extracted[featureRefRaw]
+		fromDirective, directive, err := ef.spec.Compile(ef.featureRef, ef.featureName, ef.featureDir, containerUser, remoteUser, useBuildContexts, ef.opts)
 		if err != nil {
 			return "", nil, fmt.Errorf("compile feature %s: %w", featureRefRaw, err)
 		}
 		featureDirectives = append(featureDirectives, directive)
 		if useBuildContexts {
-			featureContexts[featureRef] = featureDir
+			featureContexts[ef.featureRef] = ef.featureDir
 			lines = append(lines, fromDirective)
 		}
 	}
@@ -303,7 +475,244 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		// we're going to run as root.
 		lines = append(lines, fmt.Sprintf("USER %s", remoteUser))
 	}
-	return strings.Join(lines, "\n"), featureContexts, err
+	return strings.Join(lines, "\n"), featureContexts, nil
+}
+
+// resolveInstallOrder determines the final feature installation order.
+//
+// The algorithm follows the spec's round-based dependency sort:
+//  1. Build a DAG with dependsOn (hard) and installsAfter (soft) edges.
+//  2. Assign a roundPriority from overrideFeatureInstallOrder: the i-th entry
+//     (0-based) receives priority (n - i), all others get 0.
+//  3. Execute rounds: each round, collect all features whose deps are fully
+//     satisfied (in-degree 0). Of those, commit only the ones with the maximum
+//     roundPriority. Tie-break within the committed set alphabetically.
+//     Return uncommitted candidates to the worklist for the next round.
+//  4. Cycle → error.
+//
+// This correctly handles overrideFeatureInstallOrder: a pinned feature with
+// a free dependency cannot be committed until that dependency's round completes,
+// matching the spec requirement that overrides cannot "pull forward" a Feature
+// past its own dependency graph.
+//
+// IDs in installsAfter that don't map to a present feature are silently
+// ignored (soft-dep semantics).
+//
+// See https://containers.dev/implementors/features/#installation-order
+func resolveInstallOrder(refRaws []string, specs map[string]*features.Spec, idToRef, canonicalToRef map[string]string, ambiguousCanonicals map[string][]string, overrideOrder []string) ([]string, error) {
+	n := len(refRaws)
+	all := make(map[string]bool, n)
+	for _, r := range refRaws {
+		all[r] = true
+	}
+
+	// Assign roundPriority from overrideFeatureInstallOrder.
+	// Entry at index i gets priority (len - i) so earlier entries have higher
+	// priority.
+	//
+	// Override entries are resolved through the same lookup chain used for dep
+	// refs (idToRef → specs → canonicalToRef) so that refs that use a different
+	// tag format from the actual extracted key (e.g. "owner/feat" vs
+	// "owner/feat:1.0.0") are still recognised.  This aligns with the
+	// TypeScript reference implementation's semantic matching in
+	// applyOverrideFeatureInstallOrder.
+	roundPriority := make(map[string]int, len(overrideOrder))
+	pinnedSet := make(map[string]bool, len(overrideOrder))
+	for i, r := range overrideOrder {
+		resolvedRef, ok, err := resolveDependencyRef(r, specs, idToRef, canonicalToRef, ambiguousCanonicals)
+		if err != nil || !ok || !all[resolvedRef] {
+			// Silently skip overrides that can't be resolved or aren't in the
+			// install set (same behaviour the TS reference uses when a feature
+			// in overrideFeatureInstallOrder cannot be processed).
+			continue
+		}
+		roundPriority[resolvedRef] = len(overrideOrder) - i
+		pinnedSet[resolvedRef] = true
+	}
+
+	// Build the dependency graph: inDegree and successors.
+	inDegree := make(map[string]int, n)
+	for _, r := range refRaws {
+		inDegree[r] = 0
+	}
+	// preds maps refRaw → set of refRaws it must follow.
+	preds := make(map[string]map[string]struct{}, n)
+	for _, r := range refRaws {
+		preds[r] = make(map[string]struct{})
+	}
+	addEdge := func(from, to string) {
+		// "from" must come after "to"
+		if _, ok := preds[from][to]; ok {
+			return
+		}
+		preds[from][to] = struct{}{}
+		inDegree[from]++
+	}
+
+	for _, r := range refRaws {
+		for dep := range specs[r].DependsOn {
+			predRef, ok, err := resolveDependencyRef(dep, specs, idToRef, canonicalToRef, ambiguousCanonicals)
+			if err != nil {
+				return nil, err
+			}
+			if !ok || !all[predRef] {
+				continue
+			}
+			addEdge(r, predRef)
+		}
+		// installsAfter is a soft dep: only respected when the feature is NOT
+		// in overrideFeatureInstallOrder. Pinned features have their install
+		// order dictated by the override list; their installsAfter hints are
+		// ignored per the spec ("soft dependencies are respected for Features
+		// not in overrideFeatureInstallOrder").
+		if pinnedSet[r] {
+			continue
+		}
+		for _, depID := range specs[r].InstallsAfter {
+			predRef, ok, err := resolveDependencyRef(depID, specs, idToRef, canonicalToRef, ambiguousCanonicals)
+			if err != nil {
+				return nil, err
+			}
+			if !ok || !all[predRef] {
+				// Soft dep: only applies when predecessor is in the install set.
+				continue
+			}
+			addEdge(r, predRef)
+		}
+	}
+
+	// successors maps predecessor → features that depend on it.
+	successors := make(map[string][]string, n)
+	for r, ps := range preds {
+		for p := range ps {
+			successors[p] = append(successors[p], r)
+		}
+	}
+
+	// Validate that overrideFeatureInstallOrder is consistent with the
+	// dependency graph: for any two pinned features A and B where A is listed
+	// before B in overrideOrder, A must not (transitively or directly) depend
+	// on B.
+	//
+	// Build pinnedList in override priority order (i.e. in the same order the
+	// entries appear in overrideOrder after resolving each one).
+	pinnedList := make([]string, 0, len(overrideOrder))
+	for _, r := range overrideOrder {
+		resolvedRef, ok, err := resolveDependencyRef(r, specs, idToRef, canonicalToRef, ambiguousCanonicals)
+		if err != nil || !ok || !pinnedSet[resolvedRef] {
+			continue
+		}
+		pinnedList = append(pinnedList, resolvedRef)
+	}
+	pinnedIndex := make(map[string]int, len(pinnedList))
+	for i, r := range pinnedList {
+		pinnedIndex[r] = i
+	}
+	for _, r := range pinnedList {
+		for dep := range specs[r].DependsOn {
+			depRef, ok, err := resolveDependencyRef(dep, specs, idToRef, canonicalToRef, ambiguousCanonicals)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				continue
+			}
+			if depIdx, isPinned := pinnedIndex[depRef]; isPinned {
+				if depIdx > pinnedIndex[r] {
+					return nil, fmt.Errorf("overrideFeatureInstallOrder violates dependsOn: %q must be installed before %q", depRef, r)
+				}
+			}
+			// If dep is not pinned, the round-based sort will handle it correctly
+			// by not committing r until dep is in installationOrder.
+		}
+	}
+
+	// Round-based sort (spec §3).
+	worklist := make(map[string]bool, n)
+	for _, r := range refRaws {
+		worklist[r] = true
+	}
+	installationOrder := make([]string, 0, n)
+	installed := make(map[string]bool, n)
+
+	for len(worklist) > 0 {
+		// Collect all candidates whose dependencies are fully installed.
+		round := make([]string, 0)
+		for r := range worklist {
+			if inDegree[r] == 0 {
+				round = append(round, r)
+			}
+		}
+		if len(round) == 0 {
+			// No progress — cycle.
+			cycled := make([]string, 0, len(worklist))
+			for r := range worklist {
+				cycled = append(cycled, r)
+			}
+			sort.Strings(cycled)
+			return nil, fmt.Errorf("cycle detected in feature dependency graph: %s", strings.Join(cycled, ", "))
+		}
+
+		// Find the maximum roundPriority among candidates.
+		maxPriority := 0
+		for _, r := range round {
+			if roundPriority[r] > maxPriority {
+				maxPriority = roundPriority[r]
+			}
+		}
+
+		// Commit only those with the max priority; return the rest to the
+		// worklist for subsequent rounds.
+		toCommit := make([]string, 0, len(round))
+		for _, r := range round {
+			if roundPriority[r] == maxPriority {
+				toCommit = append(toCommit, r)
+			}
+		}
+		sort.Strings(toCommit) // alphabetical tie-break within a round
+
+		for _, r := range toCommit {
+			installationOrder = append(installationOrder, r)
+			installed[r] = true
+			delete(worklist, r)
+			// Reduce in-degree for successors.
+			for _, succ := range successors[r] {
+				inDegree[succ]--
+			}
+		}
+	}
+
+	return installationOrder, nil
+}
+
+func resolveDependencyRef(dep string, specs map[string]*features.Spec, idToRef, canonicalToRef map[string]string, ambiguousCanonicals map[string][]string) (string, bool, error) {
+	if refRaw, ok := idToRef[dep]; ok {
+		return refRaw, true, nil
+	}
+	if _, ok := specs[dep]; ok {
+		return dep, true, nil
+	}
+	if refRaw, ok := canonicalToRef[dep]; ok {
+		return refRaw, true, nil
+	}
+	if refRaws, ok := ambiguousCanonicals[dep]; ok {
+		return "", false, fmt.Errorf("ambiguous canonical feature reference %q matches multiple configured features: %s", dep, strings.Join(refRaws, ", "))
+	}
+	return "", false, nil
+}
+
+func buildCanonicalToRef(canonicalToRefs map[string][]string) (map[string]string, map[string][]string) {
+	canonicalToRef := make(map[string]string, len(canonicalToRefs))
+	ambiguous := make(map[string][]string)
+	for canonicalRef, refRaws := range canonicalToRefs {
+		sort.Strings(refRaws)
+		if len(refRaws) > 1 {
+			ambiguous[canonicalRef] = refRaws
+			continue
+		}
+		canonicalToRef[canonicalRef] = refRaws[0]
+	}
+	return canonicalToRef, ambiguous
 }
 
 // BuildArgsMap converts a slice of "KEY=VALUE" strings to a map.
