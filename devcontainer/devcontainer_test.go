@@ -95,11 +95,9 @@ func TestCompileWithFeatures(t *testing.T) {
 	fs := memfs.New()
 
 	featureOneMD5 := md5.Sum([]byte(featureOne))
-	featureOneName := fmt.Sprintf("one-%x", featureOneMD5[:4])
-	featureOneDir := "/.envbuilder/features/" + featureOneName
+	featureOneDir := fmt.Sprintf("/.envbuilder/features/one-%x", featureOneMD5[:4])
 	featureTwoMD5 := md5.Sum([]byte(featureTwo))
-	featureTwoName := fmt.Sprintf("two-%x", featureTwoMD5[:4])
-	featureTwoDir := "/.envbuilder/features/" + featureTwoName
+	featureTwoDir := fmt.Sprintf("/.envbuilder/features/two-%x", featureTwoMD5[:4])
 
 	t.Run("WithoutBuildContexts", func(t *testing.T) {
 		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
@@ -125,23 +123,23 @@ USER 1000`, params.DockerfileContent)
 
 		registryHost := strings.TrimPrefix(registry, "http://")
 
-		require.Equal(t, `FROM scratch AS envbuilder_feature_`+featureOneName+`
+		require.Equal(t, `FROM scratch AS envbuilder_feature_one
 COPY --from=`+registryHost+`/coder/one / /
 
-FROM scratch AS envbuilder_feature_`+featureTwoName+`
+FROM scratch AS envbuilder_feature_two
 COPY --from=`+registryHost+`/coder/two / /
 
 FROM localhost:5000/envbuilder-test-codercom-code-server:latest
 
 USER root
 # Rust tomato - Example description!
-WORKDIR /.envbuilder/features/`+featureOneName+`
+WORKDIR /.envbuilder/features/one
 ENV TOMATO=example
-RUN --mount=type=bind,from=envbuilder_feature_`+featureOneName+`,target=/.envbuilder/features/`+featureOneName+`,rw _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
+RUN --mount=type=bind,from=envbuilder_feature_one,target=/.envbuilder/features/one,rw _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 # Go potato - Example description!
-WORKDIR /.envbuilder/features/`+featureTwoName+`
+WORKDIR /.envbuilder/features/two
 ENV POTATO=example
-RUN --mount=type=bind,from=envbuilder_feature_`+featureTwoName+`,target=/.envbuilder/features/`+featureTwoName+`,rw VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
+RUN --mount=type=bind,from=envbuilder_feature_two,target=/.envbuilder/features/two,rw VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 USER 1000`, params.DockerfileContent)
 
 		require.Equal(t, map[string]string{
@@ -796,9 +794,7 @@ func TestCompileDevContainer(t *testing.T) {
 		t.Parallel()
 		fs := memfs.New()
 		dc := &devcontainer.Spec{
-			// Use scratch so UserFromDockerfile returns ("", nil) without
-			// any network access.
-			Image: "scratch",
+			Image: "localhost:5000/envbuilder-test-ubuntu:latest",
 		}
 		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
 		require.NoError(t, err)
@@ -823,9 +819,7 @@ func TestCompileDevContainer(t *testing.T) {
 		require.NoError(t, err)
 		file, err := fs.OpenFile(filepath.Join(dcDir, "Dockerfile"), os.O_CREATE|os.O_WRONLY, 0o644)
 		require.NoError(t, err)
-		// Use scratch so UserFromDockerfile returns ("", nil) without any
-		// network access (the test only verifies build args and paths).
-		_, err = io.WriteString(file, "FROM scratch")
+		_, err = io.WriteString(file, "FROM localhost:5000/envbuilder-test-ubuntu:latest")
 		require.NoError(t, err)
 		_ = file.Close()
 		params, err := dc.Compile(fs, dcDir, workingDir, "", "/var/workspace", false, stubLookupEnv)
