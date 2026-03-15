@@ -436,6 +436,16 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		specsByRef[refRaw] = ef.spec
 	}
 	featureOrder, err := resolveInstallOrder(refRaws, specsByRef, idToRef, canonicalToRef, ambiguousCanonicals, s.OverrideFeatureInstallOrder)
+	// log the feature install order for debugging, since an error here is often due to an
+	// unexpected install order (e.g. due to a missing dependency that causes a cycle in the resolved graph).
+	if err == nil {
+		fmt.Printf("Resolved feature installation order:\n")
+		for i, refRaw := range featureOrder {
+			ef := extracted[refRaw]
+			fmt.Printf("%d: %s (ref %q, ID %q, version %q)\n", i+1, ef.spec.Name, refRaw, ef.spec.ID, ef.spec.Version)
+		}
+	}
+
 	if err != nil {
 		return "", nil, err
 	}
