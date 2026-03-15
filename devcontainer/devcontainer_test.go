@@ -796,7 +796,9 @@ func TestCompileDevContainer(t *testing.T) {
 		t.Parallel()
 		fs := memfs.New()
 		dc := &devcontainer.Spec{
-			Image: "localhost:5000/envbuilder-test-ubuntu:latest",
+			// Use scratch so UserFromDockerfile returns ("", nil) without
+			// any network access.
+			Image: "scratch",
 		}
 		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
 		require.NoError(t, err)
@@ -821,7 +823,9 @@ func TestCompileDevContainer(t *testing.T) {
 		require.NoError(t, err)
 		file, err := fs.OpenFile(filepath.Join(dcDir, "Dockerfile"), os.O_CREATE|os.O_WRONLY, 0o644)
 		require.NoError(t, err)
-		_, err = io.WriteString(file, "FROM localhost:5000/envbuilder-test-ubuntu:latest")
+		// Use scratch so UserFromDockerfile returns ("", nil) without any
+		// network access (the test only verifies build args and paths).
+		_, err = io.WriteString(file, "FROM scratch")
 		require.NoError(t, err)
 		_ = file.Close()
 		params, err := dc.Compile(fs, dcDir, workingDir, "", "/var/workspace", false, stubLookupEnv)

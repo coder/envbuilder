@@ -499,13 +499,25 @@ func resolveInstallOrder(refRaws []string, specs map[string]*features.Spec, idTo
 	// Assign roundPriority from overrideFeatureInstallOrder.
 	// Entry at index i gets priority (len - i) so earlier entries have higher
 	// priority.
+	//
+	// Override entries are resolved through the same lookup chain used for dep
+	// refs (idToRef → specs → canonicalToRef) so that refs that use a different
+	// tag format from the actual extracted key (e.g. "owner/feat" vs
+	// "owner/feat:1.0.0") are still recognised.  This aligns with the
+	// TypeScript reference implementation's semantic matching in
+	// applyOverrideFeatureInstallOrder.
 	roundPriority := make(map[string]int, len(overrideOrder))
 	pinnedSet := make(map[string]bool, len(overrideOrder))
 	for i, r := range overrideOrder {
-		if all[r] {
-			roundPriority[r] = len(overrideOrder) - i
-			pinnedSet[r] = true
+		resolvedRef, ok, err := resolveDependencyRef(r, specs, idToRef, canonicalToRef, ambiguousCanonicals)
+		if err != nil || !ok || !all[resolvedRef] {
+			// Silently skip overrides that can't be resolved or aren't in the
+			// install set (same behaviour the TS reference uses when a feature
+			// in overrideFeatureInstallOrder cannot be processed).
+			continue
 		}
+		roundPriority[resolvedRef] = len(overrideOrder) - i
+		pinnedSet[resolvedRef] = true
 	}
 
 	// Build the dependency graph: inDegree and successors.
@@ -571,11 +583,16 @@ func resolveInstallOrder(refRaws []string, specs map[string]*features.Spec, idTo
 	// dependency graph: for any two pinned features A and B where A is listed
 	// before B in overrideOrder, A must not (transitively or directly) depend
 	// on B.
+	//
+	// Build pinnedList in override priority order (i.e. in the same order the
+	// entries appear in overrideOrder after resolving each one).
 	pinnedList := make([]string, 0, len(overrideOrder))
 	for _, r := range overrideOrder {
-		if all[r] {
-			pinnedList = append(pinnedList, r)
+		resolvedRef, ok, err := resolveDependencyRef(r, specs, idToRef, canonicalToRef, ambiguousCanonicals)
+		if err != nil || !ok || !pinnedSet[resolvedRef] {
+			continue
 		}
+		pinnedList = append(pinnedList, resolvedRef)
 	}
 	pinnedIndex := make(map[string]int, len(pinnedList))
 	for i, r := range pinnedList {
