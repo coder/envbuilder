@@ -224,112 +224,181 @@ func (s *Spec) Compile(fs billy.Filesystem, devcontainerDir, scratchDir string, 
 	return params, nil
 }
 
-func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir string, containerUser, remoteUser, dockerfileContent string, useBuildContexts bool) (string, map[string]string, error) {
-	// If there are no features, we don't need to do anything!
-	if len(s.Features) == 0 {
-		return dockerfileContent, nil, nil
+// extractedFeature holds the result of downloading and inspecting a single
+// devcontainer feature from its OCI or local reference.
+type extractedFeature struct {
+	featureRef  string
+	featureName string
+	featureDir  string
+	spec        *features.Spec
+	opts        map[string]any
+	// fromDep is true when this feature was added automatically to satisfy
+	// a dependsOn hard dependency (not explicitly listed by the user).
+	fromDep bool
+}
+
+// featureWorkItem is a pending feature to be extracted and registered.
+type featureWorkItem struct {
+	ref     string
+	opts    map[string]any
+	fromDep bool
+}
+
+// featurePlan holds the accumulated state of the feature install-set
+// during collection and dependency expansion.
+type featurePlan struct {
+	fs              billy.Filesystem
+	devcontainerDir string
+	featuresDir     string
+
+	extracted       map[string]*extractedFeature
+	idToRef         map[string]string   // feature ID → refRaw
+	canonicalToRefs map[string][]string // canonical name → []refRaw
+
+	canonicalToRef      map[string]string   // built after collection
+	ambiguousCanonicals map[string][]string // built after collection
+}
+
+func newFeaturePlan(fs billy.Filesystem, devcontainerDir, featuresDir string, featureCount int) *featurePlan {
+	return &featurePlan{
+		fs:              fs,
+		devcontainerDir: devcontainerDir,
+		featuresDir:     featuresDir,
+		extracted:       make(map[string]*extractedFeature, featureCount),
+		idToRef:         make(map[string]string, featureCount),
+		canonicalToRefs: make(map[string][]string, featureCount),
+	}
+}
+
+// extractAndRegister downloads, inspects, and deduplicates a single feature.
+// It returns true if the feature was newly added (not a duplicate).
+func (p *featurePlan) extractAndRegister(featureRefRaw string, opts map[string]any, fromDep bool) (bool, error) {
+	if _, already := p.extracted[featureRefRaw]; already {
+		return false, nil
 	}
 
-	featuresDir := filepath.Join(scratchDir, "features")
-	if err := fs.MkdirAll(featuresDir, 0o644); err != nil {
-		return "", nil, fmt.Errorf("create features directory: %w", err)
-	}
-
-	// Pass 1: resolve each raw ref to its canonical featureRef and extract
-	// the feature spec. We need all specs before we can resolve ordering
-	// since installsAfter/dependsOn live inside devcontainer-feature.json.
-	//
-	// A worklist is used to recursively resolve dependsOn hard dependencies:
-	// each extracted feature's dependsOn entries are added to the worklist so
-	// that transitive dependencies are automatically fetched and installed,
-	// matching the spec requirement that the install set is the union of
-	// user-declared features and all their transitive dependsOn dependencies.
-	type extractedFeature struct {
-		featureRef  string
-		featureName string
-		featureDir  string
-		spec        *features.Spec
-		opts        map[string]any
-		// fromDep is true when this feature was added automatically to satisfy
-		// a dependsOn hard dependency (not explicitly listed by the user).
-		fromDep bool
-	}
-	extracted := make(map[string]*extractedFeature, len(s.Features))
-	idToRef := make(map[string]string, len(s.Features)) // feature ID → refRaw
-	canonicalToRefs := make(map[string][]string, len(s.Features))
-
-	// extractOne extracts a single feature and registers it in the tables.
-	extractOne := func(featureRefRaw string, opts map[string]any, fromDep bool) error {
-		if _, already := extracted[featureRefRaw]; already {
-			return nil
-		}
-		var (
-			featureRef string
-			ok         bool
-		)
-		if _, featureRef, ok = strings.Cut(featureRefRaw, "./"); !ok {
-			featureRefParsed, err := name.ParseReference(featureRefRaw)
-			if err != nil {
-				return fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
-			}
-			featureRef = featureRefParsed.Context().Name()
-		}
-
-		featureSha := md5.Sum([]byte(featureRefRaw))
-		featureName := fmt.Sprintf("%s-%x", filepath.Base(featureRef), featureSha[:4])
-		featureDir := filepath.Join(featuresDir, featureName)
-		if err := fs.MkdirAll(featureDir, 0o644); err != nil {
-			return err
-		}
-		spec, err := features.Extract(fs, devcontainerDir, featureDir, featureRefRaw)
+	var (
+		featureRef string
+		ok         bool
+	)
+	if _, featureRef, ok = strings.Cut(featureRefRaw, "./"); !ok {
+		featureRefParsed, err := name.ParseReference(featureRefRaw)
 		if err != nil {
-			return fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
+			return false, fmt.Errorf("parse feature ref %s: %w", featureRefRaw, err)
 		}
-
-		// Enforce feature equality: per spec, two features with the same ID and
-		// version are equal and must only be installed once. If a different raw
-		// reference resolves to a feature whose ID is already registered:
-		//   - same version → equal features; deduplicate silently.
-		//   - different version → conflicting versions; error.
-		// See https://containers.dev/implementors/features/#definition-feature-equality
-		if existingRef, alreadyID := idToRef[spec.ID]; alreadyID {
-			existingEF := extracted[existingRef]
-			if existingEF.spec.Version == spec.Version {
-				// Equal features (same ID + version): register this ref's canonical
-				// so that any dependsOn lookup using this alternate ref still resolves
-				// to the already-extracted feature via canonicalToRefs / depCovered.
-				canonicalToRefs[featureRef] = append(canonicalToRefs[featureRef], featureRefRaw)
-				return nil
-			}
-			return fmt.Errorf(
-				"feature %q is required at conflicting versions: %s (from %s) and %s (from %s); only one version of a feature may be in the install set",
-				spec.ID, existingEF.spec.Version, existingRef, spec.Version, featureRefRaw,
-			)
-		}
-
-		extracted[featureRefRaw] = &extractedFeature{
-			featureRef:  featureRef,
-			featureName: featureName,
-			featureDir:  featureDir,
-			spec:        spec,
-			opts:        opts,
-			fromDep:     fromDep,
-		}
-		idToRef[spec.ID] = featureRefRaw
-		canonicalToRefs[featureRef] = append(canonicalToRefs[featureRef], featureRefRaw)
-		return nil
+		featureRef = featureRefParsed.Context().Name()
 	}
 
-	// Seed the worklist with user-declared features.
-	type workItem struct {
-		ref     string
-		opts    map[string]any
-		fromDep bool
+	featureSha := md5.Sum([]byte(featureRefRaw))
+	featureName := fmt.Sprintf("%s-%x", filepath.Base(featureRef), featureSha[:4])
+	featureDir := filepath.Join(p.featuresDir, featureName)
+	if err := p.fs.MkdirAll(featureDir, 0o644); err != nil {
+		return false, err
 	}
-	worklist := make([]workItem, 0, len(s.Features))
-	for featureRefRaw := range s.Features {
+	spec, err := features.Extract(p.fs, p.devcontainerDir, featureDir, featureRefRaw)
+	if err != nil {
+		return false, fmt.Errorf("extract feature %s: %w", featureRefRaw, err)
+	}
+
+	// Enforce feature equality: per spec, two features with the same ID and
+	// version are equal and must only be installed once. If a different raw
+	// reference resolves to a feature whose ID is already registered:
+	//   - same version → equal features; deduplicate silently.
+	//   - different version → conflicting versions; error.
+	// See https://containers.dev/implementors/features/#definition-feature-equality
+	if existingRef, alreadyID := p.idToRef[spec.ID]; alreadyID {
+		existingEF := p.extracted[existingRef]
+		if existingEF.spec.Version == spec.Version {
+			p.canonicalToRefs[featureRef] = append(p.canonicalToRefs[featureRef], featureRefRaw)
+			return false, nil
+		}
+		return false, fmt.Errorf(
+			"feature %q is required at conflicting versions: %s (from %s) and %s (from %s); only one version of a feature may be in the install set",
+			spec.ID, existingEF.spec.Version, existingRef, spec.Version, featureRefRaw,
+		)
+	}
+
+	p.extracted[featureRefRaw] = &extractedFeature{
+		featureRef:  featureRef,
+		featureName: featureName,
+		featureDir:  featureDir,
+		spec:        spec,
+		opts:        opts,
+		fromDep:     fromDep,
+	}
+	p.idToRef[spec.ID] = featureRefRaw
+	p.canonicalToRefs[featureRef] = append(p.canonicalToRefs[featureRef], featureRefRaw)
+	return true, nil
+}
+
+// depCovered returns true when depRef already maps to an extracted feature,
+// checked by exact key, by feature ID (via idToRef), or by canonical name
+// (via canonicalToRefs — handles "host/repo" matching "host/repo:latest").
+func (p *featurePlan) depCovered(depRef string) bool {
+	if _, ok := p.extracted[depRef]; ok {
+		return true
+	}
+	if ref, ok := p.idToRef[depRef]; ok {
+		if _, ok := p.extracted[ref]; ok {
+			return true
+		}
+	}
+	if refs, ok := p.canonicalToRefs[depRef]; ok && len(refs) > 0 {
+		return true
+	}
+	return false
+}
+
+// enqueueMissingDeps appends worklist items for any dependsOn entries of ef
+// that are not yet in the install set.
+func (p *featurePlan) enqueueMissingDeps(ef *extractedFeature, worklist *[]featureWorkItem) {
+	for depRef, depOpts := range ef.spec.DependsOn {
+		if p.depCovered(depRef) {
+			continue
+		}
+		resolvedRef := depRef
+		if ref, ok := p.idToRef[depRef]; ok {
+			resolvedRef = ref
+		}
+		depOptsCopy := make(map[string]any, len(depOpts))
+		for k, v := range depOpts {
+			depOptsCopy[k] = v
+		}
+		*worklist = append(*worklist, featureWorkItem{ref: resolvedRef, opts: depOptsCopy, fromDep: true})
+	}
+}
+
+// finalizeLookups builds the canonical-to-ref and ambiguous-canonicals
+// lookup tables after collection is complete.
+func (p *featurePlan) finalizeLookups() {
+	p.canonicalToRef, p.ambiguousCanonicals = buildCanonicalToRef(p.canonicalToRefs)
+}
+
+// refRaws returns the set of all extracted raw references.
+func (p *featurePlan) refRaws() []string {
+	refs := make([]string, 0, len(p.extracted))
+	for refRaw := range p.extracted {
+		refs = append(refs, refRaw)
+	}
+	return refs
+}
+
+// specsByRef returns a map from raw reference to its feature spec.
+func (p *featurePlan) specsByRef() map[string]*features.Spec {
+	m := make(map[string]*features.Spec, len(p.extracted))
+	for refRaw, ef := range p.extracted {
+		m[refRaw] = ef.spec
+	}
+	return m
+}
+
+// normalizeFeatureOptions converts the raw features map from devcontainer.json
+// into a worklist of items ready for extraction.
+func normalizeFeatureOptions(rawFeatures map[string]any) []featureWorkItem {
+	worklist := make([]featureWorkItem, 0, len(rawFeatures))
+	for featureRefRaw := range rawFeatures {
 		opts := map[string]any{}
-		switch t := s.Features[featureRefRaw].(type) {
+		switch t := rawFeatures[featureRefRaw].(type) {
 		case string:
 			// As a shorthand, the value of the `features` property can be provided as a
 			// single string. This string is mapped to an option called version.
@@ -338,112 +407,68 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		case map[string]any:
 			opts = t
 		}
-		worklist = append(worklist, workItem{ref: featureRefRaw, opts: opts, fromDep: false})
+		worklist = append(worklist, featureWorkItem{ref: featureRefRaw, opts: opts, fromDep: false})
 	}
+	return worklist
+}
+
+// collectFeaturePlan builds the full install set by extracting user-declared
+// features and then transitively resolving dependsOn hard dependencies.
+func collectFeaturePlan(fs billy.Filesystem, devcontainerDir, featuresDir string, rawFeatures map[string]any) (*featurePlan, error) {
+	plan := newFeaturePlan(fs, devcontainerDir, featuresDir, len(rawFeatures))
 
 	// Phase 1: extract all user-declared features. This populates idToRef and
-	// canonicalToRefs fully before we follow any dependsOn edges, so that dep
-	// refs expressed as feature IDs or canonical names can be resolved without
-	// trying to fetch them as bare OCI references.
+	// canonicalToRefs fully before we follow any dependsOn edges.
+	worklist := normalizeFeatureOptions(rawFeatures)
 	for len(worklist) > 0 {
 		item := worklist[0]
 		worklist = worklist[1:]
-		if err := extractOne(item.ref, item.opts, item.fromDep); err != nil {
-			return "", nil, err
+		if _, err := plan.extractAndRegister(item.ref, item.opts, item.fromDep); err != nil {
+			return nil, err
 		}
 	}
 
 	// Phase 2: follow dependsOn for every extracted feature and auto-add any
 	// transitive deps that are not yet in the install set.
-	//
-	// depCovered returns true when depRef already maps to an extracted feature,
-	// checked by exact key, by feature ID (via idToRef), or by canonical name
-	// (via canonicalToRefs — handles "host/repo" matching "host/repo:latest").
-	depCovered := func(depRef string) bool {
-		if _, ok := extracted[depRef]; ok {
-			return true
-		}
-		if ref, ok := idToRef[depRef]; ok {
-			if _, ok := extracted[ref]; ok {
-				return true
-			}
-		}
-		if refs, ok := canonicalToRefs[depRef]; ok && len(refs) > 0 {
-			return true
-		}
-		return false
-	}
-
-	// enqueueNewDeps adds any un-covered deps of ef to the worklist.
-	enqueueNewDeps := func(ef *extractedFeature) {
-		for depRef, depOpts := range ef.spec.DependsOn {
-			if depCovered(depRef) {
-				continue
-			}
-			// Use the full ref from idToRef if this is a bare feature ID.
-			resolvedRef := depRef
-			if ref, ok := idToRef[depRef]; ok {
-				resolvedRef = ref
-			}
-			depOptsCopy := make(map[string]any, len(depOpts))
-			for k, v := range depOpts {
-				depOptsCopy[k] = v
-			}
-			worklist = append(worklist, workItem{ref: resolvedRef, opts: depOptsCopy, fromDep: true})
-		}
-	}
-
-	for _, ef := range extracted {
-		enqueueNewDeps(ef)
+	for _, ef := range plan.extracted {
+		plan.enqueueMissingDeps(ef, &worklist)
 	}
 	for len(worklist) > 0 {
 		item := worklist[0]
 		worklist = worklist[1:]
-		if _, already := extracted[item.ref]; already {
+		if _, already := plan.extracted[item.ref]; already {
 			continue
 		}
-		if err := extractOne(item.ref, item.opts, item.fromDep); err != nil {
-			return "", nil, err
+		added, err := plan.extractAndRegister(item.ref, item.opts, item.fromDep)
+		if err != nil {
+			return nil, err
 		}
-		// extractOne may have deduplicated this ref (same ID+version as an
-		// already-extracted feature), in which case it is not in extracted.
-		if ef := extracted[item.ref]; ef != nil {
-			enqueueNewDeps(ef)
-		}
-	}
-
-	canonicalToRef, ambiguousCanonicals := buildCanonicalToRef(canonicalToRefs)
-
-	// When build contexts are enabled, each canonical ref produces a Docker
-	// stage alias and context key. Duplicates would generate an invalid
-	// Dockerfile, so reject them early.
-	if useBuildContexts {
-		for canonical, refs := range ambiguousCanonicals {
-			return "", nil, fmt.Errorf("multiple configured features share canonical reference %q (%s); this produces duplicate build stages when build contexts are enabled", canonical, strings.Join(refs, ", "))
+		if added {
+			plan.enqueueMissingDeps(plan.extracted[item.ref], &worklist)
 		}
 	}
 
-	// Validate hard dependencies: every dependsOn entry must resolve to a
-	// feature in the extracted set. After the worklist above, all transitive
-	// dependencies that could be fetched as OCI refs are present; this catches
-	// the case where a dep ref is unresolvable (e.g. ambiguous canonical).
-	refRaws := make([]string, 0, len(extracted))
-	for refRaw := range extracted {
-		refRaws = append(refRaws, refRaw)
-	}
-	specsByRef := make(map[string]*features.Spec, len(extracted))
-	for refRaw, ef := range extracted {
-		specsByRef[refRaw] = ef.spec
-	}
-	featureOrder, err := resolveInstallOrder(refRaws, specsByRef, idToRef, canonicalToRef, ambiguousCanonicals, s.OverrideFeatureInstallOrder)
-	if err != nil {
-		return "", nil, err
-	}
+	plan.finalizeLookups()
+	return plan, nil
+}
 
-	// Pass 2: compile Dockerfile directives in the resolved order.
+// validateBuildContexts rejects ambiguous canonical references when build
+// contexts are enabled, since each produces a Docker stage alias.
+func (p *featurePlan) validateBuildContexts() error {
+	for canonical, refs := range p.ambiguousCanonicals {
+		return fmt.Errorf("multiple configured features share canonical reference %q (%s); this produces duplicate build stages when build contexts are enabled", canonical, strings.Join(refs, ", "))
+	}
+	return nil
+}
+
+// emitFeatureDockerfile compiles Dockerfile directives for the resolved
+// feature install order and returns the final Dockerfile content and
+// build-context map.
+func emitFeatureDockerfile(featureOrder []string, extracted map[string]*extractedFeature, dockerfileContent, containerUser, remoteUser string, useBuildContexts bool) (string, map[string]string, error) {
 	featureDirectives := make([]string, 0, len(featureOrder))
 	featureContexts := make(map[string]string)
 	var lines []string
+
 	for _, featureRefRaw := range featureOrder {
 		ef := extracted[featureRefRaw]
 		fromDirective, directive, err := ef.spec.Compile(ef.featureRef, ef.featureName, ef.featureDir, containerUser, remoteUser, useBuildContexts, ef.opts)
@@ -461,11 +486,42 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 	lines = append(lines, "\nUSER root")
 	lines = append(lines, featureDirectives...)
 	if remoteUser != "" {
-		// TODO: We should warn that because we were unable to find the remote user,
-		// we're going to run as root.
 		lines = append(lines, fmt.Sprintf("USER %s", remoteUser))
 	}
 	return strings.Join(lines, "\n"), featureContexts, nil
+}
+
+func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir string, containerUser, remoteUser, dockerfileContent string, useBuildContexts bool) (string, map[string]string, error) {
+	if len(s.Features) == 0 {
+		return dockerfileContent, nil, nil
+	}
+
+	featuresDir := filepath.Join(scratchDir, "features")
+	if err := fs.MkdirAll(featuresDir, 0o644); err != nil {
+		return "", nil, fmt.Errorf("create features directory: %w", err)
+	}
+
+	plan, err := collectFeaturePlan(fs, devcontainerDir, featuresDir, s.Features)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if useBuildContexts {
+		if err := plan.validateBuildContexts(); err != nil {
+			return "", nil, err
+		}
+	}
+
+	featureOrder, err := resolveInstallOrder(
+		plan.refRaws(), plan.specsByRef(), plan.idToRef,
+		plan.canonicalToRef, plan.ambiguousCanonicals,
+		s.OverrideFeatureInstallOrder,
+	)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return emitFeatureDockerfile(featureOrder, plan.extracted, dockerfileContent, containerUser, remoteUser, useBuildContexts)
 }
 
 // resolveInstallOrder determines the final feature installation order.
