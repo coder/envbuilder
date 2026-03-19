@@ -545,49 +545,40 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 // ignored (soft-dep semantics).
 //
 // See https://containers.dev/implementors/features/#installation-order
-func resolveInstallOrder(refRaws []string, specs map[string]*features.Spec, idToRef, canonicalToRef map[string]string, ambiguousCanonicals map[string][]string, overrideOrder []string) ([]string, error) {
+// depRefResolver bundles the lookup tables needed to resolve dependency
+// references. It avoids threading five maps through every helper.
+type depRefResolver struct {
+	specs               map[string]*features.Spec
+	idToRef             map[string]string
+	canonicalToRef      map[string]string
+	ambiguousCanonicals map[string][]string
+}
+
+func (r *depRefResolver) resolve(dep string) (string, bool, error) {
+	return resolveDependencyRef(dep, r.specs, r.idToRef, r.canonicalToRef, r.ambiguousCanonicals)
+}
+
+// depGraph holds the directed edge-set used for topological sorting.
+type depGraph struct {
+	inDegree   map[string]int
+	successors map[string][]string
+}
+
+// newDepGraph builds a dependency graph from feature specs.
+//
+// Hard deps (dependsOn) always produce edges. Soft deps (installsAfter) are
+// only added for features NOT in pinnedSet, per the spec: "soft dependencies
+// are respected for Features not in overrideFeatureInstallOrder".
+func newDepGraph(refRaws []string, all map[string]bool, pinnedSet map[string]bool, resolver *depRefResolver) (*depGraph, error) {
 	n := len(refRaws)
-	all := make(map[string]bool, n)
-	for _, r := range refRaws {
-		all[r] = true
-	}
-
-	// Assign roundPriority from overrideFeatureInstallOrder.
-	// Entry at index i gets priority (len - i) so earlier entries have higher
-	// priority.
-	//
-	// Override entries are resolved through the same lookup chain used for dep
-	// refs (idToRef → specs → canonicalToRef) so that refs that use a different
-	// tag format from the actual extracted key (e.g. "owner/feat" vs
-	// "owner/feat:1.0.0") are still recognised.  This aligns with the
-	// TypeScript reference implementation's semantic matching in
-	// applyOverrideFeatureInstallOrder.
-	roundPriority := make(map[string]int, len(overrideOrder))
-	pinnedSet := make(map[string]bool, len(overrideOrder))
-	for i, r := range overrideOrder {
-		resolvedRef, ok, err := resolveDependencyRef(r, specs, idToRef, canonicalToRef, ambiguousCanonicals)
-		if err != nil || !ok || !all[resolvedRef] {
-			// Silently skip overrides that can't be resolved or aren't in the
-			// install set (same behaviour the TS reference uses when a feature
-			// in overrideFeatureInstallOrder cannot be processed).
-			continue
-		}
-		roundPriority[resolvedRef] = len(overrideOrder) - i
-		pinnedSet[resolvedRef] = true
-	}
-
-	// Build the dependency graph: inDegree and successors.
 	inDegree := make(map[string]int, n)
-	for _, r := range refRaws {
-		inDegree[r] = 0
-	}
-	// preds maps refRaw → set of refRaws it must follow.
 	preds := make(map[string]map[string]struct{}, n)
 	for _, r := range refRaws {
+		inDegree[r] = 0
 		preds[r] = make(map[string]struct{})
 	}
+
 	addEdge := func(from, to string) {
-		// "from" must come after "to"
 		if _, ok := preds[from][to]; ok {
 			return
 		}
@@ -596,8 +587,8 @@ func resolveInstallOrder(refRaws []string, specs map[string]*features.Spec, idTo
 	}
 
 	for _, r := range refRaws {
-		for dep := range specs[r].DependsOn {
-			predRef, ok, err := resolveDependencyRef(dep, specs, idToRef, canonicalToRef, ambiguousCanonicals)
+		for dep := range resolver.specs[r].DependsOn {
+			predRef, ok, err := resolver.resolve(dep)
 			if err != nil {
 				return nil, err
 			}
@@ -606,28 +597,21 @@ func resolveInstallOrder(refRaws []string, specs map[string]*features.Spec, idTo
 			}
 			addEdge(r, predRef)
 		}
-		// installsAfter is a soft dep: only respected when the feature is NOT
-		// in overrideFeatureInstallOrder. Pinned features have their install
-		// order dictated by the override list; their installsAfter hints are
-		// ignored per the spec ("soft dependencies are respected for Features
-		// not in overrideFeatureInstallOrder").
 		if pinnedSet[r] {
 			continue
 		}
-		for _, depID := range specs[r].InstallsAfter {
-			predRef, ok, err := resolveDependencyRef(depID, specs, idToRef, canonicalToRef, ambiguousCanonicals)
+		for _, depID := range resolver.specs[r].InstallsAfter {
+			predRef, ok, err := resolver.resolve(depID)
 			if err != nil {
 				return nil, err
 			}
 			if !ok || !all[predRef] {
-				// Soft dep: only applies when predecessor is in the install set.
 				continue
 			}
 			addEdge(r, predRef)
 		}
 	}
 
-	// successors maps predecessor → features that depend on it.
 	successors := make(map[string][]string, n)
 	for r, ps := range preds {
 		for p := range ps {
@@ -635,16 +619,33 @@ func resolveInstallOrder(refRaws []string, specs map[string]*features.Spec, idTo
 		}
 	}
 
-	// Validate that overrideFeatureInstallOrder is consistent with the
-	// dependency graph: for any two pinned features A and B where A is listed
-	// before B in overrideOrder, A must not (transitively or directly) depend
-	// on B.
-	//
-	// Build pinnedList in override priority order (i.e. in the same order the
-	// entries appear in overrideOrder after resolving each one).
+	return &depGraph{inDegree: inDegree, successors: successors}, nil
+}
+
+// resolveOverrides resolves overrideFeatureInstallOrder entries into
+// roundPriority scores and the pinnedSet of features whose order is dictated
+// by the override list. Unresolvable entries are silently skipped.
+func resolveOverrides(overrideOrder []string, all map[string]bool, resolver *depRefResolver) (roundPriority map[string]int, pinnedSet map[string]bool) {
+	roundPriority = make(map[string]int, len(overrideOrder))
+	pinnedSet = make(map[string]bool, len(overrideOrder))
+	for i, r := range overrideOrder {
+		resolvedRef, ok, err := resolver.resolve(r)
+		if err != nil || !ok || !all[resolvedRef] {
+			continue
+		}
+		roundPriority[resolvedRef] = len(overrideOrder) - i
+		pinnedSet[resolvedRef] = true
+	}
+	return roundPriority, pinnedSet
+}
+
+// validatePinnedOrder checks that overrideFeatureInstallOrder is consistent
+// with dependsOn constraints: for any two pinned features A and B where A is
+// listed before B, A must not depend on B.
+func validatePinnedOrder(overrideOrder []string, pinnedSet map[string]bool, resolver *depRefResolver) error {
 	pinnedList := make([]string, 0, len(overrideOrder))
 	for _, r := range overrideOrder {
-		resolvedRef, ok, err := resolveDependencyRef(r, specs, idToRef, canonicalToRef, ambiguousCanonicals)
+		resolvedRef, ok, err := resolver.resolve(r)
 		if err != nil || !ok || !pinnedSet[resolvedRef] {
 			continue
 		}
@@ -655,42 +656,43 @@ func resolveInstallOrder(refRaws []string, specs map[string]*features.Spec, idTo
 		pinnedIndex[r] = i
 	}
 	for _, r := range pinnedList {
-		for dep := range specs[r].DependsOn {
-			depRef, ok, err := resolveDependencyRef(dep, specs, idToRef, canonicalToRef, ambiguousCanonicals)
+		for dep := range resolver.specs[r].DependsOn {
+			depRef, ok, err := resolver.resolve(dep)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if !ok {
 				continue
 			}
 			if depIdx, isPinned := pinnedIndex[depRef]; isPinned {
 				if depIdx > pinnedIndex[r] {
-					return nil, fmt.Errorf("overrideFeatureInstallOrder violates dependsOn: %q must be installed before %q", depRef, r)
+					return fmt.Errorf("overrideFeatureInstallOrder violates dependsOn: %q must be installed before %q", depRef, r)
 				}
 			}
-			// If dep is not pinned, the round-based sort will handle it correctly
-			// by not committing r until dep is in installationOrder.
 		}
 	}
+	return nil
+}
 
-	// Round-based sort (spec §3).
+// topoSortRounds performs a round-based topological sort (spec §3).
+// Within each round, only features sharing the maximum roundPriority are
+// committed; ties are broken alphabetically.
+func topoSortRounds(g *depGraph, refRaws []string, roundPriority map[string]int) ([]string, error) {
+	n := len(refRaws)
 	worklist := make(map[string]bool, n)
 	for _, r := range refRaws {
 		worklist[r] = true
 	}
 	installationOrder := make([]string, 0, n)
-	installed := make(map[string]bool, n)
 
 	for len(worklist) > 0 {
-		// Collect all candidates whose dependencies are fully installed.
 		round := make([]string, 0)
 		for r := range worklist {
-			if inDegree[r] == 0 {
+			if g.inDegree[r] == 0 {
 				round = append(round, r)
 			}
 		}
 		if len(round) == 0 {
-			// No progress — cycle.
 			cycled := make([]string, 0, len(worklist))
 			for r := range worklist {
 				cycled = append(cycled, r)
@@ -699,7 +701,6 @@ func resolveInstallOrder(refRaws []string, specs map[string]*features.Spec, idTo
 			return nil, fmt.Errorf("cycle detected in feature dependency graph: %s", strings.Join(cycled, ", "))
 		}
 
-		// Find the maximum roundPriority among candidates.
 		maxPriority := 0
 		for _, r := range round {
 			if roundPriority[r] > maxPriority {
@@ -707,28 +708,51 @@ func resolveInstallOrder(refRaws []string, specs map[string]*features.Spec, idTo
 			}
 		}
 
-		// Commit only those with the max priority; return the rest to the
-		// worklist for subsequent rounds.
 		toCommit := make([]string, 0, len(round))
 		for _, r := range round {
 			if roundPriority[r] == maxPriority {
 				toCommit = append(toCommit, r)
 			}
 		}
-		sort.Strings(toCommit) // alphabetical tie-break within a round
+		sort.Strings(toCommit)
 
 		for _, r := range toCommit {
 			installationOrder = append(installationOrder, r)
-			installed[r] = true
 			delete(worklist, r)
-			// Reduce in-degree for successors.
-			for _, succ := range successors[r] {
-				inDegree[succ]--
+			for _, succ := range g.successors[r] {
+				g.inDegree[succ]--
 			}
 		}
 	}
 
 	return installationOrder, nil
+}
+
+func resolveInstallOrder(refRaws []string, specs map[string]*features.Spec, idToRef, canonicalToRef map[string]string, ambiguousCanonicals map[string][]string, overrideOrder []string) ([]string, error) {
+	all := make(map[string]bool, len(refRaws))
+	for _, r := range refRaws {
+		all[r] = true
+	}
+
+	resolver := &depRefResolver{
+		specs:               specs,
+		idToRef:             idToRef,
+		canonicalToRef:      canonicalToRef,
+		ambiguousCanonicals: ambiguousCanonicals,
+	}
+
+	roundPriority, pinnedSet := resolveOverrides(overrideOrder, all, resolver)
+
+	g, err := newDepGraph(refRaws, all, pinnedSet, resolver)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := validatePinnedOrder(overrideOrder, pinnedSet, resolver); err != nil {
+		return nil, err
+	}
+
+	return topoSortRounds(g, refRaws, roundPriority)
 }
 
 func resolveDependencyRef(dep string, specs map[string]*features.Spec, idToRef, canonicalToRef map[string]string, ambiguousCanonicals map[string][]string) (string, bool, error) {
