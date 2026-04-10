@@ -115,6 +115,15 @@ WORKDIR `+featureTwoDir+`
 ENV POTATO=example
 RUN VERSION="potato" _CONTAINER_USER="1000" _REMOTE_USER="1000" ./install.sh
 USER 1000`, params.DockerfileContent)
+
+		// Verify feature directories are created with 0o755 (not
+		// 0o644) so non-root container users can traverse them.
+		for _, dir := range []string{workingDir + "/features", featureOneDir, featureTwoDir} {
+			info, err := fs.Stat(dir)
+			require.NoError(t, err, "stat %s", dir)
+			require.Equalf(t, os.FileMode(0o755), info.Mode()&os.ModePerm,
+				"directory %s should be 0o755, got %04o", dir, info.Mode()&os.ModePerm)
+		}
 	})
 
 	t.Run("WithBuildContexts", func(t *testing.T) {
