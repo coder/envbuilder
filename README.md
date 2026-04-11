@@ -25,10 +25,10 @@ The easiest way to get started is by running the `envbuilder` Docker container t
 > - The `/tmp/envbuilder` directory persists demo data between commands. You can choose a different directory if needed.
 > - To clone a different branch, you append it to `ENVBUILDER_GIT_URL` in the form `#refs/heads/my-branch`. For example: `https://github.com/coder/envbuilder-starter-devcontainer#refs/heads/boring-prompt`.
 ```bash
-docker run -it --rm
-    -v /tmp/envbuilder:/workspaces
-    -e ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder-starter-devcontainer
-    -e ENVBUILDER_INIT_SCRIPT=bash
+docker run -it --rm \
+    -v /tmp/envbuilder:/workspaces \
+    -e ENVBUILDER_GIT_URL=https://github.com/coder/envbuilder-starter-devcontainer \
+    -e ENVBUILDER_INIT_SCRIPT=bash \
     ghcr.io/coder/envbuilder
 ```
 
@@ -77,9 +77,9 @@ else
 fi
 
 # Run envbuilder with the setup script
-docker run -it --rm
-  -v ./:/some-dir
-  -e ENVBUILDER_SETUP_SCRIPT=/some-dir/init.sh
+docker run -it --rm \
+  -v ./:/some-dir \
+  -e ENVBUILDER_SETUP_SCRIPT=/some-dir/init.sh \
   ...
 ```
 
@@ -101,20 +101,5 @@ Issue: [#113](https://github.com/coder/envbuilder/issues/113)
 
 ## Contributing
 
-Building `envbuilder` currently **requires** a Linux system.
-
-On macOS or Windows systems, we recommend using a VM or the provided `.devcontainer` for development.
-
-**Additional Requirements:**
-
-- `go 1.22`
-- `make`
-- Docker daemon (for running tests)
-
-**Makefile targets:**
-
-- `build`: Builds and tags `envbuilder:latest` for your current architecture.
-- `develop`: Runs `envbuilder:latest` against a sample Git repository.
-- `test`: Runs tests.
-- `test-registry`: Stands up a local registry for caching images used in tests.
-- `docs/env-variables.md`: Updated the [environment variables documentation](./docs/env-variables.md).
+See [Development](./docs/development.md) for build instructions, dependency
+management notes, and common troubleshooting.
