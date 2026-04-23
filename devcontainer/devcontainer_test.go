@@ -213,11 +213,59 @@ func TestImageFromDockerfile(t *testing.T) {
 		tc := tc
 		t.Run(tc.image, func(t *testing.T) {
 			t.Parallel()
-			ref, err := devcontainer.ImageFromDockerfile(tc.content)
+			ref, err := devcontainer.ImageFromDockerfile(tc.content, nil)
 			require.NoError(t, err)
 			require.Equal(t, tc.image, ref.Name())
 		})
 	}
+}
+
+func TestImageFromDockerfile_BuildArgs(t *testing.T) {
+	t.Parallel()
+
+	// Test that build args override ARG defaults.
+	t.Run("OverridesDefault", func(t *testing.T) {
+		t.Parallel()
+		content := "ARG VARIANT=3.10\nFROM mcr.microsoft.com/devcontainers/python:0-${VARIANT}"
+		ref, err := devcontainer.ImageFromDockerfile(content, map[string]string{"VARIANT": "3.11-bookworm"})
+		require.NoError(t, err)
+		require.Equal(t, "mcr.microsoft.com/devcontainers/python:0-3.11-bookworm", ref.Name())
+	})
+
+	// Test that build args supply values for ARGs without defaults.
+	t.Run("SuppliesArgWithoutDefault", func(t *testing.T) {
+		t.Parallel()
+		content := "ARG VARIANT\nFROM mcr.microsoft.com/devcontainers/python:1-${VARIANT}"
+		ref, err := devcontainer.ImageFromDockerfile(content, map[string]string{"VARIANT": "3.11-bookworm"})
+		require.NoError(t, err)
+		require.Equal(t, "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm", ref.Name())
+	})
+}
+
+func TestUserFromDockerfile_BuildArgs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("SubstitutesARGInFROM", func(t *testing.T) {
+		t.Parallel()
+		registry := registrytest.New(t)
+		image, err := partial.UncompressedToImage(emptyImage{configFile: &v1.ConfigFile{
+			Config: v1.Config{
+				User: "testuser",
+			},
+		}})
+		require.NoError(t, err)
+		ref := strings.TrimPrefix(registry, "http://") + "/coder/test:latest"
+		parsed, err := name.ParseReference(ref)
+		require.NoError(t, err)
+		err = remote.Write(parsed, image)
+		require.NoError(t, err)
+
+		// Dockerfile uses ARG without default for the image ref.
+		content := fmt.Sprintf("ARG TAG\nFROM %s/coder/test:${TAG}", strings.TrimPrefix(registry, "http://"))
+		user, err := devcontainer.UserFromDockerfile(content, map[string]string{"TAG": "latest"})
+		require.NoError(t, err)
+		require.Equal(t, "testuser", user)
+	})
 }
 
 func TestUserFrom(t *testing.T) {
@@ -287,7 +335,7 @@ func TestUserFrom(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
-				user, err := devcontainer.UserFromDockerfile(tt.content)
+				user, err := devcontainer.UserFromDockerfile(tt.content, nil)
 				require.NoError(t, err)
 				require.Equal(t, tt.user, user)
 			})
@@ -364,7 +412,7 @@ FROM a`,
 
 				content := strings.ReplaceAll(tt.content, "coder/test", strings.TrimPrefix(registry, "http://")+"/coder/test")
 
-				user, err := devcontainer.UserFromDockerfile(content)
+				user, err := devcontainer.UserFromDockerfile(content, nil)
 				require.NoError(t, err)
 				require.Equal(t, tt.user, user)
 			})
