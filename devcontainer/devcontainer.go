@@ -310,6 +310,8 @@ func (p *featurePlan) extractAndRegister(featureRefRaw string, opts map[string]a
 		existingEF := p.extracted[existingRef]
 		if existingEF.spec.Version == spec.Version {
 			p.canonicalToRefs[featureRef] = append(p.canonicalToRefs[featureRef], featureRefRaw)
+			// Clean up the orphaned directory from the redundant pull.
+			_ = p.fs.Remove(featureDir)
 			return false, nil
 		}
 		return false, fmt.Errorf(
@@ -420,6 +422,9 @@ func collectFeaturePlan(fs billy.Filesystem, devcontainerDir, featuresDir string
 	// Phase 1: extract all user-declared features. This populates idToRef and
 	// canonicalToRefs fully before we follow any dependsOn edges.
 	worklist := normalizeFeatureOptions(rawFeatures)
+	sort.Slice(worklist, func(i, j int) bool {
+		return worklist[i].ref < worklist[j].ref
+	})
 	for len(worklist) > 0 {
 		item := worklist[0]
 		worklist = worklist[1:]
@@ -430,8 +435,13 @@ func collectFeaturePlan(fs billy.Filesystem, devcontainerDir, featuresDir string
 
 	// Phase 2: follow dependsOn for every extracted feature and auto-add any
 	// transitive deps that are not yet in the install set.
-	for _, ef := range plan.extracted {
-		plan.enqueueMissingDeps(ef, &worklist)
+	extractedKeys := make([]string, 0, len(plan.extracted))
+	for key := range plan.extracted {
+		extractedKeys = append(extractedKeys, key)
+	}
+	sort.Strings(extractedKeys)
+	for _, key := range extractedKeys {
+		plan.enqueueMissingDeps(plan.extracted[key], &worklist)
 	}
 	for len(worklist) > 0 {
 		item := worklist[0]
@@ -455,10 +465,22 @@ func collectFeaturePlan(fs billy.Filesystem, devcontainerDir, featuresDir string
 // validateBuildContexts rejects ambiguous canonical references when build
 // contexts are enabled, since each produces a Docker stage alias.
 func (p *featurePlan) validateBuildContexts() error {
-	for canonical, refs := range p.ambiguousCanonicals {
-		return fmt.Errorf("multiple configured features share canonical reference %q (%s); this produces duplicate build stages when build contexts are enabled", canonical, strings.Join(refs, ", "))
+	if len(p.ambiguousCanonicals) == 0 {
+		return nil
 	}
-	return nil
+
+	canonicals := make([]string, 0, len(p.ambiguousCanonicals))
+	for canonical := range p.ambiguousCanonicals {
+		canonicals = append(canonicals, canonical)
+	}
+	sort.Strings(canonicals)
+
+	var parts []string
+	for _, canonical := range canonicals {
+		parts = append(parts, fmt.Sprintf("%q (%s)", canonical, strings.Join(p.ambiguousCanonicals[canonical], ", ")))
+	}
+
+	return fmt.Errorf("multiple configured features share canonical references (%s); this produces duplicate build stages when build contexts are enabled", strings.Join(parts, "; "))
 }
 
 // emitFeatureDockerfile compiles Dockerfile directives for the resolved
@@ -486,6 +508,8 @@ func emitFeatureDockerfile(featureOrder []string, extracted map[string]*extracte
 	lines = append(lines, "\nUSER root")
 	lines = append(lines, featureDirectives...)
 	if remoteUser != "" {
+		// TODO: We should warn that because we were unable to find the remote user,
+		// we're going to run as root.
 		lines = append(lines, fmt.Sprintf("USER %s", remoteUser))
 	}
 	return strings.Join(lines, "\n"), featureContexts, nil

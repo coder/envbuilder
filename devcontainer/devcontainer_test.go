@@ -462,8 +462,19 @@ func TestCompileWithFeaturesDependsOn(t *testing.T) {
 		require.NoError(t, err)
 		fs := memfs.New()
 
-		_, err = dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
 		require.NoError(t, err)
+
+		// featureB depends on featureA; featureA must appear before featureB.
+		featureAMD5 := md5.Sum([]byte(featureA))
+		featureADir := fmt.Sprintf("/.envbuilder/features/a-%x", featureAMD5[:4])
+		featureBMD5 := md5.Sum([]byte(featureB))
+		featureBDir := fmt.Sprintf("/.envbuilder/features/b-%x", featureBMD5[:4])
+		aIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureADir)
+		bIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureBDir)
+		require.Greater(t, aIdx, -1, "featureA should be present in Dockerfile")
+		require.Greater(t, bIdx, -1, "featureB should be present in Dockerfile")
+		require.Less(t, aIdx, bIdx, "featureA (dependency) must be installed before featureB")
 	})
 
 	t.Run("DependsOnAutoAdded", func(t *testing.T) {
@@ -575,8 +586,20 @@ func TestCompileWithFeaturesDependsOn(t *testing.T) {
 		require.NoError(t, err)
 		fs := memfs.New()
 
-		_, err = dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
+		params, err := dc.Compile(fs, "", workingDir, "", "", false, stubLookupEnv)
 		require.NoError(t, err)
+
+		// featureByRef depends on featureLate by canonical reference;
+		// featureLate must appear before featureByRef.
+		featureLateMD5 := md5.Sum([]byte(featureLate))
+		featureLateDir := fmt.Sprintf("/.envbuilder/features/zzz-late-%x", featureLateMD5[:4])
+		featureByRefMD5 := md5.Sum([]byte(featureByRef))
+		featureByRefDir := fmt.Sprintf("/.envbuilder/features/by-ref-%x", featureByRefMD5[:4])
+		lateIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureLateDir)
+		byRefIdx := strings.Index(params.DockerfileContent, "WORKDIR "+featureByRefDir)
+		require.Greater(t, lateIdx, -1, "featureLate should be present in Dockerfile")
+		require.Greater(t, byRefIdx, -1, "featureByRef should be present in Dockerfile")
+		require.Less(t, lateIdx, byRefIdx, "featureLate (dependency) must be installed before featureByRef")
 	})
 
 	t.Run("DependsOnCanonicalRefAmbiguousErrors", func(t *testing.T) {
