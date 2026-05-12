@@ -529,6 +529,23 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			if val, ok := os.LookupEnv("KANIKO_REGISTRY_MIRROR"); ok {
 				registryMirror = strings.Split(val, ";")
 			}
+			registryMap := make(map[string][]string)
+			if val, ok := os.LookupEnv("KANIKO_REGISTRY_MAP"); ok {
+				if val != "" {
+					var pairs []string
+					if strings.Contains(val, ";") {
+						pairs = strings.Split(val, ";")
+					} else {
+						pairs = []string{val}
+					}
+					for _, kv := range pairs {
+						valueSplit := strings.SplitN(kv, "=", 2)
+						if len(valueSplit) > 1 {
+							registryMap[valueSplit[0]] = append(registryMap[valueSplit[0]], valueSplit[1])
+						}
+					}
+				}
+			}
 			var destinations []string
 			if opts.CacheRepo != "" {
 				destinations = append(destinations, opts.CacheRepo)
@@ -572,6 +589,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 					// Related to PR #114
 					// https://github.com/coder/envbuilder/pull/114
 					RegistryMirrors: registryMirror,
+					RegistryMaps:    registryMap,
 				},
 				SrcContext: buildParams.BuildContext,
 
