@@ -509,32 +509,23 @@ func RedactURL(u string) string {
 }
 
 // ResolveSubmoduleURL resolves a potentially relative submodule URL against a parent repository URL.
-//
-// Limitation: SCP-like URLs (e.g., git@github.com:org/repo.git) are not supported as parent URLs
-// when the submodule uses a relative path. This is a known limitation.
-// See: https://github.com/coder/envbuilder/issues/492
 func ResolveSubmoduleURL(parentURL, submoduleURL string) (string, error) {
 	// If the submodule URL is absolute (contains ://) or doesn't start with ./ or ../, return it as-is
 	if strings.Contains(submoduleURL, "://") || (!strings.HasPrefix(submoduleURL, "../") && !strings.HasPrefix(submoduleURL, "./")) {
 		return submoduleURL, nil
 	}
 
-	// Check if parent URL is SCP-like (e.g., git@github.com:org/repo.git)
-	// These cannot be properly parsed by net/url and relative submodule resolution is not supported.
-	if scpLikeURLRegex.MatchString(parentURL) {
-		return "", fmt.Errorf("relative submodule URL %q cannot be resolved: parent URL %q uses SCP-like syntax which is not supported for relative submodule resolution (see https://github.com/coder/envbuilder/issues/492)", submoduleURL, RedactURL(parentURL))
-	}
-
-	// Parse the parent URL
-	parentParsed, err := url.Parse(parentURL)
+	// Parse the parent URL using go-git's endpoint parser, which handles
+	// SCP-like URLs (git@host:path) in addition to standard URLs.
+	parentEP, err := transport.NewEndpoint(parentURL)
 	if err != nil {
 		return "", fmt.Errorf("parse parent URL: %w", err)
 	}
 
-	// For relative URLs, we need to resolve them against the parent's path
-	// The parent path represents a repository (like a file in filesystem terms)
-	// So ../something means "sibling repository"
-	parentPath := strings.TrimSuffix(parentParsed.Path, "/")
+	// For relative URLs, we need to resolve them against the parent's path.
+	// The parent path represents a repository (like a file in filesystem terms),
+	// so ../something means "sibling repository".
+	parentPath := strings.TrimSuffix(parentEP.Path, "/")
 
 	// Split the submodule URL into components
 	// and manually walk up the directory tree for each ../
@@ -554,18 +545,9 @@ func ResolveSubmoduleURL(parentURL, submoduleURL string) (string, error) {
 		}
 	}
 
-	// Clean the final path
-	resolvedPath := path.Clean(currentPath)
-
-	// Construct the absolute URL
-	resolvedParsed := &url.URL{
-		Scheme: parentParsed.Scheme,
-		User:   parentParsed.User,
-		Host:   parentParsed.Host,
-		Path:   resolvedPath,
-	}
-
-	return resolvedParsed.String(), nil
+	// Reconstruct the URL with the resolved path.
+	parentEP.Path = path.Clean(currentPath)
+	return parentEP.String(), nil
 }
 
 // initSubmodules recursively initializes and updates all submodules in the repository.
