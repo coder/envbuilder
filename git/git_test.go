@@ -671,7 +671,6 @@ func TestRedactURL(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := git.RedactURL(tc.input)
@@ -769,7 +768,6 @@ func TestSameHost(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := git.SameHost(tc.url1, tc.url2)
@@ -842,10 +840,45 @@ func TestResolveSubmoduleURL(t *testing.T) {
 			subURL:    "https://github.com/other/submodule.git",
 			expect:    "https://github.com/other/submodule.git",
 		},
+		{
+			name:      "httpsParentWithTokenStripped",
+			parentURL: "https://token123@github.com/org/main.git",
+			subURL:    "../deps/lib.git",
+			expect:    "https://github.com/org/deps/lib.git",
+		},
+		{
+			name:      "httpsParentWithUserPassStripped",
+			parentURL: "https://user:pass@example.com/org/main.git",
+			subURL:    "./extras/tool.git",
+			expect:    "https://example.com/org/main.git/extras/tool.git",
+		},
+		{
+			name:      "sshSchemeUserPreserved",
+			parentURL: "ssh://deploy@host.tld/org/main.git",
+			subURL:    "../deps/lib.git",
+			expect:    "ssh://deploy@host.tld/org/deps/lib.git",
+		},
+		{
+			name:      "sshSchemePasswordStripped",
+			parentURL: "ssh://deploy:secret@host.tld/org/main.git",
+			subURL:    "../deps/lib.git",
+			expect:    "ssh://deploy@host.tld/org/deps/lib.git",
+		},
+		{
+			name:      "gitSchemeRelative",
+			parentURL: "git://host.tld/org/main.git",
+			subURL:    "../deps/lib.git",
+			expect:    "git://host.tld/org/deps/lib.git",
+		},
+		{
+			name:      "unparseableParent",
+			parentURL: "https://[bad-bracket",
+			subURL:    "./child",
+			expectErr: "parse parent URL",
+		},
 	}
 
-	for _, tc := range cases {
-		c := tc
+	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			got, err := git.ResolveSubmoduleURL(c.parentURL, c.subURL)
