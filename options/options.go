@@ -29,7 +29,7 @@ func (s *SubmoduleDepth) Set(val string) error {
 		*s = 0
 		return nil
 	}
-	n, err := strconv.Atoi(val)
+	n, err := strconv.Atoi(lower)
 	if err != nil {
 		return fmt.Errorf("invalid submodule depth %q: must be true, false, or a positive integer", val)
 	}
@@ -148,10 +148,11 @@ type Options struct {
 	GitCloneSingleBranch bool
 	// GitCloneThinPack clone with thin pack compabilities. This is optional.
 	GitCloneThinPack bool
-	// GitCloneSubmodules controls submodule initialization after cloning.
+	// GitCloneSubmoduleDepth controls submodule initialization after cloning.
 	// 0 = disabled (default), positive integer = max recursion depth.
-	// Accepts "true" (defaults to 10), "false" (0), or a positive integer.
-	GitCloneSubmodules int
+	// The flag accepts "true" (defaults to DefaultSubmoduleDepth), "false"
+	// (0), or a positive integer for the max recursion depth.
+	GitCloneSubmoduleDepth int
 	// GitUsername is the username to use for Git authentication. This is
 	// optional.
 	GitUsername string
@@ -433,7 +434,7 @@ func (o *Options) CLI() serpent.OptionSet {
 		{
 			Flag:  "git-clone-submodules",
 			Env:   WithEnvPrefix("GIT_CLONE_SUBMODULES"),
-			Value: SubmoduleDepthOf(&o.GitCloneSubmodules),
+			Value: SubmoduleDepthOf(&o.GitCloneSubmoduleDepth),
 			Description: "Clone Git submodules after cloning the repository. " +
 				"Accepts 'true' (max depth 10), 'false' (disabled), or a positive integer for max recursion depth.",
 		},

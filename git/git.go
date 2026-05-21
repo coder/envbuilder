@@ -376,7 +376,7 @@ func CloneOptionsFromOptions(logf func(string, ...any), options options.Options)
 		ThinPack:       options.GitCloneThinPack,
 		Depth:          int(options.GitCloneDepth),
 		CABundle:       caBundle,
-		SubmoduleDepth: options.GitCloneSubmodules,
+		SubmoduleDepth: options.GitCloneSubmoduleDepth,
 	}
 
 	cloneOpts.RepoAuth = SetupRepoAuth(logf, &options)

@@ -864,11 +864,11 @@ func TestCloneOptionsFromOptions_Submodules(t *testing.T) {
 
 	fs := memfs.New()
 	opts := options.Options{
-		Filesystem:         fs,
-		WorkspaceFolder:    "/workspace",
-		GitURL:             "https://example.com/example/repo.git",
-		GitCloneSubmodules: 10,
-		GitCloneThinPack:   true,
+		Filesystem:             fs,
+		WorkspaceFolder:        "/workspace",
+		GitURL:                 "https://example.com/example/repo.git",
+		GitCloneSubmoduleDepth: 10,
+		GitCloneThinPack:       true,
 	}
 
 	cloneOpts, err := git.CloneOptionsFromOptions(t.Logf, opts)
