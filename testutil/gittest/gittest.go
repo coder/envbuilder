@@ -273,59 +273,6 @@ func NewRepo(t *testing.T, fs billy.Filesystem, commits ...CommitFunc) *git.Repo
 	return repo
 }
 
-// CreateGitServerWithSubmodule creates a parent git repo with a submodule pointing to another repo.
-// Returns the parent server and the submodule server.
-// The submodule is properly registered with a gitlink entry in the tree.
-func CreateGitServerWithSubmodule(t *testing.T, opts Options, submoduleOpts Options) (parentSrv *httptest.Server, submoduleSrv *httptest.Server) {
-	t.Helper()
-
-	// Create the submodule repo first and get its HEAD commit
-	submoduleFS := memfs.New()
-	submoduleCommits := make([]CommitFunc, 0)
-	for path, content := range submoduleOpts.Files {
-		submoduleCommits = append(submoduleCommits, Commit(t, path, content, "submodule commit"))
-	}
-	submoduleRepo := NewRepo(t, submoduleFS, submoduleCommits...)
-
-	// Get the submodule's HEAD commit hash
-	submoduleHead, err := submoduleRepo.Head()
-	require.NoError(t, err)
-	submoduleHash := submoduleHead.Hash()
-
-	// Start the submodule server
-	if submoduleOpts.AuthMW == nil {
-		submoduleOpts.AuthMW = mwtest.BasicAuthMW(submoduleOpts.Username, submoduleOpts.Password)
-	}
-	if submoduleOpts.TLS {
-		submoduleSrv = httptest.NewTLSServer(submoduleOpts.AuthMW(NewServer(submoduleFS)))
-	} else {
-		submoduleSrv = httptest.NewServer(submoduleOpts.AuthMW(NewServer(submoduleFS)))
-	}
-
-	// Create the parent repo with .gitmodules and gitlink entry
-	if opts.AuthMW == nil {
-		opts.AuthMW = mwtest.BasicAuthMW(opts.Username, opts.Password)
-	}
-
-	parentFS := memfs.New()
-	commits := make([]CommitFunc, 0)
-	for path, content := range opts.Files {
-		commits = append(commits, Commit(t, path, content, "my test commit"))
-	}
-
-	// Add .gitmodules file and gitlink entry for the submodule
-	commits = append(commits, CommitSubmodule(t, "submod", submoduleSrv.URL, submoduleHash))
-
-	_ = NewRepo(t, parentFS, commits...)
-
-	if opts.TLS {
-		parentSrv = httptest.NewTLSServer(opts.AuthMW(NewServer(parentFS)))
-	} else {
-		parentSrv = httptest.NewServer(opts.AuthMW(NewServer(parentFS)))
-	}
-	return parentSrv, submoduleSrv
-}
-
 // CommitSubmodule creates a commit that adds a submodule with proper .gitmodules and gitlink entry.
 func CommitSubmodule(t *testing.T, path, url string, hash plumbing.Hash) CommitFunc {
 	return func(fs billy.Filesystem, repo *git.Repository) {

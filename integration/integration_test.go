@@ -33,6 +33,7 @@ import (
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/coder/envbuilder/testutil/mwtest"
 	"github.com/coder/envbuilder/testutil/registrytest"
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	gossh "golang.org/x/crypto/ssh"
 
@@ -421,16 +422,22 @@ func TestSucceedsGitAuth(t *testing.T) {
 func TestGitSubmodules(t *testing.T) {
 	t.Parallel()
 
-	// Create parent repo with a submodule
-	parentSrv, _ := gittest.CreateGitServerWithSubmodule(t, gittest.Options{
-		Files: map[string]string{
-			"Dockerfile": "FROM " + testImageAlpine,
-		},
-	}, gittest.Options{
-		Files: map[string]string{
-			"subfile.txt": "submodule content",
-		},
-	})
+	submoduleFS := memfs.New()
+	submoduleRepo := gittest.NewRepo(t, submoduleFS,
+		gittest.Commit(t, "subfile.txt", "submodule content", "submodule commit"),
+	)
+	submoduleHead, err := submoduleRepo.Head()
+	require.NoError(t, err)
+	submoduleSrv := httptest.NewServer(mwtest.BasicAuthMW("", "")(gittest.NewServer(submoduleFS)))
+	t.Cleanup(submoduleSrv.Close)
+
+	parentFS := memfs.New()
+	_ = gittest.NewRepo(t, parentFS,
+		gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "my test commit"),
+		gittest.CommitSubmodule(t, "submod", submoduleSrv.URL, submoduleHead.Hash()),
+	)
+	parentSrv := httptest.NewServer(mwtest.BasicAuthMW("", "")(gittest.NewServer(parentFS)))
+	t.Cleanup(parentSrv.Close)
 
 	ctr, err := runEnvbuilder(t, runOpts{env: []string{
 		envbuilderEnv("GIT_URL", parentSrv.URL),
@@ -439,11 +446,11 @@ func TestGitSubmodules(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Verify the .gitmodules file exists
 	gitmodules := execContainer(t, ctr, "cat /workspaces/empty/.gitmodules")
 	require.Contains(t, gitmodules, "[submodule")
 
-	// Verify the submodule was actually cloned by checking for the file inside it
+	// Read a committed file from the submodule worktree to confirm that the
+	// submodule was actually checked out, not just registered in .gitmodules.
 	subfileContent := execContainer(t, ctr, "cat /workspaces/empty/submod/subfile.txt")
 	require.Contains(t, subfileContent, "submodule content")
 }
