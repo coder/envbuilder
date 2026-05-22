@@ -33,6 +33,7 @@ import (
 	"github.com/coder/envbuilder/testutil/gittest"
 	"github.com/coder/envbuilder/testutil/mwtest"
 	"github.com/coder/envbuilder/testutil/registrytest"
+	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-billy/v5/osfs"
 	gossh "golang.org/x/crypto/ssh"
 
@@ -416,6 +417,42 @@ func TestSucceedsGitAuth(t *testing.T) {
 	require.NoError(t, err)
 	gitConfig := execContainer(t, ctr, "cat /workspaces/empty/.git/config")
 	require.Contains(t, gitConfig, srv.URL)
+}
+
+func TestGitSubmodules(t *testing.T) {
+	t.Parallel()
+
+	submoduleFS := memfs.New()
+	submoduleRepo := gittest.NewRepo(t, submoduleFS,
+		gittest.Commit(t, "subfile.txt", "submodule content", "submodule commit"),
+	)
+	submoduleHead, err := submoduleRepo.Head()
+	require.NoError(t, err)
+	submoduleSrv := httptest.NewServer(mwtest.BasicAuthMW("", "")(gittest.NewServer(submoduleFS)))
+	t.Cleanup(submoduleSrv.Close)
+
+	parentFS := memfs.New()
+	_ = gittest.NewRepo(t, parentFS,
+		gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "my test commit"),
+		gittest.CommitSubmodule(t, "submod", submoduleSrv.URL, submoduleHead.Hash()),
+	)
+	parentSrv := httptest.NewServer(mwtest.BasicAuthMW("", "")(gittest.NewServer(parentFS)))
+	t.Cleanup(parentSrv.Close)
+
+	ctr, err := runEnvbuilder(t, runOpts{env: []string{
+		envbuilderEnv("GIT_URL", parentSrv.URL),
+		envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+		envbuilderEnv("GIT_CLONE_SUBMODULES", "true"),
+	}})
+	require.NoError(t, err)
+
+	gitmodules := execContainer(t, ctr, "cat /workspaces/empty/.gitmodules")
+	require.Contains(t, gitmodules, "[submodule")
+
+	// Read a committed file from the submodule worktree to confirm that the
+	// submodule was actually checked out, not just registered in .gitmodules.
+	subfileContent := execContainer(t, ctr, "cat /workspaces/empty/submod/subfile.txt")
+	require.Contains(t, subfileContent, "submodule content")
 }
 
 func TestGitSSHAuth(t *testing.T) {

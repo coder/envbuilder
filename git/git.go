@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
+	"path"
+	"regexp"
 	"strings"
 
 	"github.com/coder/envbuilder/internal/ebutil"
@@ -15,6 +18,7 @@ import (
 
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
@@ -32,15 +36,16 @@ type CloneRepoOptions struct {
 	Path    string
 	Storage billy.Filesystem
 
-	RepoURL      string
-	RepoAuth     transport.AuthMethod
-	Progress     sideband.Progress
-	Insecure     bool
-	SingleBranch bool
-	ThinPack     bool
-	Depth        int
-	CABundle     []byte
-	ProxyOptions transport.ProxyOptions
+	RepoURL        string
+	RepoAuth       transport.AuthMethod
+	Progress       sideband.Progress
+	Insecure       bool
+	SingleBranch   bool
+	ThinPack       bool
+	Depth          int
+	CABundle       []byte
+	ProxyOptions   transport.ProxyOptions
+	SubmoduleDepth int // 0 = disabled, >0 = max recursion depth
 }
 
 // CloneRepo will clone the repository at the given URL into the given path.
@@ -111,28 +116,48 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 	if err != nil {
 		return false, fmt.Errorf("open %q: %w", opts.RepoURL, err)
 	}
-	if repo != nil {
-		return false, nil
+
+	alreadyCloned := repo != nil
+	if !alreadyCloned {
+		repo, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
+			URL:             parsed.Cleaned,
+			Auth:            opts.RepoAuth,
+			Progress:        opts.Progress,
+			ReferenceName:   plumbing.ReferenceName(parsed.Reference),
+			InsecureSkipTLS: opts.Insecure,
+			Depth:           opts.Depth,
+			SingleBranch:    opts.SingleBranch,
+			CABundle:        opts.CABundle,
+			ProxyOptions:    opts.ProxyOptions,
+		})
+		if errors.Is(err, git.ErrRepositoryAlreadyExists) {
+			// The repository was created between our Open and CloneContext
+			// calls. Reopen it so submodule initialization can still run.
+			repo, err = git.Open(fsStorage, gitDir)
+			if err != nil {
+				return false, fmt.Errorf("reopen existing %q: %w", opts.RepoURL, err)
+			}
+			alreadyCloned = true
+		}
+		if err != nil {
+			return false, fmt.Errorf("clone %q: %w", opts.RepoURL, err)
+		}
 	}
 
-	_, err = git.CloneContext(ctx, gitStorage, fs, &git.CloneOptions{
-		URL:             parsed.Cleaned,
-		Auth:            opts.RepoAuth,
-		Progress:        opts.Progress,
-		ReferenceName:   plumbing.ReferenceName(parsed.Reference),
-		InsecureSkipTLS: opts.Insecure,
-		Depth:           opts.Depth,
-		SingleBranch:    opts.SingleBranch,
-		CABundle:        opts.CABundle,
-		ProxyOptions:    opts.ProxyOptions,
-	})
-	if errors.Is(err, git.ErrRepositoryAlreadyExists) {
-		return false, nil
+	// Initialize submodules on every call, not only after a fresh clone, so
+	// that a transient failure during the first run can be retried on the
+	// next workspace start.
+	if opts.SubmoduleDepth > 0 {
+		w, err := repo.Worktree()
+		if err != nil {
+			return !alreadyCloned, fmt.Errorf("get worktree: %w", err)
+		}
+		if err := initSubmodules(ctx, logf, repo, w, opts.RepoURL, opts.RepoAuth, opts, 1); err != nil {
+			return !alreadyCloned, fmt.Errorf("init submodules: %w", err)
+		}
 	}
-	if err != nil {
-		return false, fmt.Errorf("clone %q: %w", opts.RepoURL, err)
-	}
-	return true, nil
+
+	return !alreadyCloned, nil
 }
 
 // ShallowCloneRepo will clone the repository at the given URL into the given path
@@ -354,14 +379,15 @@ func CloneOptionsFromOptions(logf func(string, ...any), options options.Options)
 	}
 
 	cloneOpts := CloneRepoOptions{
-		RepoURL:      options.GitURL,
-		Path:         options.WorkspaceFolder,
-		Storage:      options.Filesystem,
-		Insecure:     options.Insecure,
-		SingleBranch: options.GitCloneSingleBranch,
-		ThinPack:     options.GitCloneThinPack,
-		Depth:        int(options.GitCloneDepth),
-		CABundle:     caBundle,
+		RepoURL:        options.GitURL,
+		Path:           options.WorkspaceFolder,
+		Storage:        options.Filesystem,
+		Insecure:       options.Insecure,
+		SingleBranch:   options.GitCloneSingleBranch,
+		ThinPack:       options.GitCloneThinPack,
+		Depth:          int(options.GitCloneDepth),
+		CABundle:       caBundle,
+		SubmoduleDepth: options.GitCloneSubmoduleDepth,
 	}
 
 	cloneOpts.RepoAuth = SetupRepoAuth(logf, &options)
@@ -418,4 +444,385 @@ func ProgressWriter(write func(line string, args ...any)) io.WriteCloser {
 		r:           reader,
 		done:        done,
 	}
+}
+
+// scpLikeURLRegex matches SCP-like URLs: user@host:path (where host is not empty and path doesn't start with /)
+// This handles: git@github.com:org/repo, deploy@host:repo, user@10.0.0.5:project
+var scpLikeURLRegex = regexp.MustCompile(`^([^@]+)@([^:]+):(.+)$`)
+
+// extractHost extracts the host from a URL, handling both standard URLs and SCP-like URLs.
+// Returns empty string if host cannot be determined.
+func extractHost(u string) string {
+	// Try standard URL parsing first
+	if parsed, err := url.Parse(u); err == nil && parsed.Host != "" {
+		// Remove port if present
+		host := parsed.Hostname()
+		return strings.ToLower(host)
+	}
+
+	// Handle SCP-like URLs: user@host:path
+	if matches := scpLikeURLRegex.FindStringSubmatch(u); matches != nil {
+		return strings.ToLower(matches[2])
+	}
+
+	return ""
+}
+
+// SameHost checks if two URLs point to the same host.
+// Used to determine if credentials should be forwarded to submodules.
+// The comparison is hostname-only. Port is ignored to match git's
+// credential-helper convention, which keys credentials on the host alone.
+func SameHost(url1, url2 string) bool {
+	host1 := extractHost(url1)
+	host2 := extractHost(url2)
+	return host1 != "" && host2 != "" && host1 == host2
+}
+
+// RedactURL redacts credentials from a URL for safe logging.
+// Handles:
+//   - Standard URLs with userinfo: https://user:pass@host, https://token@host
+//   - URL-encoded credentials: https://user:p%40ss@host
+//   - SCP-like URLs: git@host:path, deploy@host:path, user@10.0.0.5:path
+//   - Various schemes: http, https, ssh, git, ftp, sftp
+//   - IPv6 hosts: https://user@[2001:db8::1]/path
+func RedactURL(u string) string {
+	// Try to parse as a standard URL first (handles schemes like https://, ssh://, etc.)
+	parsed, err := url.Parse(u)
+	if err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		// Successfully parsed as a URL with a scheme and host
+		// Redact userinfo if present (handles user, user:pass, token, URL-encoded creds)
+		if parsed.User != nil {
+			// Build URL manually to avoid url.User encoding *** as %2A%2A%2A
+			result := parsed.Scheme + "://***@" + parsed.Host + parsed.Path
+			if parsed.RawQuery != "" {
+				result += "?" + parsed.RawQuery
+			}
+			if parsed.Fragment != "" {
+				result += "#" + parsed.Fragment
+			}
+			return result
+		}
+		return parsed.String()
+	}
+
+	// Handle SCP-like URLs: user@host:path (no scheme)
+	// Only check this if url.Parse didn't find a valid scheme+host
+	// (to avoid matching URLs like https://user@[ipv6]:path)
+	// This catches: git@github.com:org/repo, deploy@host:repo, oauth2:token@gitlab.com:org/repo
+	if matches := scpLikeURLRegex.FindStringSubmatch(u); matches != nil {
+		// matches[1] = user part (could be git, deploy, oauth2:token, etc.)
+		// matches[2] = host
+		// matches[3] = path
+		return "***@" + matches[2] + ":" + matches[3]
+	}
+
+	// If we can't parse it and it's not SCP-like, return as-is
+	// (probably not a URL with credentials)
+	return u
+}
+
+// ResolveSubmoduleURL resolves a potentially relative submodule URL against a parent repository URL.
+func ResolveSubmoduleURL(parentURL, submoduleURL string) (string, error) {
+	// If the submodule URL is absolute (contains ://) or doesn't start with ./ or ../, return it as-is
+	if strings.Contains(submoduleURL, "://") || (!strings.HasPrefix(submoduleURL, "../") && !strings.HasPrefix(submoduleURL, "./")) {
+		return submoduleURL, nil
+	}
+
+	// Parse the parent URL using go-git's endpoint parser, which handles
+	// SCP-like URLs (git@host:path) in addition to standard URLs.
+	parentEP, err := transport.NewEndpoint(parentURL)
+	if err != nil {
+		return "", fmt.Errorf("parse parent URL: %w", err)
+	}
+
+	// Credentials embedded in the parent URL must not leak into resolved
+	// submodule URLs. They should flow only through CloneRepoOptions.RepoAuth,
+	// which is gated by SameHost. For ssh:// endpoints the user portion is
+	// the SSH login name rather than a credential, so it is preserved.
+	parentEP.Password = ""
+	if !strings.EqualFold(parentEP.Protocol, "ssh") {
+		parentEP.User = ""
+	}
+
+	// For relative URLs, we need to resolve them against the parent's path.
+	// The parent path represents a repository (like a file in filesystem terms),
+	// so ../something means "sibling repository".
+	parentPath := strings.TrimSuffix(parentEP.Path, "/")
+
+	// Split the submodule URL into components
+	// and manually walk up the directory tree for each ../
+	currentPath := parentPath
+	relativeParts := strings.Split(submoduleURL, "/")
+
+	for _, part := range relativeParts {
+		if part == ".." {
+			// Go up one directory
+			currentPath = path.Dir(currentPath)
+		} else if part == "." {
+			// Stay in current directory
+			continue
+		} else if part != "" {
+			// Add this component to the path
+			currentPath = currentPath + "/" + part
+		}
+	}
+
+	// Reconstruct the URL with the resolved path.
+	parentEP.Path = path.Clean(currentPath)
+	return parentEP.String(), nil
+}
+
+// initSubmodules recursively initializes and updates the submodules of repo.
+// currentDepth tracks the current recursion level, starting at 1. parentAuth
+// is the auth that was actually used to fetch the current parent. It must be
+// the auth for this level, not the root auth, so that a credential withheld
+// at any point in the chain stays withheld for every level below it.
+func initSubmodules(ctx context.Context, logf func(string, ...any), repo *git.Repository, parentWorktree *git.Worktree, parentURL string, parentAuth transport.AuthMethod, opts CloneRepoOptions, currentDepth int) error {
+	if currentDepth > opts.SubmoduleDepth {
+		logf("⚠ Skipping nested submodules: max depth %d reached", opts.SubmoduleDepth)
+		return nil
+	}
+	logf("🔗 Initializing git submodules (depth %d/%d)...", currentDepth, opts.SubmoduleDepth)
+
+	subs, err := parentWorktree.Submodules()
+	if err != nil {
+		return fmt.Errorf("get submodules: %w", err)
+	}
+
+	if len(subs) == 0 {
+		logf("No submodules found")
+		return nil
+	}
+
+	logf("Found %d submodule(s)", len(subs))
+
+	// Get the parent repository URL for resolving relative submodule URLs
+	effectiveParentURL := parentURL
+	if cfg, cfgErr := repo.Config(); cfgErr == nil {
+		if origin, ok := cfg.Remotes["origin"]; ok && len(origin.URLs) > 0 {
+			effectiveParentURL = origin.URLs[0]
+		}
+	}
+	logf("Parent repository URL: %s", RedactURL(effectiveParentURL))
+
+	for _, sub := range subs {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		subConfig := sub.Config()
+		logf("📦 Initializing submodule: %s", subConfig.Name)
+		logf("  Submodule path: %s", subConfig.Path)
+		logf("  Submodule URL (from .gitmodules): %s", RedactURL(subConfig.URL))
+
+		// Get the expected commit hash
+		subStatus, err := sub.Status()
+		if err != nil {
+			return fmt.Errorf("get submodule status for %q: %w", subConfig.Name, err)
+		}
+		logf("  Expected commit: %s", subStatus.Expected)
+
+		// Resolve the submodule URL
+		resolvedURL, err := ResolveSubmoduleURL(effectiveParentURL, subConfig.URL)
+		if err != nil {
+			return fmt.Errorf("resolve submodule URL for %q: %w", subConfig.Name, err)
+		}
+		logf("  Resolved URL: %s", RedactURL(resolvedURL))
+
+		submoduleAuth := submoduleAuthFor(logf, effectiveParentURL, resolvedURL, parentAuth)
+
+		// Clone the submodule manually
+		if err := cloneSubmodule(ctx, logf, parentWorktree, subConfig, subStatus.Expected, resolvedURL, submoduleAuth, opts); err != nil {
+			return fmt.Errorf("clone submodule %q: %w", subConfig.Name, err)
+		}
+
+		logf("✓ Submodule initialized: %s", subConfig.Name)
+
+		// Recurse into any nested submodules. We open the on-disk repository
+		// directly rather than calling sub.Repository(), which requires the
+		// submodule to be registered in .git/config via sub.Init(). The custom
+		// clone path does not perform that registration.
+		if currentDepth >= opts.SubmoduleDepth {
+			continue
+		}
+		subRepo, subWorktree, err := openSubmoduleRepo(parentWorktree, subConfig.Path)
+		if err != nil {
+			logf("  ⚠ Could not open submodule repository %s for nested traversal: %v", subConfig.Name, err)
+			continue
+		}
+		nestedSubs, err := subWorktree.Submodules()
+		if err != nil {
+			logf("  ⚠ Could not list nested submodules in %s: %v", subConfig.Name, err)
+			continue
+		}
+		if len(nestedSubs) == 0 {
+			continue
+		}
+		logf("  Found %d nested submodule(s) in %s", len(nestedSubs), subConfig.Name)
+		if err := initSubmodules(ctx, logf, subRepo, subWorktree, resolvedURL, submoduleAuth, opts, currentDepth+1); err != nil {
+			return fmt.Errorf("init nested submodules in %q: %w", subConfig.Name, err)
+		}
+	}
+
+	logf("✓ All submodules initialized successfully")
+	return nil
+}
+
+// submoduleAuthFor returns the auth to use when fetching a submodule. It
+// returns parentAuth if the submodule shares the parent's host, and nil
+// otherwise. A warning is logged when parent auth is set but withheld
+// because the hosts differ.
+func submoduleAuthFor(logf func(string, ...any), parentURL, submoduleURL string, parentAuth transport.AuthMethod) transport.AuthMethod {
+	if parentAuth == nil {
+		return nil
+	}
+	if SameHost(parentURL, submoduleURL) {
+		return parentAuth
+	}
+	logf("  ⚠ Not forwarding auth to submodule (different host: %s)", extractHost(submoduleURL))
+	return nil
+}
+
+// openSubmoduleRepo opens the on-disk repository written by cloneSubmodule
+// at parentWorktree/submodulePath/.git and returns it along with its worktree.
+func openSubmoduleRepo(parentWorktree *git.Worktree, submodulePath string) (*git.Repository, *git.Worktree, error) {
+	subFS, err := parentWorktree.Filesystem.Chroot(submodulePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("chroot to submodule path: %w", err)
+	}
+	subGitDir, err := subFS.Chroot(".git")
+	if err != nil {
+		return nil, nil, fmt.Errorf("chroot to .git: %w", err)
+	}
+	subRepo, err := git.Open(
+		filesystem.NewStorage(subGitDir, cache.NewObjectLRU(cache.DefaultMaxSize*10)),
+		subFS,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open submodule repository: %w", err)
+	}
+	subWorktree, err := subRepo.Worktree()
+	if err != nil {
+		return nil, nil, fmt.Errorf("get submodule worktree: %w", err)
+	}
+	return subRepo, subWorktree, nil
+}
+
+// cloneSubmodule clones a single submodule into the parent worktree.
+// The caller is responsible for deciding whether to forward auth, so
+// submoduleAuth may be nil even when the parent was authenticated.
+func cloneSubmodule(ctx context.Context, logf func(string, ...any), parentWorktree *git.Worktree, subConfig *config.Submodule, expectedHash plumbing.Hash, resolvedURL string, submoduleAuth transport.AuthMethod, opts CloneRepoOptions) error {
+	// Get the submodule directory within the parent worktree
+	subFS, err := parentWorktree.Filesystem.Chroot(subConfig.Path)
+	if err != nil {
+		return fmt.Errorf("chroot to submodule path: %w", err)
+	}
+
+	// Check if already cloned
+	if _, statErr := subFS.Stat(".git"); statErr == nil {
+		logf("  Submodule already cloned, checking out expected commit...")
+		// Open the existing repository
+		subGitDir, err := subFS.Chroot(".git")
+		if err != nil {
+			return fmt.Errorf("chroot to existing .git: %w", err)
+		}
+		subRepo, err := git.Open(
+			filesystem.NewStorage(subGitDir, cache.NewObjectLRU(cache.DefaultMaxSize*10)),
+			subFS,
+		)
+		if err != nil {
+			return fmt.Errorf("open existing submodule: %w", err)
+		}
+		return checkoutSubmoduleCommit(ctx, logf, subRepo, expectedHash, submoduleAuth, opts)
+	}
+
+	// Clone the submodule
+	logf("  Cloning submodule from: %s", RedactURL(resolvedURL))
+
+	// Create .git directory for the submodule
+	if err := subFS.MkdirAll(".git", 0o755); err != nil {
+		return fmt.Errorf("create .git directory: %w", err)
+	}
+	subGitDir, err := subFS.Chroot(".git")
+	if err != nil {
+		return fmt.Errorf("chroot to .git: %w", err)
+	}
+	gitStorage := filesystem.NewStorage(subGitDir, cache.NewObjectLRU(cache.DefaultMaxSize*10))
+
+	// Clone the submodule repository. SingleBranch is false so all branches
+	// are fetched and the expected commit is reachable. We honor the parent's
+	// clone depth. If the expected commit is not reachable from the shallow
+	// tip, the fetch-by-hash path in checkoutSubmoduleCommit will deepen as
+	// needed.
+	subRepo, err := git.CloneContext(ctx, gitStorage, subFS, &git.CloneOptions{
+		URL:             resolvedURL,
+		Auth:            submoduleAuth,
+		Progress:        opts.Progress,
+		InsecureSkipTLS: opts.Insecure,
+		CABundle:        opts.CABundle,
+		ProxyOptions:    opts.ProxyOptions,
+		Depth:           opts.Depth,
+		SingleBranch:    false,
+		NoCheckout:      true,
+	})
+	if err != nil {
+		return fmt.Errorf("clone submodule repository: %w", err)
+	}
+
+	return checkoutSubmoduleCommit(ctx, logf, subRepo, expectedHash, submoduleAuth, opts)
+}
+
+// checkoutSubmoduleCommit ensures expectedHash is present in subRepo,
+// fetching it from the remote if it is not already there, and then checks
+// it out into the submodule's worktree.
+func checkoutSubmoduleCommit(ctx context.Context, logf func(string, ...any), subRepo *git.Repository, expectedHash plumbing.Hash, submoduleAuth transport.AuthMethod, opts CloneRepoOptions) error {
+	// Verify the commit exists
+	logf("  Verifying commit exists: %s", expectedHash)
+	if _, err := subRepo.CommitObject(expectedHash); err != nil {
+		// Commit not found, try fetching with the specific hash
+		logf("  Commit not found, attempting to fetch it directly...")
+		fetchErr := subRepo.FetchContext(ctx, &git.FetchOptions{
+			RemoteName: "origin",
+			RefSpecs: []config.RefSpec{
+				config.RefSpec("+" + expectedHash.String() + ":" + expectedHash.String()),
+			},
+			Auth:            submoduleAuth,
+			Progress:        opts.Progress,
+			InsecureSkipTLS: opts.Insecure,
+			CABundle:        opts.CABundle,
+			ProxyOptions:    opts.ProxyOptions,
+		})
+		if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+			// If that fails, try fetching all refs
+			logf("  Direct fetch failed, fetching all refs...")
+			fetchAllErr := subRepo.FetchContext(ctx, &git.FetchOptions{
+				RemoteName:      "origin",
+				Auth:            submoduleAuth,
+				Progress:        opts.Progress,
+				InsecureSkipTLS: opts.Insecure,
+				CABundle:        opts.CABundle,
+				ProxyOptions:    opts.ProxyOptions,
+			})
+			if fetchAllErr != nil && !errors.Is(fetchAllErr, git.NoErrAlreadyUpToDate) {
+				return fmt.Errorf("fetch commit %s: %w", expectedHash, fetchAllErr)
+			}
+		}
+		// Verify again
+		if _, err := subRepo.CommitObject(expectedHash); err != nil {
+			return fmt.Errorf("commit %s still not found after fetch: %w", expectedHash, err)
+		}
+	}
+
+	// Checkout the specific commit expected by the parent repository
+	logf("  Checking out commit: %s", expectedHash)
+	subWorktree, err := subRepo.Worktree()
+	if err != nil {
+		return fmt.Errorf("get submodule worktree: %w", err)
+	}
+	if err := subWorktree.Checkout(&git.CheckoutOptions{Hash: expectedHash}); err != nil {
+		return fmt.Errorf("checkout expected commit %s: %w", expectedHash, err)
+	}
+	return nil
 }

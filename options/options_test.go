@@ -72,6 +72,45 @@ func TestEnvOptionParsing(t *testing.T) {
 			require.False(t, o.GitCloneSingleBranch)
 			require.True(t, o.GitCloneThinPack)
 		})
+
+		t.Run("remote repo build mode", func(t *testing.T) {
+			t.Setenv(options.WithEnvPrefix("REMOTE_REPO_BUILD_MODE"), "true")
+			o := runCLI()
+			require.True(t, o.RemoteRepoBuildMode)
+		})
+
+		t.Run("binary path", func(t *testing.T) {
+			const val = "/usr/local/bin/envbuilder"
+			t.Setenv(options.WithEnvPrefix("BINARY_PATH"), val)
+			o := runCLI()
+			require.Equal(t, o.BinaryPath, val)
+		})
+	})
+
+	t.Run("submodule depth", func(t *testing.T) {
+		t.Run("true", func(t *testing.T) {
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SUBMODULES"), "true")
+			o := runCLI()
+			require.Equal(t, int(options.DefaultSubmoduleDepth), o.GitCloneSubmoduleDepth)
+		})
+
+		t.Run("integer", func(t *testing.T) {
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SUBMODULES"), "3")
+			o := runCLI()
+			require.Equal(t, 3, o.GitCloneSubmoduleDepth)
+		})
+
+		t.Run("integer with whitespace", func(t *testing.T) {
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SUBMODULES"), " 5 ")
+			o := runCLI()
+			require.Equal(t, 5, o.GitCloneSubmoduleDepth)
+		})
+
+		t.Run("false", func(t *testing.T) {
+			t.Setenv(options.WithEnvPrefix("GIT_CLONE_SUBMODULES"), "false")
+			o := runCLI()
+			require.Equal(t, 0, o.GitCloneSubmoduleDepth)
+		})
 	})
 }
 

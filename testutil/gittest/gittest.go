@@ -20,8 +20,11 @@ import (
 	"github.com/go-git/go-billy/v5"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/filemode"
+	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/format/pktline"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/protocol/packp"
@@ -268,6 +271,56 @@ func NewRepo(t *testing.T, fs billy.Filesystem, commits ...CommitFunc) *git.Repo
 		commit(fs, repo)
 	}
 	return repo
+}
+
+// CommitSubmodule creates a commit that adds a submodule with proper .gitmodules and gitlink entry.
+func CommitSubmodule(t *testing.T, path, url string, hash plumbing.Hash) CommitFunc {
+	return func(fs billy.Filesystem, repo *git.Repository) {
+		t.Helper()
+		tree, err := repo.Worktree()
+		require.NoError(t, err)
+
+		// Create .gitmodules file
+		gitmodulesContent := fmt.Sprintf("[submodule %q]\n\tpath = %s\n\turl = %s\n", path, path, url)
+		WriteFile(t, fs, ".gitmodules", gitmodulesContent)
+		_, err = tree.Add(".gitmodules")
+		require.NoError(t, err)
+
+		// Add submodule config to .git/config
+		cfg, err := repo.Config()
+		require.NoError(t, err)
+		cfg.Submodules[path] = &config.Submodule{
+			Name: path,
+			Path: path,
+			URL:  url,
+		}
+		err = repo.SetConfig(cfg)
+		require.NoError(t, err)
+
+		// Create the gitlink entry (mode 160000 commit reference)
+		// We need to add it directly to the index
+		idx, err := repo.Storer.Index()
+		require.NoError(t, err)
+
+		// Add a gitlink entry - this is a special index entry with mode 160000
+		idx.Entries = append(idx.Entries, &index.Entry{
+			Mode: filemode.Submodule,
+			Hash: hash,
+			Name: path,
+		})
+		err = repo.Storer.SetIndex(idx)
+		require.NoError(t, err)
+
+		// Commit the changes
+		_, err = tree.Commit("add submodule", &git.CommitOptions{
+			Author: &object.Signature{
+				Name:  "Example",
+				Email: "test@example.com",
+				When:  time.Now(),
+			},
+		})
+		require.NoError(t, err)
+	}
 }
 
 // WriteFile writes a file to the filesystem.
