@@ -766,7 +766,9 @@ func cloneSubmodule(ctx context.Context, logf func(string, ...any), parentWorktr
 		NoCheckout:      true,
 	})
 	if err != nil {
-		_ = billyutil.RemoveAll(subFS, ".git")
+		if rmErr := billyutil.RemoveAll(subFS, ".git"); rmErr != nil {
+			logf("  ⚠ Failed to clean up .git after clone failure: %v", rmErr)
+		}
 		return fmt.Errorf("clone submodule repository: %w", err)
 	}
 

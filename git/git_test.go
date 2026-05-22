@@ -924,6 +924,84 @@ func TestCloneOptionsFromOptions_Submodules(t *testing.T) {
 	require.Equal(t, 10, cloneOpts.SubmoduleDepth)
 }
 
+// Regression: git.Open must find a repo that CloneRepo previously
+// created. Before the fix, the storer and worktree arguments were
+// swapped, so Open looked for HEAD at the worktree root instead of
+// .git/ and returned ErrRepositoryNotExists on every restart.
+func TestCloneRepo_RestartFindsExistingRepo(t *testing.T) {
+	t.Parallel()
+
+	srvFS := memfs.New()
+	_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "hello", "init"))
+	srv := httptest.NewServer(mwtest.BasicAuthMW("", "")(gittest.NewServer(srvFS)))
+	t.Cleanup(srv.Close)
+
+	clientFS := memfs.New()
+	cloned, err := git.CloneRepo(context.Background(), t.Logf, git.CloneRepoOptions{
+		Path:    "/workspace",
+		RepoURL: srv.URL,
+		Storage: clientFS,
+	})
+	require.NoError(t, err)
+	require.True(t, cloned)
+
+	// Second call simulates a workspace restart. The repo exists on
+	// disk; CloneRepo must detect it and return (false, nil).
+	cloned, err = git.CloneRepo(context.Background(), t.Logf, git.CloneRepoOptions{
+		Path:    "/workspace",
+		RepoURL: srv.URL,
+		Storage: clientFS,
+	})
+	require.NoError(t, err)
+	require.False(t, cloned, "second CloneRepo call must detect the existing repo")
+}
+
+// Regression: a failed submodule clone must not leave behind a .git
+// directory that blocks all future retries. Before the fix, MkdirAll
+// created .git before CloneContext, and a clone failure left it in
+// place. The next start's Stat(".git") found it, entered the
+// already-cloned path, and failed permanently.
+func TestCloneRepo_SubmoduleCloneFailureAllowsRetry(t *testing.T) {
+	t.Parallel()
+
+	// Submodule server that rejects all requests.
+	subSrv := httptest.NewServer(mwtest.BasicAuthMW("secret", "secret")(gittest.NewServer(memfs.New())))
+	t.Cleanup(subSrv.Close)
+
+	// Parent server with a submodule pointing at the rejecting server.
+	subFS := memfs.New()
+	subRepo := gittest.NewRepo(t, subFS, gittest.Commit(t, "f.txt", "x", "init"))
+	subHead, err := subRepo.Head()
+	require.NoError(t, err)
+
+	parentFS := memfs.New()
+	_ = gittest.NewRepo(t, parentFS,
+		gittest.Commit(t, "README.md", "hello", "init"),
+		gittest.CommitSubmodule(t, "sub", subSrv.URL, subHead.Hash()),
+	)
+	parentSrv := httptest.NewServer(mwtest.BasicAuthMW("", "")(gittest.NewServer(parentFS)))
+	t.Cleanup(parentSrv.Close)
+
+	clientFS := memfs.New()
+
+	// First attempt: clone succeeds but submodule init fails (auth).
+	_, err = git.CloneRepo(context.Background(), t.Logf, git.CloneRepoOptions{
+		Path:           "/workspace",
+		RepoURL:        parentSrv.URL,
+		Storage:        clientFS,
+		SubmoduleDepth: 1,
+	})
+	require.Error(t, err, "submodule clone should fail")
+
+	// The submodule's .git must have been cleaned up.
+	workFS, err := clientFS.Chroot("/workspace")
+	require.NoError(t, err)
+	subModFS, err := workFS.Chroot("sub")
+	require.NoError(t, err)
+	_, statErr := subModFS.Stat(".git")
+	require.Error(t, statErr, ".git must not exist after failed clone")
+}
+
 // generates a random ed25519 private key
 func randKeygen(t *testing.T) gossh.Signer {
 	t.Helper()
