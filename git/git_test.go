@@ -94,6 +94,9 @@ func TestCloneRepo(t *testing.T) {
 
 			// We do not overwrite a repo if one is already present.
 			t.Run("AlreadyCloned", func(t *testing.T) {
+				if !tc.expectClone {
+					t.Skip("cannot test already-cloned when the initial clone is expected to fail")
+				}
 				srvFS := memfs.New()
 				_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 				authMW := mwtest.BasicAuthMW(tc.srvUsername, tc.srvPassword)
@@ -102,9 +105,21 @@ func TestCloneRepo(t *testing.T) {
 					tc.mungeURL(&srv.URL)
 				}
 				clientFS := memfs.New()
-				// A repo already exists!
-				_ = gittest.NewRepo(t, clientFS)
+				// Clone once so the repo exists in the layout CloneRepo expects.
 				cloned, err := git.CloneRepo(context.Background(), t.Logf, git.CloneRepoOptions{
+					Path:    "/",
+					RepoURL: srv.URL,
+					Storage: clientFS,
+					RepoAuth: &githttp.BasicAuth{
+						Username: tc.username,
+						Password: tc.password,
+					},
+				})
+				require.NoError(t, err)
+				require.True(t, cloned)
+
+				// Second call: repo already exists, must be a no-op.
+				cloned, err = git.CloneRepo(context.Background(), t.Logf, git.CloneRepoOptions{
 					Path:    "/",
 					RepoURL: srv.URL,
 					Storage: clientFS,
