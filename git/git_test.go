@@ -1142,4 +1142,3 @@ func TestCloneRepoSubmoduleHostAuth(t *testing.T) {
 		})
 	}
 }
-
