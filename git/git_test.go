@@ -5,11 +5,13 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/coder/envbuilder/git"
@@ -1032,4 +1034,111 @@ func writeTestPrivateKey(t *testing.T) string {
 
 func base64EncodeTestPrivateKey() string {
 	return base64.StdEncoding.EncodeToString([]byte(testKey))
+}
+
+// TestCloneRepoSubmoduleHostAuth verifies that parent repository credentials
+// are forwarded to a submodule only when the submodule resides on the same
+// host as the parent. The submodule server records every request that arrived
+// with an Authorization header.
+func TestCloneRepoSubmoduleHostAuth(t *testing.T) {
+	t.Parallel()
+
+	const (
+		parentUser = "parent-user"
+		parentPass = "parent-pass"
+	)
+
+	cases := []struct {
+		name          string
+		rewriteSubURL func(string) string
+		wantAuthSeen  bool
+	}{
+		{
+			name:          "SameHostForwardsAuth",
+			rewriteSubURL: func(u string) string { return u },
+			wantAuthSeen:  true,
+		},
+		{
+			name: "CrossHostWithholdsAuth",
+			rewriteSubURL: func(u string) string {
+				// 127.0.0.1 and localhost both resolve to the loopback
+				// interface, so the submodule server is still reachable,
+				// but SameHost compares the hostname strings and reports
+				// a mismatch.
+				return strings.Replace(u, "127.0.0.1", "localhost", 1)
+			},
+			wantAuthSeen: false,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Build the submodule repository in memory.
+			subFS := memfs.New()
+			subRepo := gittest.NewRepo(t, subFS,
+				gittest.Commit(t, "subfile.txt", "submodule content", "submodule init"),
+			)
+			subHead, err := subRepo.Head()
+			require.NoError(t, err)
+			subHash := subHead.Hash()
+
+			// Wrap the submodule server with an observer that records any
+			// request that carried an Authorization header. The submodule
+			// server itself does not require auth; we only care about whether
+			// the client offered the parent credentials.
+			var (
+				authMu   sync.Mutex
+				authSeen bool
+			)
+			observer := func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Header.Get("Authorization") != "" {
+						authMu.Lock()
+						authSeen = true
+						authMu.Unlock()
+					}
+					next.ServeHTTP(w, r)
+				})
+			}
+			subSrv := httptest.NewServer(observer(gittest.NewServer(subFS)))
+			t.Cleanup(subSrv.Close)
+
+			// Build the parent repository pointing to the submodule. The
+			// .gitmodules URL may be munged to use a different hostname,
+			// which is what the cross-host case exercises.
+			subURLInGitmodules := tc.rewriteSubURL(subSrv.URL)
+			parentFS := memfs.New()
+			_ = gittest.NewRepo(t, parentFS,
+				gittest.Commit(t, "README.md", "parent readme", "parent init"),
+				gittest.CommitSubmodule(t, "submod", subURLInGitmodules, subHash),
+			)
+			parentSrv := httptest.NewServer(
+				mwtest.BasicAuthMW(parentUser, parentPass)(gittest.NewServer(parentFS)),
+			)
+			t.Cleanup(parentSrv.Close)
+
+			// Clone the parent with credentials and submodule recursion enabled.
+			clientFS := memfs.New()
+			_, err = git.CloneRepo(context.Background(), t.Logf, git.CloneRepoOptions{
+				Path:    "/workspace",
+				RepoURL: parentSrv.URL,
+				Storage: clientFS,
+				RepoAuth: &githttp.BasicAuth{
+					Username: parentUser,
+					Password: parentPass,
+				},
+				SubmoduleDepth: 5,
+			})
+			require.NoError(t, err)
+
+			authMu.Lock()
+			got := authSeen
+			authMu.Unlock()
+			require.Equal(t, tc.wantAuthSeen, got,
+				"submodule server saw Authorization header (cross-host should withhold, same-host should forward)")
+		})
+	}
 }
