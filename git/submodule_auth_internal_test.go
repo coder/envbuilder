@@ -2,6 +2,7 @@ package git
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -59,7 +60,7 @@ func TestSubmoduleAuthFor(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			var buf bytes.Buffer
-			logf := func(format string, _ ...any) { _, _ = buf.WriteString(format) }
+			logf := func(format string, args ...any) { fmt.Fprintf(&buf, format, args...) }
 			got := submoduleAuthFor(logf, c.parentURL, c.submoduleURL, c.parentAuth)
 			require.Equal(t, c.wantAuth, got)
 			if c.wantWarn {

@@ -17,6 +17,7 @@ import (
 	"github.com/coder/envbuilder/options"
 
 	"github.com/go-git/go-billy/v5"
+	billyutil "github.com/go-git/go-billy/v5/util"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -108,8 +109,7 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 		return false, fmt.Errorf("chroot .git: %w", err)
 	}
 	gitStorage := filesystem.NewStorage(gitDir, cache.NewObjectLRU(cache.DefaultMaxSize*10))
-	fsStorage := filesystem.NewStorage(fs, cache.NewObjectLRU(cache.DefaultMaxSize*10))
-	repo, err := git.Open(fsStorage, gitDir)
+	repo, err := git.Open(gitStorage, fs)
 	if errors.Is(err, git.ErrRepositoryNotExists) {
 		err = nil
 	}
@@ -133,7 +133,7 @@ func CloneRepo(ctx context.Context, logf func(string, ...any), opts CloneRepoOpt
 		if errors.Is(err, git.ErrRepositoryAlreadyExists) {
 			// The repository was created between our Open and CloneContext
 			// calls. Reopen it so submodule initialization can still run.
-			repo, err = git.Open(fsStorage, gitDir)
+			repo, err = git.Open(gitStorage, fs)
 			if err != nil {
 				return false, fmt.Errorf("reopen existing %q: %w", opts.RepoURL, err)
 			}
@@ -453,25 +453,17 @@ var scpLikeURLRegex = regexp.MustCompile(`^([^@]+)@([^:]+):(.+)$`)
 // extractHost extracts the host from a URL, handling both standard URLs and SCP-like URLs.
 // Returns empty string if host cannot be determined.
 func extractHost(u string) string {
-	// Try standard URL parsing first
-	if parsed, err := url.Parse(u); err == nil && parsed.Host != "" {
-		// Remove port if present
-		host := parsed.Hostname()
-		return strings.ToLower(host)
+	ep, err := transport.NewEndpoint(u)
+	if err != nil || ep.Host == "" {
+		return ""
 	}
-
-	// Handle SCP-like URLs: user@host:path
-	if matches := scpLikeURLRegex.FindStringSubmatch(u); matches != nil {
-		return strings.ToLower(matches[2])
-	}
-
-	return ""
+	return strings.ToLower(ep.Host)
 }
 
 // SameHost checks if two URLs point to the same host.
 // Used to determine if credentials should be forwarded to submodules.
-// The comparison is hostname-only. Port is ignored to match git's
-// credential-helper convention, which keys credentials on the host alone.
+// The comparison is hostname-only. Port is ignored as a simplification;
+// submodules on the same host at different ports are uncommon.
 func SameHost(url1, url2 string) bool {
 	host1 := extractHost(url1)
 	host2 := extractHost(url2)
@@ -605,6 +597,7 @@ func initSubmodules(ctx context.Context, logf func(string, ...any), repo *git.Re
 	}
 	logf("Parent repository URL: %s", RedactURL(effectiveParentURL))
 
+	var warnings int
 	for _, sub := range subs {
 		select {
 		case <-ctx.Done():
@@ -650,11 +643,13 @@ func initSubmodules(ctx context.Context, logf func(string, ...any), repo *git.Re
 		subRepo, subWorktree, err := openSubmoduleRepo(parentWorktree, subConfig.Path)
 		if err != nil {
 			logf("  ⚠ Could not open submodule repository %s for nested traversal: %v", subConfig.Name, err)
+			warnings++
 			continue
 		}
 		nestedSubs, err := subWorktree.Submodules()
 		if err != nil {
 			logf("  ⚠ Could not list nested submodules in %s: %v", subConfig.Name, err)
+			warnings++
 			continue
 		}
 		if len(nestedSubs) == 0 {
@@ -666,7 +661,11 @@ func initSubmodules(ctx context.Context, logf func(string, ...any), repo *git.Re
 		}
 	}
 
-	logf("✓ All submodules initialized successfully")
+	if warnings > 0 {
+		logf("⚠ Submodule initialization finished with %d warning(s)", warnings)
+	} else {
+		logf("✓ All submodules initialized successfully")
+	}
 	return nil
 }
 
@@ -674,6 +673,13 @@ func initSubmodules(ctx context.Context, logf func(string, ...any), repo *git.Re
 // returns parentAuth if the submodule shares the parent's host, and nil
 // otherwise. A warning is logged when parent auth is set but withheld
 // because the hosts differ.
+//
+// The check is host-only and does not compare transport protocols. If
+// the parent uses SSH auth and a submodule on the same host uses HTTPS,
+// the SSH auth is forwarded and go-git rejects it at the transport
+// layer. This is intentional: returning nil here would silently skip
+// auth for a submodule that legitimately needs it under a different
+// protocol.
 func submoduleAuthFor(logf func(string, ...any), parentURL, submoduleURL string, parentAuth transport.AuthMethod) transport.AuthMethod {
 	if parentAuth == nil {
 		return nil
@@ -723,15 +729,7 @@ func cloneSubmodule(ctx context.Context, logf func(string, ...any), parentWorktr
 	// Check if already cloned
 	if _, statErr := subFS.Stat(".git"); statErr == nil {
 		logf("  Submodule already cloned, checking out expected commit...")
-		// Open the existing repository
-		subGitDir, err := subFS.Chroot(".git")
-		if err != nil {
-			return fmt.Errorf("chroot to existing .git: %w", err)
-		}
-		subRepo, err := git.Open(
-			filesystem.NewStorage(subGitDir, cache.NewObjectLRU(cache.DefaultMaxSize*10)),
-			subFS,
-		)
+		subRepo, _, err := openSubmoduleRepo(parentWorktree, subConfig.Path)
 		if err != nil {
 			return fmt.Errorf("open existing submodule: %w", err)
 		}
@@ -768,6 +766,9 @@ func cloneSubmodule(ctx context.Context, logf func(string, ...any), parentWorktr
 		NoCheckout:      true,
 	})
 	if err != nil {
+		if rmErr := billyutil.RemoveAll(subFS, ".git"); rmErr != nil {
+			logf("  ⚠ Failed to clean up .git after clone failure: %v", rmErr)
+		}
 		return fmt.Errorf("clone submodule repository: %w", err)
 	}
 
@@ -796,7 +797,7 @@ func checkoutSubmoduleCommit(ctx context.Context, logf func(string, ...any), sub
 		})
 		if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
 			// If that fails, try fetching all refs
-			logf("  Direct fetch failed, fetching all refs...")
+			logf("  Direct fetch failed (%v), fetching all refs...", fetchErr)
 			fetchAllErr := subRepo.FetchContext(ctx, &git.FetchOptions{
 				RemoteName:      "origin",
 				Auth:            submoduleAuth,
