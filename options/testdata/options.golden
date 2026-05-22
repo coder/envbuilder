@@ -101,8 +101,8 @@ OPTIONS:
 
       --git-clone-submodules submodule-depth, $ENVBUILDER_GIT_CLONE_SUBMODULES
           Clone Git submodules after cloning the repository. Accepts 'true' (max
-          depth 10), 'false' (disabled), or a positive integer for max recursion
-          depth.
+          depth 10), 'false' (disabled), or a non-negative integer for max
+          recursion depth (0 disables, max 100).
 
       --git-clone-thinpack bool, $ENVBUILDER_GIT_CLONE_THINPACK (default: true)
           Git clone with thin pack compatibility enabled, ensuring that even

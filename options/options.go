@@ -14,10 +14,13 @@ import (
 )
 
 // SubmoduleDepth is a custom type for handling submodule depth that accepts
-// "true" (defaults to 10), "false" (0), or a positive integer.
+// "true" (defaults to 10), "false" (0), or a non-negative integer (0 disables).
 type SubmoduleDepth int
 
-const DefaultSubmoduleDepth = 10
+const (
+	DefaultSubmoduleDepth SubmoduleDepth = 10
+	MaxSubmoduleDepth     SubmoduleDepth = 100
+)
 
 func (s *SubmoduleDepth) Set(val string) error {
 	lower := strings.ToLower(strings.TrimSpace(val))
@@ -31,10 +34,13 @@ func (s *SubmoduleDepth) Set(val string) error {
 	}
 	n, err := strconv.Atoi(lower)
 	if err != nil {
-		return fmt.Errorf("invalid submodule depth %q: must be true, false, or a positive integer", val)
+		return fmt.Errorf("invalid submodule depth %q: must be true, false, or a non-negative integer", val)
 	}
 	if n < 0 {
 		return fmt.Errorf("submodule depth must be non-negative, got %d", n)
+	}
+	if n > int(MaxSubmoduleDepth) {
+		return fmt.Errorf("submodule depth must be at most %d, got %d", MaxSubmoduleDepth, n)
 	}
 	*s = SubmoduleDepth(n)
 	return nil
@@ -149,9 +155,9 @@ type Options struct {
 	// GitCloneThinPack clone with thin pack compabilities. This is optional.
 	GitCloneThinPack bool
 	// GitCloneSubmoduleDepth controls submodule initialization after cloning.
-	// 0 = disabled (default), positive integer = max recursion depth.
+	// 0 = disabled (default), >0 = max recursion depth (capped at MaxSubmoduleDepth).
 	// The flag accepts "true" (defaults to DefaultSubmoduleDepth), "false"
-	// (0), or a positive integer for the max recursion depth.
+	// (0), or a non-negative integer (0 disables).
 	GitCloneSubmoduleDepth int
 	// GitUsername is the username to use for Git authentication. This is
 	// optional.
@@ -436,7 +442,7 @@ func (o *Options) CLI() serpent.OptionSet {
 			Env:   WithEnvPrefix("GIT_CLONE_SUBMODULES"),
 			Value: SubmoduleDepthOf(&o.GitCloneSubmoduleDepth),
 			Description: "Clone Git submodules after cloning the repository. " +
-				"Accepts 'true' (max depth 10), 'false' (disabled), or a positive integer for max recursion depth.",
+				"Accepts 'true' (max depth 10), 'false' (disabled), or a non-negative integer for max recursion depth (0 disables, max 100).",
 		},
 		{
 			Flag:        "git-username",
