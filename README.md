@@ -58,6 +58,7 @@ To explore more examples, tips, and advanced usage, check out the following guid
 ## Setup Script
 
 The `ENVBUILDER_SETUP_SCRIPT` environment variable dynamically configures the user and init command (PID 1) after the container build process.
+Custom `ENVBUILDER_INIT_SCRIPT` and `ENVBUILDER_INIT_COMMAND` values become PID 1, so they must trap signals themselves if they need prompt `SIGTERM` or `SIGINT` handling.
 
 > **Note**: `TARGET_USER` is passed to the setup script to specify who will execute `ENVBUILDER_INIT_COMMAND` (e.g., `code`).
 

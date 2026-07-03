@@ -50,7 +50,7 @@ func (o *Options) SetDefaults() {
 		}
 	}
 	if o.InitScript == "" {
-		o.InitScript = "sleep infinity"
+		o.InitScript = "trap 'exit 0' TERM INT\nsleep infinity &\nwait $!"
 	}
 	if o.InitCommand == "" {
 		o.InitCommand = "/bin/sh"
