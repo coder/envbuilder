@@ -1,11 +1,15 @@
 <p align="center">
-  <a aria-label="Join the community on Discord" href="https://discord.gg/coder"><img src="https://img.shields.io/discord/747933592273027093?label=discord"></a>
+  <a aria-label="Join the community on Discord" href="https://cdr.co/discord-4mHyQ3BJP8"><img src="https://img.shields.io/discord/747933592273027093?label=discord"></a>
   <a aria-label="Releases" href="https://github.com/coder/envbuilder/pkgs/container/envbuilder"><img alt="" src="https://img.shields.io/github/v/tag/coder/envbuilder"></a>
   <a aria-label="GoDoc" href="https://pkg.go.dev/github.com/coder/envbuilder"><img alt="" src="https://pkg.go.dev/badge/github.com/coder/envbuilder.svg"></a>
   <a aria-label="License" href="./LICENSE"><img alt="" src="https://img.shields.io/github/license/coder/envbuilder"></a>
 </p>
 
 # Envbuilder
+
+
+> [!WARNING]  
+> `envbuilder` is in maintenance mode and no new features are planned, please explore alternative options.
 
 ![envbuilder](https://github.com/user-attachments/assets/0a49f5cd-2040-4a07-84ba-8b765b954e57)
 
@@ -18,6 +22,17 @@ Build development environments from a Dockerfile on Docker, Kubernetes, and Open
 - Runs on Kubernetes, Docker, and OpenShift
 
 ## Getting Started
+
+### In Coder
+
+> [!IMPORTANT]  
+> The updated way of using DevContainers within Coder is now the built-in [DevContainers CLI integration](https://coder.com/docs/@v2.36.1/admin/integrations/devcontainers#dev-containers-integration), it is heavily suggested to go with this approach.
+> 
+> Feel free to join the [Coder Discord server](https://cdr.co/discord-4mHyQ3BJP8) and ask for help with finding out the best way to use DevContainers in your Coder deployment.
+
+Browse the Coder Registry for [example templates that use `envbuilder` to deploy DevContainers](https://registry.coder.com/templates?search=tag%3Adevcontainer).
+
+### Docker
 
 The easiest way to get started is by running the `envbuilder` Docker container that clones a repository specified by `ENVBUILDER_GIT_URL`, builds the image from a Dockerfile or `devcontainer.json`, and runs the `$ENVBUILDER_INIT_SCRIPT` in the freshly built container.
 
