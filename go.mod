@@ -1,6 +1,6 @@
 module github.com/coder/envbuilder
 
-go 1.24.10
+go 1.25.0
 
 // There are a few options we need added to Kaniko!
 // See: https://github.com/GoogleContainerTools/kaniko/compare/main...coder:kaniko:main
@@ -22,8 +22,8 @@ require (
 	github.com/docker/docker v28.3.3+incompatible
 	github.com/fatih/color v1.18.0
 	github.com/gliderlabs/ssh v0.3.8
-	github.com/go-git/go-billy/v5 v5.6.2
-	github.com/go-git/go-git/v5 v5.16.5
+	github.com/go-git/go-billy/v5 v5.9.0
+	github.com/go-git/go-git/v5 v5.19.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.20.6
 	github.com/google/uuid v1.6.0
@@ -38,9 +38,9 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/tailscale/hujson v0.0.0-20221223112325-20486734a56a
 	go.uber.org/mock v0.6.0
-	golang.org/x/crypto v0.45.0
-	golang.org/x/mod v0.29.0
-	golang.org/x/sync v0.18.0
+	golang.org/x/crypto v0.50.0
+	golang.org/x/mod v0.35.0
+	golang.org/x/sync v0.20.0
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
 )
 
@@ -142,7 +142,7 @@ require (
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
 	github.com/coreos/go-iptables v0.6.0 // indirect
 	github.com/coreos/go-oidc/v3 v3.15.0 // indirect
-	github.com/cyphar/filepath-securejoin v0.6.0 // indirect
+	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
@@ -209,6 +209,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.18.2 // indirect
+	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kortschak/wol v0.0.0-20200729010619-da482cc4850a // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
@@ -258,7 +259,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/pion/transport/v2 v2.2.10 // indirect
 	github.com/pion/udp v0.1.4 // indirect
-	github.com/pjbgf/sha1cd v0.3.2 // indirect
+	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
@@ -331,14 +332,14 @@ require (
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go4.org/mem v0.0.0-20220726221520-4f986261bf13 // indirect
 	go4.org/netipx v0.0.0-20230728180743-ad4cb58a6516 // indirect
-	golang.org/x/exp v0.0.0-20250606033433-dcc06ee1d476 // indirect
-	golang.org/x/net v0.47.0 // indirect
+	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
+	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
-	golang.org/x/term v0.37.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/term v0.42.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
-	golang.org/x/tools v0.38.0 // indirect
+	golang.org/x/tools v0.44.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	golang.zx2c4.com/wireguard/windows v0.5.3 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
