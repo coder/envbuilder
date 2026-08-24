@@ -180,7 +180,7 @@ func TestOptions_SetDefaults(t *testing.T) {
 	t.Parallel()
 
 	expected := options.Options{
-		InitScript:       "sleep infinity",
+		InitScript:       "trap 'exit 0' TERM INT\nsleep infinity &\nwait $!",
 		InitCommand:      "/bin/sh",
 		IgnorePaths:      []string{"/var/run", "/product_uuid", "/product_name"},
 		Filesystem:       chmodfs.New(osfs.New("/")),

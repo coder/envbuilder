@@ -253,9 +253,11 @@ func (o *Options) CLI() serpent.OptionSet {
 		{
 			Flag: "init-script",
 			Env:  WithEnvPrefix("INIT_SCRIPT"),
-			// Default:     "sleep infinity", // TODO: reinstate once legacy opts are removed.
-			Value:       serpent.StringOf(&o.InitScript),
-			Description: "The script to run to initialize the workspace. Default: `sleep infinity`.",
+			// Default:     "trap 'exit 0' TERM INT\nsleep infinity &\nwait $!", // TODO: reinstate once legacy opts are removed.
+			Value: serpent.StringOf(&o.InitScript),
+			Description: "The script to run to initialize the workspace. By default, this traps " +
+				"`SIGTERM`/`SIGINT`, starts `sleep infinity` as a child process, and waits for it " +
+				"so the container exits promptly when stopped.",
 		},
 		{
 			Flag: "init-command",
