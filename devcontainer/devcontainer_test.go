@@ -190,6 +190,27 @@ func TestCompileDevContainer(t *testing.T) {
 		require.Equal(t, filepath.Join(dcDir, "Dockerfile"), params.DockerfilePath)
 		require.Equal(t, dcDir, params.BuildContext)
 	})
+	t.Run("WithBuildTarget", func(t *testing.T) {
+		t.Parallel()
+		fs := memfs.New()
+		dc := &devcontainer.Spec{
+			Build: devcontainer.BuildSpec{
+				Dockerfile: "Dockerfile",
+				Target:     "my-target",
+			},
+		}
+		dcDir := "/workspaces/coder/.devcontainer"
+		err := fs.MkdirAll(dcDir, 0o755)
+		require.NoError(t, err)
+		file, err := fs.OpenFile(filepath.Join(dcDir, "Dockerfile"), os.O_CREATE|os.O_WRONLY, 0o644)
+		require.NoError(t, err)
+		_, err = io.WriteString(file, "FROM scratch AS my-target\nUSER testuser")
+		require.NoError(t, err)
+		_ = file.Close()
+		params, err := dc.Compile(fs, dcDir, workingDir, "", "", false, stubLookupEnv)
+		require.NoError(t, err)
+		require.Equal(t, "my-target", params.Target)
+	})
 }
 
 func TestImageFromDockerfile(t *testing.T) {
