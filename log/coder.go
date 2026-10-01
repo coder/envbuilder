@@ -89,9 +89,7 @@ type coderLogSender interface {
 }
 
 func initClient(coderURL *url.URL, token string) *agentsdk.Client {
-	client := agentsdk.New(coderURL)
-	client.SetSessionToken(token)
-	return client
+	return agentsdk.New(coderURL, agentsdk.WithFixedToken(token))
 }
 
 func initRPC(ctx context.Context, client *agentsdk.Client, l slog.Logger) (proto.DRPCAgentClient20, error) {
