@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"cdr.dev/slog"
-	"cdr.dev/slog/sloggers/sloghuman"
+	"cdr.dev/slog/v3"
+	"cdr.dev/slog/v3/sloggers/sloghuman"
 	"github.com/coder/coder/v2/agent/proto"
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/coder/v2/codersdk/agentsdk"
@@ -89,9 +89,7 @@ type coderLogSender interface {
 }
 
 func initClient(coderURL *url.URL, token string) *agentsdk.Client {
-	client := agentsdk.New(coderURL)
-	client.SetSessionToken(token)
-	return client
+	return agentsdk.New(coderURL, agentsdk.WithFixedToken(token))
 }
 
 func initRPC(ctx context.Context, client *agentsdk.Client, l slog.Logger) (proto.DRPCAgentClient20, error) {
