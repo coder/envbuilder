@@ -468,7 +468,7 @@ func TestGitSSHAuth(t *testing.T) {
 		require.NotNil(t, signer)
 
 		tmpDir := t.TempDir()
-		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
+		srvFS := osfs.New(tmpDir, osfs.WithBoundOS())
 
 		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "Initial commit"))
 		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
@@ -495,7 +495,7 @@ func TestGitSSHAuth(t *testing.T) {
 		require.NotNil(t, signer)
 
 		tmpDir := t.TempDir()
-		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
+		srvFS := osfs.New(tmpDir, osfs.WithBoundOS())
 
 		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "Dockerfile", "FROM "+testImageAlpine, "Initial commit"))
 		tr := gittest.NewServerSSH(t, srvFS, signer.PublicKey())
