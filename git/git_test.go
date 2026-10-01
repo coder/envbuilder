@@ -280,7 +280,7 @@ func TestCloneRepoSSH(t *testing.T) {
 		t.Parallel()
 
 		tmpDir := t.TempDir()
-		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
+		srvFS := osfs.New(tmpDir, osfs.WithBoundOS())
 
 		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 		key := randKeygen(t)
@@ -310,7 +310,7 @@ func TestCloneRepoSSH(t *testing.T) {
 		t.Parallel()
 
 		tmpDir := t.TempDir()
-		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
+		srvFS := osfs.New(tmpDir, osfs.WithBoundOS())
 
 		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 		key := randKeygen(t)
@@ -341,7 +341,7 @@ func TestCloneRepoSSH(t *testing.T) {
 		t.Parallel()
 
 		tmpDir := t.TempDir()
-		srvFS := osfs.New(tmpDir, osfs.WithChrootOS())
+		srvFS := osfs.New(tmpDir, osfs.WithBoundOS())
 
 		_ = gittest.NewRepo(t, srvFS, gittest.Commit(t, "README.md", "Hello, world!", "Wow!"))
 		key := randKeygen(t)
