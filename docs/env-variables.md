@@ -24,6 +24,7 @@
 | `--ignore-paths` | `ENVBUILDER_IGNORE_PATHS` |  | The comma separated list of paths to ignore when building the workspace. |
 | `--build-secrets` | `ENVBUILDER_BUILD_SECRETS` |  | The list of secret environment variables to use when building the image. |
 | `--skip-rebuild` | `ENVBUILDER_SKIP_REBUILD` |  | Skip building if the MagicFile exists. This is used to skip building when a container is restarting. e.g. docker stop -> docker start This value can always be set to true - even if the container is being started for the first time. |
+| `--skip-unused-stages` | `ENVBUILDER_SKIP_UNUSED_STAGES` |  | Skip building all unused docker stages. Otherwise it builds by default all stages, even the unnecessary ones until it reaches the target stage / end of Dockerfile. |
 | `--git-url` | `ENVBUILDER_GIT_URL` |  | The URL of a Git repository containing a Devcontainer or Docker image to clone. This is optional. |
 | `--git-clone-depth` | `ENVBUILDER_GIT_CLONE_DEPTH` |  | The depth to use when cloning the Git repository. |
 | `--git-clone-single-branch` | `ENVBUILDER_GIT_CLONE_SINGLE_BRANCH` |  | Clone only a single branch of the Git repository. |
