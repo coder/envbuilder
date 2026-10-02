@@ -513,6 +513,22 @@ func RedactURL(u string) string {
 	return u
 }
 
+// reconstructSCP formats an Endpoint as an SCP-like URL (e.g. user@host:path or user@host:port:path).
+func reconstructSCP(ep *transport.Endpoint) string {
+	var b strings.Builder
+	if ep.User != "" {
+		b.WriteString(ep.User)
+		b.WriteString("@")
+	}
+	b.WriteString(ep.Host)
+	if ep.Port != 0 {
+		fmt.Fprintf(&b, ":%d", ep.Port)
+	}
+	b.WriteString(":")
+	b.WriteString(strings.TrimPrefix(ep.Path, "/"))
+	return b.String()
+}
+
 // ResolveSubmoduleURL resolves a potentially relative submodule URL against a parent repository URL.
 func ResolveSubmoduleURL(parentURL, submoduleURL string) (string, error) {
 	// If the submodule URL is absolute (contains ://) or doesn't start with ./ or ../, return it as-is
@@ -561,6 +577,9 @@ func ResolveSubmoduleURL(parentURL, submoduleURL string) (string, error) {
 
 	// Reconstruct the URL with the resolved path.
 	parentEP.Path = path.Clean(currentPath)
+	if !strings.Contains(parentURL, "://") {
+		return reconstructSCP(parentEP), nil
+	}
 	return parentEP.String(), nil
 }
 
