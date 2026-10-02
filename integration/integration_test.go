@@ -1088,6 +1088,43 @@ func TestBuildStopStartCached(t *testing.T) {
 	}
 }
 
+func TestDefaultInitScriptRespondsToSignals(t *testing.T) {
+	t.Parallel()
+
+	for _, signal := range []string{"SIGTERM", "SIGINT"} {
+		t.Run(signal, func(t *testing.T) {
+			t.Parallel()
+
+			srv := gittest.CreateGitServer(t, gittest.Options{
+				Files: map[string]string{
+					"Dockerfile": "FROM " + testImageAlpine,
+				},
+			})
+			ctr, err := runEnvbuilder(t, runOpts{env: []string{
+				envbuilderEnv("GIT_URL", srv.URL),
+				envbuilderEnv("DOCKERFILE_PATH", "Dockerfile"),
+			}})
+			require.NoError(t, err)
+
+			cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+			require.NoError(t, err)
+			defer cli.Close()
+
+			ctx := context.Background()
+			err = cli.ContainerKill(ctx, ctr, signal)
+			require.NoError(t, err)
+
+			require.Eventually(t, func() bool {
+				status, err := cli.ContainerInspect(ctx, ctr)
+				if !assert.NoError(t, err) {
+					return false
+				}
+				return !status.State.Running
+			}, 5*time.Second, 100*time.Millisecond, "container never exited")
+		})
+	}
+}
+
 func TestCloneFailsFallback(t *testing.T) {
 	t.Parallel()
 	t.Run("BadRepo", func(t *testing.T) {

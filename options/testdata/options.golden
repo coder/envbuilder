@@ -142,8 +142,9 @@ OPTIONS:
           The command to run to initialize the workspace. Default: `/bin/sh`.
 
       --init-script string, $ENVBUILDER_INIT_SCRIPT
-          The script to run to initialize the workspace. Default: `sleep
-          infinity`.
+          The script to run to initialize the workspace. By default, this traps
+          `SIGTERM`/`SIGINT`, starts `sleep infinity` as a child process, and
+          waits for it so the container exits promptly when stopped.
 
       --insecure bool, $ENVBUILDER_INSECURE
           Bypass TLS verification when cloning and pulling from container
