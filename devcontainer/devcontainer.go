@@ -227,7 +227,7 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 	}
 
 	featuresDir := filepath.Join(scratchDir, "features")
-	err := fs.MkdirAll(featuresDir, 0o644)
+	err := fs.MkdirAll(featuresDir, 0o755)
 	if err != nil {
 		return "", nil, fmt.Errorf("create features directory: %w", err)
 	}
@@ -277,7 +277,7 @@ func (s *Spec) compileFeatures(fs billy.Filesystem, devcontainerDir, scratchDir 
 		featureSha := md5.Sum([]byte(featureRefRaw))
 		featureName := filepath.Base(featureRef)
 		featureDir := filepath.Join(featuresDir, fmt.Sprintf("%s-%x", featureName, featureSha[:4]))
-		if err := fs.MkdirAll(featureDir, 0o644); err != nil {
+		if err := fs.MkdirAll(featureDir, 0o755); err != nil {
 			return "", nil, err
 		}
 		spec, err := features.Extract(fs, devcontainerDir, featureDir, featureRefRaw)
