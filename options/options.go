@@ -672,6 +672,22 @@ func skipDeprecatedOptions(options []serpent.Option) []serpent.Option {
 	return activeOptions
 }
 
+// ParseEnviron converts environ into a serpent.Environ for option parsing,
+// dropping variables with empty values. Since serpent v0.15.0, an empty
+// value overrides an option's default instead of being ignored. Envbuilder
+// keeps treating empty values as unset so that existing templates that pass
+// empty strings keep their defaults.
+func ParseEnviron(environ []string) serpent.Environ {
+	envs := serpent.ParseEnviron(environ, "")
+	filtered := make(serpent.Environ, 0, len(envs))
+	for _, env := range envs {
+		if env.Value != "" {
+			filtered = append(filtered, env)
+		}
+	}
+	return filtered
+}
+
 // UnsetEnv unsets all environment variables that are used
 // to configure the options.
 func UnsetEnv() {
@@ -693,4 +709,9 @@ func UnsetEnv() {
 	// Unset the Kaniko environment variable which we set it in the
 	// Dockerfile to ensure correct behavior during building.
 	_ = os.Unsetenv("KANIKO_DIR")
+
+	// dd-trace-go (imported transitively via codersdk) sets this at init
+	// to propagate a per-process session ID to child processes. It must not
+	// leak into the workspace environment.
+	_ = os.Unsetenv("_DD_ROOT_GO_SESSION_ID")
 }

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"cdr.dev/slog/sloggers/slogtest"
+	"cdr.dev/slog/v3/sloggers/slogtest"
 	"github.com/coder/coder/v2/agent/proto"
 	"github.com/coder/coder/v2/codersdk"
 	"github.com/coder/coder/v2/codersdk/agentsdk"
