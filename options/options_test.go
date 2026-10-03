@@ -22,6 +22,12 @@ func TestEnvOptionParsing(t *testing.T) {
 		require.Equal(t, o.SetupScript, val)
 	})
 
+	t.Run("empty string keeps default", func(t *testing.T) {
+		t.Setenv(options.WithEnvPrefix("WORKSPACE_BASE_DIR"), "")
+		o := runCLI()
+		require.Equal(t, "/workspaces", o.WorkspaceBaseDir)
+	})
+
 	t.Run("int", func(t *testing.T) {
 		t.Setenv(options.WithEnvPrefix("CACHE_TTL_DAYS"), "7")
 		o := runCLI()
@@ -229,6 +235,7 @@ func runCLI() options.Options {
 	}
 
 	i := cmd.Invoke().WithOS()
+	i.Environ = options.ParseEnviron(os.Environ())
 	i.Args = []string{"--help"}
 	fakeIO(i)
 	err := i.Run()
