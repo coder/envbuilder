@@ -693,4 +693,9 @@ func UnsetEnv() {
 	// Unset the Kaniko environment variable which we set it in the
 	// Dockerfile to ensure correct behavior during building.
 	_ = os.Unsetenv("KANIKO_DIR")
+
+	// dd-trace-go (imported transitively via codersdk) sets this at init
+	// to propagate a per-process session ID to child processes. It must not
+	// leak into the workspace environment.
+	_ = os.Unsetenv("_DD_ROOT_GO_SESSION_ID")
 }
