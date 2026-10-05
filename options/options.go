@@ -672,12 +672,12 @@ func skipDeprecatedOptions(options []serpent.Option) []serpent.Option {
 	return activeOptions
 }
 
-// ParseEnviron converts environ into a serpent.Environ for option parsing,
-// dropping variables with empty values. Since serpent v0.15.0, an empty
+// EnvironWithoutEmptyValues converts environ into a serpent.Environ for
+// option parsing, dropping variables with empty values. Since serpent v0.15.0, an empty
 // value overrides an option's default instead of being ignored. Envbuilder
 // keeps treating empty values as unset so that existing templates that pass
 // empty strings keep their defaults.
-func ParseEnviron(environ []string) serpent.Environ {
+func EnvironWithoutEmptyValues(environ []string) serpent.Environ {
 	envs := serpent.ParseEnviron(environ, "")
 	filtered := make(serpent.Environ, 0, len(envs))
 	for _, env := range envs {

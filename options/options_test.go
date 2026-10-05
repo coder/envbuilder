@@ -235,7 +235,7 @@ func runCLI() options.Options {
 	}
 
 	i := cmd.Invoke().WithOS()
-	i.Environ = options.ParseEnviron(os.Environ())
+	i.Environ = options.EnvironWithoutEmptyValues(os.Environ())
 	i.Args = []string{"--help"}
 	fakeIO(i)
 	err := i.Run()
