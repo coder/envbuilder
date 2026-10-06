@@ -4,7 +4,7 @@
 | Flag | Environment variable | Default | Description |
 | - | - | - | - |
 | `--setup-script` | `ENVBUILDER_SETUP_SCRIPT` |  | The script to run before the init script. It runs as the root user regardless of the user specified in the devcontainer.json file. SetupScript is ran as the root user prior to the init script. It is used to configure envbuilder dynamically during the runtime. e.g. specifying whether to start systemd or tiny init for PID 1. |
-| `--init-script` | `ENVBUILDER_INIT_SCRIPT` |  | The script to run to initialize the workspace. Default: `sleep infinity`. |
+| `--init-script` | `ENVBUILDER_INIT_SCRIPT` |  | The script to run to initialize the workspace. By default, this traps `SIGTERM`/`SIGINT`, starts `sleep infinity` as a child process, and waits for it so the container exits promptly when stopped. |
 | `--init-command` | `ENVBUILDER_INIT_COMMAND` |  | The command to run to initialize the workspace. Default: `/bin/sh`. |
 | `--init-args` | `ENVBUILDER_INIT_ARGS` |  | The arguments to pass to the init command. They are split according to /bin/sh rules with https://github.com/kballard/go-shellquote. |
 | `--cache-repo` | `ENVBUILDER_CACHE_REPO` |  | The name of the container registry to push the cache image to. If this is empty, the cache will not be pushed. |
