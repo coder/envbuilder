@@ -23,7 +23,9 @@ import (
 
 func main() {
 	cmd := envbuilderCmd()
-	err := cmd.Invoke().WithOS().Run()
+	inv := cmd.Invoke().WithOS()
+	inv.Environ = options.EnvironWithoutEmptyValues(os.Environ())
+	err := inv.Run()
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v", err)
 		os.Exit(1)
