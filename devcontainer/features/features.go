@@ -36,6 +36,7 @@ func extractFromImage(fs billy.Filesystem, directory, reference string) error {
 	}
 
 	var tarLayer *tar.Reader
+	var layerReader io.ReadCloser
 	for _, manifestLayer := range manifest.Layers {
 		if manifestLayer.MediaType != TarLayerMediaType {
 			continue
@@ -44,7 +45,7 @@ func extractFromImage(fs billy.Filesystem, directory, reference string) error {
 		if err != nil {
 			return fmt.Errorf("fetch feature layer %s: %w", reference, err)
 		}
-		layerReader, err := layer.Uncompressed()
+		layerReader, err = layer.Uncompressed()
 		if err != nil {
 			return fmt.Errorf("uncompress feature layer %s: %w", reference, err)
 		}
@@ -54,6 +55,7 @@ func extractFromImage(fs billy.Filesystem, directory, reference string) error {
 	if tarLayer == nil {
 		return fmt.Errorf("no tar layer found with media type %q: are you sure this is a devcontainer feature?", TarLayerMediaType)
 	}
+	defer layerReader.Close()
 
 	for {
 		header, err := tarLayer.Next()
