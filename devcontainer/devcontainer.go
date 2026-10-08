@@ -16,6 +16,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/moby/buildkit/frontend/dockerfile/instructions"
+	"github.com/moby/buildkit/frontend/dockerfile/linter"
 	"github.com/moby/buildkit/frontend/dockerfile/parser"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/tailscale/hujson"
@@ -355,7 +356,9 @@ func UserFromDockerfile(dockerfileContent string, buildArgs map[string]string) (
 		currentStage *instructions.Stage
 	)
 	for _, child := range res.AST.Children {
-		inst, err := instructions.ParseInstruction(child)
+		// ParseInstruction uses a nil linter, which panics when buildkit applies
+		// a "# check=" comment to it.
+		inst, err := instructions.ParseInstructionWithLinter(child, linter.New(&linter.Config{}))
 		if err != nil {
 			return "", fmt.Errorf("parse instruction: %w", err)
 		}
