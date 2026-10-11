@@ -2,7 +2,7 @@ module github.com/coder/envbuilder
 
 go 1.26.5
 
-toolchain go1.26.6
+toolchain go1.26.9
 
 // There are a few options we need added to Kaniko!
 // See: https://github.com/GoogleContainerTools/kaniko/compare/main...coder:kaniko:main
