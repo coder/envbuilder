@@ -21,7 +21,6 @@ require (
 	github.com/containerd/platforms v1.0.0-rc.4
 	github.com/distribution/distribution/v3 v3.1.1
 	github.com/docker/cli v29.5.3+incompatible
-	github.com/docker/docker v28.5.2+incompatible
 	github.com/fatih/color v1.19.0
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-git/go-billy/v5 v5.9.0
@@ -33,6 +32,8 @@ require (
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/mattn/go-isatty v0.0.22
 	github.com/moby/buildkit v0.31.2
+	github.com/moby/moby/api v1.56.1
+	github.com/moby/moby/client v0.6.2
 	github.com/otiai10/copy v1.14.0
 	github.com/prometheus/procfs v0.21.1
 	github.com/sirupsen/logrus v1.9.4
@@ -46,10 +47,7 @@ require (
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
 )
 
-require (
-	github.com/moby/moby v28.3.0+incompatible // indirect
-	github.com/tailscale/peercred v0.0.0-20250107143737-35a0c7bd7edc // indirect
-)
+require github.com/tailscale/peercred v0.0.0-20250107143737-35a0c7bd7edc // indirect
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
@@ -153,7 +151,7 @@ require (
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/docker-credential-helpers v0.9.8 // indirect
-	github.com/docker/go-connections v0.7.0 // indirect
+	github.com/docker/go-connections v0.8.2 // indirect
 	github.com/docker/go-events v0.0.0-20250808211157-605354379745 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
@@ -244,7 +242,6 @@ require (
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.3.3 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
-	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/moby/sys/sequential v0.7.0 // indirect
 	github.com/moby/sys/signal v0.7.1 // indirect
 	github.com/moby/sys/user v0.4.1 // indirect
