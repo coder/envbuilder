@@ -266,6 +266,29 @@ func TestUserFromDockerfile_BuildArgs(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "testuser", user)
 	})
+
+	t.Run("LintCheckComment", func(t *testing.T) {
+		t.Parallel()
+		registry := registrytest.New(t)
+		image, err := partial.UncompressedToImage(emptyImage{configFile: &v1.ConfigFile{
+			Config: v1.Config{
+				User: "testuser",
+			},
+		}})
+		require.NoError(t, err)
+		ref := strings.TrimPrefix(registry, "http://") + "/coder/test:latest"
+		parsed, err := name.ParseReference(ref)
+		require.NoError(t, err)
+		err = remote.Write(parsed, image)
+		require.NoError(t, err)
+
+		// buildkit applies "# check=" comments to the linter of the next
+		// instruction, which panics without an initialized linter.
+		content := fmt.Sprintf("# syntax note\n# check=skip=JSONArgsRecommended\nFROM %s\n# check=error=true\nRUN echo hi\n", ref)
+		user, err := devcontainer.UserFromDockerfile(content, nil)
+		require.NoError(t, err)
+		require.Equal(t, "testuser", user)
+	})
 }
 
 func TestUserFrom(t *testing.T) {
