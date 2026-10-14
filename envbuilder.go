@@ -49,7 +49,6 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
 	"github.com/tailscale/hujson"
-	"golang.org/x/xerrors"
 )
 
 // ErrNoFallbackImage is returned when no fallback image has been specified.
@@ -268,7 +267,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			defer file.Close()
 			if opts.FallbackImage == "" {
 				if fallbackErr != nil {
-					return nil, xerrors.Errorf("%s: %w", fallbackErr.Error(), ErrNoFallbackImage)
+					return nil, fmt.Errorf("%s: %w", fallbackErr.Error(), ErrNoFallbackImage)
 				}
 				// We can't use errors.Join here because our tests
 				// don't support parsing a multiline error.
@@ -582,7 +581,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 			endStage := startStage("🏗️ Building image...")
 			image, err := executor.DoBuild(kOpts)
 			if err != nil {
-				return nil, xerrors.Errorf("do build: %w", err)
+				return nil, fmt.Errorf("do build: %w", err)
 			}
 			endStage("🏗️ Built image!")
 			if opts.PushImage {
@@ -602,7 +601,7 @@ func run(ctx context.Context, opts options.Options, execArgs *execArgsInfo) erro
 				} else if !opts.ExitOnPushFailure {
 					endStage("⚠️️ Failed to push image!")
 				} else {
-					return nil, xerrors.Errorf("do push: %w", err)
+					return nil, fmt.Errorf("do push: %w", err)
 				}
 			}
 
@@ -1253,7 +1252,7 @@ func RunCacheProbe(ctx context.Context, opts options.Options) (v1.Image, error) 
 	// will need to specify the path to the desired envbuilder binary.
 	opts.Logger(log.LevelDebug, "copying envbuilder binary at %q to build context %q", opts.BinaryPath, envbuilderBinDest)
 	if err := copyFile(opts.Filesystem, opts.BinaryPath, envbuilderBinDest, 0o755); err != nil {
-		return nil, xerrors.Errorf("copy envbuilder binary to build context: %w", err)
+		return nil, fmt.Errorf("copy envbuilder binary to build context: %w", err)
 	}
 
 	// Also write the magic file that signifies the image has been built.
