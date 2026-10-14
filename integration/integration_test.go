@@ -38,13 +38,6 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	clitypes "github.com/docker/cli/cli/config/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/volume"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -52,6 +45,10 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/uuid"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -142,18 +139,19 @@ func TestLogs(t *testing.T) {
 	}
 
 	// Wait for the container to exit
-	client, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 	require.NoError(t, err)
+	defer cli.Close()
 	require.Eventually(t, func() bool {
-		status, err := client.ContainerInspect(ctx, ctrID)
+		status, err := cli.ContainerInspect(ctx, ctrID, client.ContainerInspectOptions{})
 		if !assert.NoError(t, err) {
 			return false
 		}
-		return !status.State.Running
+		return !status.Container.State.Running
 	}, 10*time.Second, time.Second, "container never exited")
 
 	// Check the expected log output
-	logReader, err := client.ContainerLogs(ctx, ctrID, container.LogsOptions{
+	logReader, err := cli.ContainerLogs(ctx, ctrID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 	})
@@ -852,7 +850,7 @@ func TestBuildPrintBuildOutput(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 	require.NoError(t, err)
 	defer cli.Close()
 
@@ -1068,15 +1066,15 @@ func TestBuildStopStartCached(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 	require.NoError(t, err)
 	defer cli.Close()
 
 	ctx := context.Background()
-	err = cli.ContainerStop(ctx, ctr, container.StopOptions{})
+	_, err = cli.ContainerStop(ctx, ctr, client.ContainerStopOptions{})
 	require.NoError(t, err)
 
-	err = cli.ContainerStart(ctx, ctr, container.StartOptions{})
+	_, err = cli.ContainerStart(ctx, ctr, client.ContainerStartOptions{})
 	require.NoError(t, err)
 
 	logChan, _ := streamContainerLogs(t, cli, ctr)
@@ -1806,7 +1804,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		// When: we run envbuilder with PUSH_IMAGE set
 		_ = pushImage(t, ref, nil, opts...)
 
-		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		cli, err := client.New(client.FromEnv)
 		require.NoError(t, err)
 		defer cli.Close()
 
@@ -1863,7 +1861,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		// When: we run envbuilder with PUSH_IMAGE set
 		_ = pushImage(t, ref, nil, opts...)
 
-		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		cli, err := client.New(client.FromEnv)
 		require.NoError(t, err)
 		defer cli.Close()
 
@@ -1948,7 +1946,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		ctrID, err := runEnvbuilder(t, runOpts{env: append(opts, envbuilderEnv("PUSH_IMAGE", "1"))})
 		require.NoError(t, err, "envbuilder push image failed")
 
-		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		cli, err := client.New(client.FromEnv)
 		require.NoError(t, err)
 		defer cli.Close()
 
@@ -2040,7 +2038,7 @@ RUN touch /bar
 		// When: we run envbuilder with PUSH_IMAGE set
 		_ = pushImage(t, ref, nil, opts...)
 
-		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		cli, err := client.New(client.FromEnv)
 		require.NoError(t, err)
 		defer cli.Close()
 
@@ -2242,7 +2240,7 @@ COPY --from=prebuild /the-future/hello.txt /the-future/hello.txt
 		// When: we run envbuilder with PUSH_IMAGE set
 		_ = pushImage(t, ref, nil, opts...)
 
-		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		cli, err := client.New(client.FromEnv)
 		require.NoError(t, err)
 		defer cli.Close()
 
@@ -2482,7 +2480,7 @@ RUN date --utc > /root/date.txt`, testImageAlpine),
 		// When: we run envbuilder with PUSH_IMAGE set
 		_ = pushImage(t, ref, nil, opts...)
 
-		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		cli, err := client.New(client.FromEnv)
 		require.NoError(t, err)
 		defer cli.Close()
 
@@ -2534,7 +2532,7 @@ USER devalot
 		// When: we run envbuilder with PUSH_IMAGE set
 		_ = pushImage(t, ref, nil, opts...)
 
-		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		cli, err := client.New(client.FromEnv)
 		require.NoError(t, err)
 		defer cli.Close()
 
@@ -2680,22 +2678,19 @@ func checkTestRegistry() {
 // cleanOldEnvbuilders removes any old envbuilder containers.
 func cleanOldEnvbuilders() {
 	ctx := context.Background()
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		panic(err)
 	}
 	defer cli.Close()
-	ctrs, err := cli.ContainerList(ctx, container.ListOptions{
-		Filters: filters.NewArgs(filters.KeyValuePair{
-			Key:   "label",
-			Value: testContainerLabel,
-		}),
+	ctrs, err := cli.ContainerList(ctx, client.ContainerListOptions{
+		Filters: make(client.Filters).Add("label", testContainerLabel),
 	})
 	if err != nil {
 		panic(err)
 	}
-	for _, ctr := range ctrs {
-		if err := cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+	for _, ctr := range ctrs.Items {
+		if _, err := cli.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{
 			Force: true,
 		}); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "failed to remove old test container: %s\n", err.Error())
@@ -2742,7 +2737,7 @@ func getCachedImage(ctx context.Context, t *testing.T, cli *client.Client, env .
 	ctrID, err := runEnvbuilder(t, runOpts{env: append(env, envbuilderEnv("GET_CACHED_IMAGE", "1"))})
 	require.NoError(t, err)
 
-	logs, err := cli.ContainerLogs(ctx, ctrID, container.LogsOptions{
+	logs, err := cli.ContainerLogs(ctx, ctrID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 	})
@@ -2759,23 +2754,25 @@ func getCachedImage(ctx context.Context, t *testing.T, cli *client.Client, env .
 	return ref
 }
 
-func startContainerFromRef(ctx context.Context, t *testing.T, cli *client.Client, ref name.Reference) container.CreateResponse {
+func startContainerFromRef(ctx context.Context, t *testing.T, cli *client.Client, ref name.Reference) client.ContainerCreateResult {
 	t.Helper()
 
 	// Ensure that we can pull the image.
-	rc, err := cli.ImagePull(ctx, ref.String(), image.PullOptions{})
+	rc, err := cli.ImagePull(ctx, ref.String(), client.ImagePullOptions{})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = rc.Close() })
 	_, err = io.Copy(io.Discard, rc)
 	require.NoError(t, err)
 
 	// Start the container.
-	ctr, err := cli.ContainerCreate(ctx, &container.Config{
-		Image: ref.String(),
-		Labels: map[string]string{
-			testContainerLabel: "true",
+	ctr, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config: &container.Config{
+			Image: ref.String(),
+			Labels: map[string]string{
+				testContainerLabel: "true",
+			},
 		},
-	}, nil, nil, nil, "")
+	})
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -2783,13 +2780,13 @@ func startContainerFromRef(ctx context.Context, t *testing.T, cli *client.Client
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+		_, _ = cli.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{
 			RemoveVolumes: true,
 			Force:         true,
 		})
 	})
 
-	err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
+	_, err = cli.ContainerStart(ctx, ctr.ID, client.ContainerStartOptions{})
 	require.NoError(t, err)
 
 	return ctr
@@ -2809,7 +2806,7 @@ type runOpts struct {
 func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 	t.Helper()
 	ctx := context.Background()
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		cli.Close()
@@ -2821,18 +2818,18 @@ func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 			Source: volName,
 			Target: volPath,
 		})
-		_, err = cli.VolumeCreate(ctx, volume.CreateOptions{
+		_, err = cli.VolumeCreate(ctx, client.VolumeCreateOptions{
 			Name: volName,
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() {
-			_ = cli.VolumeRemove(ctx, volName, true)
+			_, _ = cli.VolumeRemove(ctx, volName, client.VolumeRemoveOptions{Force: true})
 		})
 	}
 	img := "envbuilder:latest"
 	if opts.image != "" {
 		// Pull the image first so we can start it afterwards.
-		rc, err := cli.ImagePull(ctx, opts.image, image.PullOptions{})
+		rc, err := cli.ImagePull(ctx, opts.image, client.ImagePullOptions{})
 		require.NoError(t, err, "failed to pull image")
 		t.Cleanup(func() { _ = rc.Close() })
 		_, err = io.Copy(io.Discard, rc)
@@ -2848,21 +2845,24 @@ func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 		hostConfig.CapAdd = append(hostConfig.CapAdd, "SYS_ADMIN")
 		hostConfig.Privileged = true
 	}
-	ctr, err := cli.ContainerCreate(ctx, &container.Config{
-		Image: img,
-		Env:   opts.env,
-		Labels: map[string]string{
-			testContainerLabel: "true",
+	ctr, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config: &container.Config{
+			Image: img,
+			Env:   opts.env,
+			Labels: map[string]string{
+				testContainerLabel: "true",
+			},
 		},
-	}, hostConfig, nil, nil, "")
+		HostConfig: hostConfig,
+	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_ = cli.ContainerRemove(ctx, ctr.ID, container.RemoveOptions{
+		_, _ = cli.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{
 			RemoveVolumes: true,
 			Force:         true,
 		})
 	})
-	err = cli.ContainerStart(ctx, ctr.ID, container.StartOptions{})
+	_, err = cli.ContainerStart(ctx, ctr.ID, client.ContainerStartOptions{})
 	require.NoError(t, err)
 
 	logChan, errChan := streamContainerLogs(t, cli, ctr.ID)
@@ -2885,17 +2885,17 @@ func runEnvbuilder(t *testing.T, opts runOpts) (string, error) {
 func execContainer(t *testing.T, containerID, command string) string {
 	t.Helper()
 	ctx := context.Background()
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 	require.NoError(t, err)
 	defer cli.Close()
-	execConfig := container.ExecOptions{
+	execConfig := client.ExecCreateOptions{
 		AttachStdout: true,
 		AttachStderr: true,
 		Cmd:          []string{"/bin/sh", "-c", command},
 	}
-	execID, err := cli.ContainerExecCreate(ctx, containerID, execConfig)
+	execID, err := cli.ExecCreate(ctx, containerID, execConfig)
 	require.NoError(t, err)
-	resp, err := cli.ContainerExecAttach(ctx, execID.ID, container.ExecAttachOptions{})
+	resp, err := cli.ExecAttach(ctx, execID.ID, client.ExecAttachOptions{})
 	require.NoError(t, err)
 	defer resp.Close()
 	var buf bytes.Buffer
@@ -2906,9 +2906,9 @@ func execContainer(t *testing.T, containerID, command string) string {
 
 func streamContainerLogs(t *testing.T, cli *client.Client, containerID string) (chan string, chan error) {
 	ctx := context.Background()
-	err := cli.ContainerStart(ctx, containerID, container.StartOptions{})
+	_, err := cli.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
 	require.NoError(t, err)
-	rawLogs, err := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
+	rawLogs, err := cli.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
